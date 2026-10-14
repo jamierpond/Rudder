@@ -4,6 +4,20 @@ set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "")
 
 project(Rudder VERSION 0.1.0 LANGUAGES C CXX)
 
+# An app that publishes contexts (Wim, CowTerm) pulls Rudder in with CPM for
+# the client library alone: no app, no tests, no extra dependencies -- it
+# brings eacp (and with it Miro) itself.
+option(RUDDER_CLIENT_ONLY "Build only the RudderClient library" OFF)
+
+if (RUDDER_CLIENT_ONLY)
+    if (APPLE)
+        enable_language(OBJCXX)
+    endif ()
+
+    add_subdirectory(Client)
+    return()
+endif ()
+
 if (APPLE)
     enable_language(OBJCXX)
 endif ()
@@ -33,6 +47,8 @@ CPMAddPackage(
 
 list(APPEND CMAKE_MODULE_PATH "${eacp_SOURCE_DIR}/CMake")
 
+add_subdirectory(Client)
+
 # The switcher's pure logic (ranking, MRU, back stack, keybindings, context
 # providers) lives in a plain static library so it stays unit-testable without
 # the app shell.
@@ -45,7 +61,7 @@ add_library(RudderSwitcher STATIC
         Lib/Switcher/Ranking.cpp)
 
 target_include_directories(RudderSwitcher PUBLIC Lib/Switcher)
-target_link_libraries(RudderSwitcher PUBLIC emberstore)
+target_link_libraries(RudderSwitcher PUBLIC emberstore RudderProtocol)
 
 # The OS seam: running apps, activation, preview and the quick-panel window
 # tricks. Only macOS is implemented; a Platform-Windows.cpp slots in here.

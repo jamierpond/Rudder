@@ -4,6 +4,7 @@ add_executable(RudderTests
         KeybindingTests.cpp
         LineEditTests.cpp
         MruTests.cpp
+        ProtocolTests.cpp
         ProvidersTests.cpp
         RankingTests.cpp)
 
