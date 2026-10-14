@@ -4,12 +4,14 @@
 
 namespace rudder
 {
-// Drawn in code so the app needs no asset files.
+// Decoded from the PNGs in Assets/Icon, embedded at build time (see
+// Scripts/make-icons.sh for how they're made).
 
-// The menu-bar glyph: alpha only, tinted by the system as a template.
-eacp::Graphics::Image makeTrayIcon();
+// The menu-bar / tray glyph: on macOS an alpha-only template the system tints,
+// on Windows a small tile that reads on light and dark taskbars.
+eacp::Graphics::Image loadTrayIcon();
 
-// Rudder's app icon at `size` pixels: the glyph in white on a blue tile. What
-// the unlock overlay shows as the thing to drag.
-eacp::Graphics::Image makeAppIcon(int size);
+// Rudder's app icon, 1024 px. What the unlock overlay shows as the thing to
+// drag.
+eacp::Graphics::Image loadAppIcon();
 } // namespace rudder

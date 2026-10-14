@@ -91,7 +91,7 @@ struct RudderApp
         observeWorkspace();
 
         tray.setTemplateRendering(true);
-        tray.setIcon(makeTrayIcon());
+        tray.setIcon(loadTrayIcon());
         tray.setTooltip("Rudder");
         tray.setMenu(createTrayMenu());
 

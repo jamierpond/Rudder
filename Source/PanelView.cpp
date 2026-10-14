@@ -343,7 +343,7 @@ void DragTile::paint(UI::Graphics& g)
 
     if (icon == nullptr)
         if (auto* host = getHost())
-            icon = host->getImageCache().get(makeAppIcon(128));
+            icon = host->getImageCache().get(loadAppIcon());
 
     if (icon != nullptr)
         g.drawImage(icon, {(bounds.w - 64.f) / 2.f, 14.f, 64.f, 64.f});

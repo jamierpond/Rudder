@@ -108,6 +108,21 @@ set_target_properties(Rudder PROPERTIES
 
 eacp_set_gui_subsystem(Rudder)
 
+# Assets/Icon is made by Scripts/make-icons.sh. macOS builds its .icns from
+# Icon.png; Windows takes a prebuilt .ico whose small frames are a plain
+# silhouette, which IMAGE (one picture downscaled to every size) can't express.
+if (WIN32)
+    eacp_set_app_icon(Rudder ICO "${CMAKE_CURRENT_SOURCE_DIR}/Assets/Icon/Icon.ico")
+else ()
+    eacp_set_app_icon(Rudder IMAGE "${CMAKE_CURRENT_SOURCE_DIR}/Assets/Icon/Icon.png")
+endif ()
+
+find_package(ResEmbed REQUIRED)
+res_embed_add(Rudder FILES
+        Assets/Icon/Icon.png
+        Assets/Icon/Tray.png
+        Assets/Icon/TrayWindows.png)
+
 if (NOT TARGET NanoTest)
     CPMAddPackage(
             NAME NanoTest
