@@ -3,6 +3,7 @@ add_executable(RudderTests
         FuzzyMatchTests.cpp
         KeybindingTests.cpp
         MruTests.cpp
+        ProvidersTests.cpp
         RankingTests.cpp)
 
 target_link_libraries(RudderTests PRIVATE NanoTest NanoTestMain RudderSwitcher)

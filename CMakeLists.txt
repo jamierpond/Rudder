@@ -40,6 +40,7 @@ add_library(RudderSwitcher STATIC
         Lib/Switcher/BackStack.cpp
         Lib/Switcher/Keybinding.cpp
         Lib/Switcher/Mru.cpp
+        Lib/Switcher/Providers.cpp
         Lib/Switcher/Ranking.cpp)
 
 target_include_directories(RudderSwitcher PUBLIC Lib/Switcher)
