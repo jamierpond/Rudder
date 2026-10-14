@@ -1,4 +1,5 @@
 #include "BackStack.h"
+#include "ContextServer.h"
 #include "Icon.h"
 #include "Keybinding.h"
 #include "Mru.h"
@@ -99,6 +100,7 @@ struct RudderApp
             platform::appIcon(app);
 
         publishSettings();
+        serveContexts();
 
         // As Tamby does: a launch without the grant opens the pane for it.
         if (!platform::accessibilityTrusted(false))
@@ -741,6 +743,11 @@ struct RudderApp
         // way the window gets above everything -- and typing still lands in
         // the panel. Without it (no grant), nothing is raised: the pane shows
         // the selection instead.
+        // A provider's context: the app brings it forward itself, then the
+        // usual preview raises the app.
+        if (item.kind == "context")
+            providers.activate(item.appId, item.contextId);
+
         if (capturingKeys && item.kind == "window")
             previewRaised = platform::focusWindow(*app, item.contextId, false);
         else if (capturingKeys)
@@ -757,6 +764,70 @@ struct RudderApp
 
         previewWindows = platform::windowTitles(*app);
         publishResults();
+    }
+
+    // --- Contexts ---------------------------------------------------------------
+
+    // Provider apps (Wim's tabs, ...) connect over the contexts socket. The
+    // server is up before rudder.started goes out, so the apps that hear it
+    // can connect straight away.
+    void serveContexts()
+    {
+        contextServer.onHello = [this](int connection, const protocol::Hello& hello)
+        {
+            logEvent(("provider hello: " + hello.app + " (" + hello.bundleId + ")").c_str());
+            connectionApps[connection] = hello.bundleId;
+            providers.connect({hello.app, hello.bundleId, hello.pid},
+                              [this, connection](const std::string& contextId)
+                              { contextServer.sendActivate(connection, contextId); });
+        };
+
+        contextServer.onContexts =
+            [this](int connection, std::vector<protocol::Context> pushed)
+        {
+            auto app = connectionApps.find(connection);
+
+            if (app == connectionApps.end())
+                return;
+
+            auto contexts = std::vector<RudderContext> {};
+
+            for (auto& context: pushed)
+                contexts.push_back({context.id, context.title, context.subtitle, context.url});
+
+            logEvent(("provider contexts: " + app->second + " "
+                      + std::to_string(contexts.size()))
+                         .c_str());
+            providers.setContexts(app->second, std::move(contexts));
+        };
+
+        contextServer.onClosed = [this](int connection)
+        {
+            auto app = connectionApps.find(connection);
+
+            if (app == connectionApps.end())
+                return;
+
+            logEvent(("provider gone: " + app->second).c_str());
+            providers.disconnect(app->second);
+            connectionApps.erase(app);
+        };
+
+        providers.onChanged = [this] { refreshContexts(); };
+
+        if (!contextServer.start())
+            logEvent("contexts socket unavailable");
+    }
+
+    // A provider pushed or went away while the panel is up: every running
+    // app's rows pick up their current contexts and windows.
+    void refreshContexts()
+    {
+        if (!panelVisible)
+            return;
+
+        for (auto& app: running)
+            refreshAppRows(app.id);
     }
 
     // What an app row carries as children: a provider's contexts, then the
@@ -783,9 +854,15 @@ struct RudderApp
     // the same row where it still exists.
     void onWindowsChanged(const std::string& appId)
     {
+        if (panelVisible)
+            refreshAppRows(appId);
+    }
+
+    void refreshAppRows(const std::string& appId)
+    {
         auto app = findRunning(appId);
 
-        if (!panelVisible || !app)
+        if (!app)
             return;
 
         for (auto& item: allItems)
@@ -1027,6 +1104,9 @@ struct RudderApp
     platform::RunningApp origin;
     bool capturingKeys = false;
     std::optional<RudderItem> pendingPreview;
+
+    platform::ContextServer contextServer;
+    std::map<int, std::string> connectionApps;
     std::optional<Threads::Timer> accessibilityPoll;
 
     TrayIcon tray;

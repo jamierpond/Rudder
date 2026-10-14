@@ -219,3 +219,13 @@ auto tWindowsMatchWithApp = test("Ranking/windows match on app name and title") 
     check(ranked.front().appId == "com.googlecode.iterm2");
     check(ranked.front().contextId == "w1");
 };
+
+auto tContextsMatchUrl = test("Ranking/contexts match on their url too") = []
+{
+    auto apps = someApps();
+    apps[1].contexts = {{"tab-1", "Pull requests", "", "https://github.com/pulls"}};
+
+    auto ranked = rankItems(apps, "github pulls");
+
+    check(!ranked.empty() && ranked.front().contextId == "tab-1");
+};

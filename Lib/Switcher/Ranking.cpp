@@ -73,10 +73,11 @@ std::vector<RudderItem> rankItems(const std::vector<RudderItem>& all,
         if (auto score = wim::fuzzyScore(query, app.title))
             scored.push_back({*score, app});
 
-        // A context matches on its app's name and its own title, so "wim
-        // github" finds the GitHub tab in Wim.
+        // A context matches on its app's name, its title and its url, so
+        // "wim github" finds the GitHub tab in Wim.
         for (auto& context: app.contexts)
-            if (auto score = wim::fuzzyScore(query, app.title + " " + context.title))
+            if (auto score = wim::fuzzyScore(
+                    query, app.title + " " + context.title + " " + context.url))
                 scored.push_back({*score, contextRow(app, context)});
     }
 

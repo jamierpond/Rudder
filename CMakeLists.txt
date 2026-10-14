@@ -67,6 +67,7 @@ target_link_libraries(RudderSwitcher PUBLIC emberstore RudderProtocol)
 # tricks. Only macOS is implemented; a Platform-Windows.cpp slots in here.
 if (APPLE)
     add_library(RudderPlatform STATIC
+            Platform/ContextServer-macOS.mm
             Platform/Permissions.mm
             Platform/Platform-macOS.mm
             Platform/QuickWindow-macOS.mm)
@@ -76,12 +77,12 @@ if (APPLE)
             "-framework Carbon")
     # The tamber-web ports (QuickWindow, Permissions) keep their original
     # manual retain/release; Rudder's own platform code is ARC.
-    set_source_files_properties(Platform/Platform-macOS.mm
+    set_source_files_properties(Platform/Platform-macOS.mm Platform/ContextServer-macOS.mm
             PROPERTIES COMPILE_OPTIONS -fobjc-arc)
 endif ()
 
 target_include_directories(RudderPlatform PUBLIC Platform)
-target_link_libraries(RudderPlatform PUBLIC eacp-graphics)
+target_link_libraries(RudderPlatform PUBLIC eacp-graphics RudderProtocol)
 
 # The panel is an eacp UI component tree in one GPUView: no web view, so no
 # second process to keep warm.
