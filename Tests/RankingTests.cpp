@@ -497,3 +497,22 @@ auto tDirNameBeatsSubtitleAndPath =
     check(rankOf(ranked, "pane:sub") == 1);
     check(rankOf(ranked, "pane:path") == 2);
 };
+
+auto tOriginContextsPreview =
+    test("Ranking/the origin app's contexts and windows preview; its row restores") = []
+{
+    auto all = busyCowTerm();
+    auto ranked = rankItems(all, "keychain");
+    auto& pane = ranked[(std::size_t) rankOf(ranked, "pane:keychain")];
+
+    check(previewActionFor(pane, true, "com.eacp.cowterm") == PreviewAction::bringForward);
+    check(previewActionFor(all.front(), true, "com.eacp.cowterm")
+          == PreviewAction::restoreOrigin);
+
+    auto window = RudderItem {};
+    window.kind = "window";
+    window.id = "com.eacp.cowterm/w1";
+    window.appId = "com.eacp.cowterm";
+    window.contextId = "w1";
+    check(previewActionFor(window, true, "com.eacp.cowterm") == PreviewAction::bringForward);
+};

@@ -615,6 +615,7 @@ struct RudderApp
         origin = platform::frontmostApp();
         platform::rememberPreviewOrigin(origin);
         lateRaise.reset();
+        previewUndo.reset(providers.focusedContexts());
 
         panel.reset(showSettings);
         // A failed open's message lasts one summon; a bad favourites file's
@@ -863,7 +864,8 @@ struct RudderApp
         // itself -- that would land late, over wherever the user went next),
         // then the usual preview raises the app.
         if (auto request = contextRequestFor(item, ContextPhase::preview))
-            providers.activate(item.appId, request->contextId, request->raise);
+            if (providers.activate(item.appId, request->contextId, request->raise))
+                previewUndo.previewed(item.appId);
 
         // Whatever raises it -- the provider above, or the preview below --
         // must not land after the panel has closed onto something else.
@@ -1382,9 +1384,15 @@ struct RudderApp
 
         logEvent("cancel");
 
-        // A preview activated another app; hand the screen back as it was.
-        auto previewed = !previewedAppId.empty() && previewedAppId != frontAppId;
+        // A preview activated another app, or another window, pane or tab
+        // of this one (anything but its own app row); hand the screen back as
+        // it was.
+        auto previewed = !previewedId.empty() && previewedId != frontAppId;
         hidePanel();
+
+        // Apps whose contexts were previewed go back to the one they showed.
+        for (auto& [appId, contextId]: previewUndo.undo())
+            providers.activate(appId, contextId, false);
 
         if (!origin.id.empty())
             lateRaise.closedOnto(origin.id, uptime());
@@ -1549,6 +1557,7 @@ struct RudderApp
     bool capturingKeys = false;
     std::optional<RudderItem> pendingPreview;
     LateRaiseGuard lateRaise;
+    PreviewUndo previewUndo;
 
     platform::ContextServer contextServer;
     std::map<int, std::string> connectionApps;

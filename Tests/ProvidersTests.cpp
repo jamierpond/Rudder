@@ -184,3 +184,53 @@ auto tDisconnectDrops = test("Providers/a closed connection drops its contexts")
 
     check(providers.contextsFor("audio.pond.grazer").empty());
 };
+
+namespace
+{
+ProviderHello cowTerm()
+{
+    return {"CowTerm", "com.eacp.cowterm", 77};
+}
+
+RudderContext focusedContext(const std::string& id)
+{
+    auto context = RudderContext {id, id, "", ""};
+    context.focused = true;
+    return context;
+}
+} // namespace
+
+auto tFocusedContexts = test("Providers/each provider's focused context, if it says") = []
+{
+    auto providers = ContextProviders {};
+    providers.connect(grazer(), [](auto&, bool) {});
+    providers.connect(cowTerm(), [](auto&, bool) {});
+    providers.setContexts("audio.pond.grazer", {{"tab-1", "a", "", ""}, focusedContext("tab-2")});
+    providers.setContexts("com.eacp.cowterm", {{"pane:1", "a", "", ""}});
+
+    auto focused = providers.focusedContexts();
+
+    check(focused.size() == 1);
+    check(focused["audio.pond.grazer"] == "tab-2");
+};
+
+auto tEscUndoesPreviews = test("Providers/Esc puts previewed apps back on their context")
+    = []
+{
+    auto undo = PreviewUndo {};
+    undo.reset({{"com.eacp.cowterm", "pane:1"}, {"audio.pond.grazer", "tab-2"}});
+
+    check(undo.undo().empty(), "nothing previewed, nothing to undo");
+
+    undo.previewed("com.eacp.cowterm");
+    undo.previewed("com.eacp.cowterm");
+    undo.previewed("org.no.focus");
+
+    auto back = undo.undo();
+
+    check(back.size() == 1, "once per app; an app with no focused context can't go back");
+    check(back.front() == std::pair<std::string, std::string> {"com.eacp.cowterm", "pane:1"});
+
+    undo.reset({});
+    check(undo.undo().empty(), "a new summon forgets");
+};

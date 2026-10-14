@@ -239,8 +239,11 @@ PreviewAction previewActionFor(const RudderItem& item,
     if (item.kind == "web" || !item.running || !runningNow)
         return PreviewAction::none;
 
-    return item.appId == originAppId ? PreviewAction::restoreOrigin
-                                     : PreviewAction::bringForward;
+    // Only the app row itself shows the screen as it was. Its windows and
+    // its contexts (a CowTerm pane while summoned over CowTerm) move it like
+    // any other app's: to that window, or to that pane or tab.
+    return item.kind == "app" && item.appId == originAppId ? PreviewAction::restoreOrigin
+                                                           : PreviewAction::bringForward;
 }
 
 int initialSelection(const std::vector<RudderItem>& items,

@@ -39,6 +39,10 @@ public:
 
     const std::vector<RudderContext>& contextsFor(const std::string& appId) const;
 
+    // Each provider's focused context (the one it pushed with focused: true),
+    // by app id; providers that marked none are left out.
+    std::map<std::string, std::string> focusedContexts() const;
+
     // Asks the owning app to switch to the context, and with `raise` to
     // bring itself forward too. False when no provider is connected for it
     // (the caller then just activates the app).
@@ -79,6 +83,27 @@ struct ContextRequest
 };
 
 std::optional<ContextRequest> contextRequestFor(const RudderItem& item, ContextPhase phase);
+
+// Esc puts the screen back, and that includes the apps whose contexts were
+// previewed: each one goes back to the context it said was focused when the
+// panel opened. An app that marked none can't be put back and stays on the
+// last previewed context.
+class PreviewUndo
+{
+public:
+    // A summon: the providers' focused contexts at that moment.
+    void reset(std::map<std::string, std::string> focusedAtSummon);
+
+    // A preview switched `appId` to one of its contexts.
+    void previewed(const std::string& appId);
+
+    // {appId, contextId} to send as preview (non-raising) activates.
+    std::vector<std::pair<std::string, std::string>> undo() const;
+
+private:
+    std::map<std::string, std::string> focused;
+    std::set<std::string> moved;
+};
 
 // A preview's activation can land late: a provider built before previews
 // stopped raising still raises its app on one, and macOS holds such an

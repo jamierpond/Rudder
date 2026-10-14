@@ -37,6 +37,21 @@ const std::vector<RudderContext>&
     return found != providers.end() ? found->second.contexts : none;
 }
 
+std::map<std::string, std::string> ContextProviders::focusedContexts() const
+{
+    auto focused = std::map<std::string, std::string> {};
+
+    for (auto& [appId, provider]: providers)
+        for (auto& context: provider.contexts)
+            if (context.focused)
+            {
+                focused[appId] = context.id;
+                break;
+            }
+
+    return focused;
+}
+
 bool ContextProviders::activate(const std::string& appId,
                                 const std::string& contextId,
                                 bool raise) const
@@ -73,6 +88,28 @@ std::optional<ContextRequest> contextRequestFor(const RudderItem& item, ContextP
         return std::nullopt;
 
     return ContextRequest {item.contextId, false};
+}
+
+void PreviewUndo::reset(std::map<std::string, std::string> focusedAtSummon)
+{
+    focused = std::move(focusedAtSummon);
+    moved.clear();
+}
+
+void PreviewUndo::previewed(const std::string& appId)
+{
+    moved.insert(appId);
+}
+
+std::vector<std::pair<std::string, std::string>> PreviewUndo::undo() const
+{
+    auto back = std::vector<std::pair<std::string, std::string>> {};
+
+    for (auto& appId: moved)
+        if (auto found = focused.find(appId); found != focused.end())
+            back.emplace_back(appId, found->second);
+
+    return back;
 }
 
 void LateRaiseGuard::reset()

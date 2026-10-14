@@ -51,6 +51,8 @@ std::vector<ScoredItem> scoreItems(const std::vector<RudderItem>& all,
 // app that is running at the moment of the call; anything else -- a closed
 // app, an app that quit since the list was built, a web row -- is left alone. The
 // preview never launches, opens or activates something that isn't running.
+// restoreOrigin is only for the row of the app the panel was summoned over;
+// that app's windows and contexts preview like any other app's.
 enum class PreviewAction
 {
     none,
