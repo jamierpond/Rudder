@@ -174,12 +174,12 @@ bool ContextServer::start()
     return true;
 }
 
-void ContextServer::sendActivate(int connection, const std::string& contextId)
+void ContextServer::sendActivate(int connection, const std::string& contextId, bool raise)
 {
     if (!native->connections.contains(connection))
         return;
 
-    auto line = protocol::encode(protocol::Activate {contextId});
+    auto line = protocol::encode(protocol::Activate {contextId, raise});
     auto* data = line.data();
     auto left = line.size();
 

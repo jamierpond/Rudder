@@ -376,6 +376,7 @@ struct RudderApp
             if (auto app = findRunning(*target))
             {
                 logEvent(("back -> " + app->name).c_str());
+                lateRaise.closedOnto(app->id, uptime());
                 platform::activateApp(*app);
                 return;
             }
@@ -392,8 +393,21 @@ struct RudderApp
         // commits to counts (openItem records it).
         events.onActivated = [this](const platform::RunningApp& app)
         {
-            if (!panelVisible)
-                recordActivation(app.id);
+            if (panelVisible)
+                return;
+
+            if (auto target = lateRaise.activated(app.id, uptime()))
+            {
+                if (auto back = findRunningNow(*target))
+                {
+                    logEvent(("late raise by " + app.name + "; back to " + back->name)
+                                 .c_str());
+                    platform::activateApp(*back);
+                    return;
+                }
+            }
+
+            recordActivation(app.id);
         };
 
         // Rendering the icon now keeps the next summon free of it.
@@ -590,6 +604,7 @@ struct RudderApp
         quick_window::rememberFrontmostApp();
         origin = platform::frontmostApp();
         platform::rememberPreviewOrigin(origin);
+        lateRaise.reset();
 
         panel.reset(showSettings);
         // A failed open's message lasts one summon; a bad favourites file's
@@ -833,10 +848,15 @@ struct RudderApp
 
         auto start = uptime();
 
-        // A provider's context: the app brings it forward itself, then the
-        // usual preview raises the app.
-        if (item.kind == "context")
-            providers.activate(item.appId, item.contextId);
+        // A provider's context: the app only switches to it (never raising
+        // itself -- that would land late, over wherever the user went next),
+        // then the usual preview raises the app.
+        if (auto request = contextRequestFor(item, ContextPhase::preview))
+            providers.activate(item.appId, request->contextId, request->raise);
+
+        // Whatever raises it -- the provider above, or the preview below --
+        // must not land after the panel has closed onto something else.
+        lateRaise.previewed(item.appId);
 
         // Under key capture the preview can activate for real -- the only
         // way the window gets above everything -- and typing still lands in
@@ -1046,6 +1066,10 @@ struct RudderApp
         quick_window::rememberAppForHandoff(0);
         hidePanel();
 
+        // Whichever app opens it is meant to come forward, a previewed one
+        // included.
+        lateRaise.reset();
+
         if (!favourite.url.empty())
             platform::openUrl(favourite.url, favourite.openWith);
         else if (!favourite.path.empty())
@@ -1068,8 +1092,8 @@ struct RudderApp
             // the older one closing later mustn't drop them.
             providerConnection[hello.bundleId] = connection;
             providers.connect({hello.app, hello.bundleId, hello.pid},
-                              [this, connection](const std::string& contextId)
-                              { contextServer.sendActivate(connection, contextId); });
+                              [this, connection](const std::string& contextId, bool raise)
+                              { contextServer.sendActivate(connection, contextId, raise); });
         };
 
         contextServer.onContexts =
@@ -1264,10 +1288,10 @@ struct RudderApp
             return;
         }
 
-        // A context goes to its provider as `activate {contextId}`; the app
-        // is activated either way so the context's window comes forward.
-        if (item.kind == "context")
-            providers.activate(item.appId, item.contextId);
+        // A context goes to its provider as a raising `activate`; the app is
+        // activated either way so the context's window comes forward.
+        if (auto request = contextRequestFor(item, ContextPhase::commit))
+            providers.activate(item.appId, request->contextId, request->raise);
 
         auto app = findRunningNow(item.appId);
 
@@ -1278,6 +1302,7 @@ struct RudderApp
             logEvent(("launch -> " + item.title).c_str());
             quick_window::rememberAppForHandoff(0);
             hidePanel();
+            lateRaise.closedOnto(item.appId, uptime());
             platform::launchApp(item.path);
             recordActivation(item.appId);
             return;
@@ -1293,6 +1318,7 @@ struct RudderApp
         logEvent(("open -> " + app->name).c_str());
         quick_window::rememberAppForHandoff(app->pid);
         hidePanel();
+        lateRaise.closedOnto(app->id, uptime());
 
         // A window row: that exact window, un-minimised if need be.
         if (item.kind != "window" || !platform::focusWindow(*app, item.contextId, true))
@@ -1312,6 +1338,9 @@ struct RudderApp
         // A preview activated another app; hand the screen back as it was.
         auto previewed = !previewedAppId.empty() && previewedAppId != frontAppId;
         hidePanel();
+
+        if (!origin.id.empty())
+            lateRaise.closedOnto(origin.id, uptime());
 
         if (previewed && !origin.id.empty())
         {
@@ -1472,6 +1501,7 @@ struct RudderApp
     platform::RunningApp origin;
     bool capturingKeys = false;
     std::optional<RudderItem> pendingPreview;
+    LateRaiseGuard lateRaise;
 
     platform::ContextServer contextServer;
     std::map<int, std::string> connectionApps;

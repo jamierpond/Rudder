@@ -25,7 +25,7 @@ public:
     // Removes a stale socket file and starts listening. False if it can't.
     bool start();
 
-    void sendActivate(int connection, const std::string& contextId);
+    void sendActivate(int connection, const std::string& contextId, bool raise);
 
     std::function<void(int connection, const protocol::Hello&)> onHello =
         [](int, auto&) {};
