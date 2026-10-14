@@ -17,6 +17,10 @@ build:
 run:
     node Scripts/run.mjs
 
+[doc('Restart the current build: no compile, keeps its Accessibility grant')]
+relaunch:
+    node Scripts/run.mjs --relaunch
+
 [doc('Delete the build directory')]
 clean:
     node Scripts/clean.mjs
