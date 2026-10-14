@@ -1062,6 +1062,11 @@ void watchInstalledApps(std::function<void(std::vector<InstalledApp>)> onChange)
     rescanInstalledApps();
 }
 
+namespace
+{
+NSString* expandedPath(const std::string& path);
+}
+
 const eacp::Graphics::Image& bundleIcon(const std::string& id, const std::string& path)
 {
     auto& cache = bundleIconCache();
@@ -1070,8 +1075,7 @@ const eacp::Graphics::Image& bundleIcon(const std::string& id, const std::string
         return found->second;
 
     auto& image = cache[id];
-    image = renderIcon(
-        [NSWorkspace.sharedWorkspace iconForFile:[NSString stringWithUTF8String:path.c_str()]]);
+    image = renderIcon([NSWorkspace.sharedWorkspace iconForFile:expandedPath(path)]);
     return image;
 }
 
@@ -1079,6 +1083,61 @@ bool quitApp(const RunningApp& app)
 {
     auto* running = lookUp(app);
     return running != nil && !isSelf(running) && [running terminate];
+}
+
+namespace
+{
+NSURL* urlFor(const std::string& text)
+{
+    return [NSURL URLWithString:[NSString stringWithUTF8String:text.c_str()]];
+}
+
+NSString* expandedPath(const std::string& path)
+{
+    return [NSString stringWithUTF8String:path.c_str()].stringByExpandingTildeInPath;
+}
+} // namespace
+
+bool openUrl(const std::string& url, const std::string& openWith)
+{
+    auto* target = urlFor(url);
+
+    if (target == nil)
+        return false;
+
+    auto* app = openWith.empty()
+                    ? nil
+                    : [NSWorkspace.sharedWorkspace
+                          URLForApplicationWithBundleIdentifier:[NSString stringWithUTF8String:openWith.c_str()]];
+
+    if (app == nil)
+        return [NSWorkspace.sharedWorkspace openURL:target];
+
+    [NSWorkspace.sharedWorkspace openURLs:@[target]
+                     withApplicationAtURL:app
+                            configuration:[NSWorkspaceOpenConfiguration configuration]
+                        completionHandler:nil];
+    return true;
+}
+
+bool openPath(const std::string& path)
+{
+    return [NSWorkspace.sharedWorkspace openURL:[NSURL fileURLWithPath:expandedPath(path)]];
+}
+
+std::string handlerFor(const std::string& url, const std::string& openWith)
+{
+    NSURL* app = nil;
+
+    if (!openWith.empty())
+        app = [NSWorkspace.sharedWorkspace
+            URLForApplicationWithBundleIdentifier:[NSString stringWithUTF8String:openWith.c_str()]];
+
+    if (app == nil)
+        if (auto* target = urlFor(url))
+            app = [NSWorkspace.sharedWorkspace URLForApplicationToOpenURL:target];
+
+    return app != nil ? toString(app.path) : std::string {};
 }
 
 bool launchApp(const std::string& path)

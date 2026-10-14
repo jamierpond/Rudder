@@ -104,11 +104,21 @@ void ResultsList::paint(UI::Graphics& g)
             g.fillRoundedRect(row, 7.f);
         }
 
-        // A closed app reads quieter: half-faded icon and title.
-        if (auto icon = iconRef(item.appId))
+        // A closed app reads quieter: half-faded icon and title. Favourites
+        // without an app of their own (a url, a path) have icons by row id.
+        auto iconKey = item.kind == "favourite" && item.appId.empty() ? item.id : item.appId;
+
+        if (auto icon = iconRef(iconKey))
             g.drawImage(icon, {row.x + 8.f, y + 6.f, 28.f, 28.f}, item.running ? 1.f : 0.55f);
 
-        auto textArea = Rect {row.x + 46.f, y, row.w - 54.f, rowHeight};
+        auto textArea = Rect {row.x + 46.f, y, row.w - 74.f, rowHeight};
+
+        if (item.kind == "favourite")
+        {
+            g.setColour(Color(1.f, 0.84f, 0.43f, 1.f));
+            g.setFontSize(14.f);
+            g.drawText("★", {row.right() - 26.f, y, 20.f, rowHeight}, UI::Justification::Centred);
+        }
 
         g.setColour(item.running ? text : Color(1.f, 1.f, 1.f, 0.7f));
         g.setFontSize(14.f);
@@ -260,8 +270,15 @@ SettingsPage::SettingsPage()
     error.setColour(Color(0.88f, 0.39f, 0.36f, 1.f));
     error.setFontSize(12.f);
 
-    for (auto* caption: {&summonCaption, &backCaption, &quitCaption, &accessibilityCaption})
+    for (auto* caption: {&summonCaption,
+                         &backCaption,
+                         &quitCaption,
+                         &favouriteCaption,
+                         &accessibilityCaption})
         caption->setColour(text);
+
+    favouritesPath.setColour(dimText);
+    favouritesPath.setFontSize(11.f);
 
     addChildren({title,
                  summonCaption,
@@ -270,6 +287,9 @@ SettingsPage::SettingsPage()
                  backChord,
                  quitCaption,
                  quitChord,
+                 favouriteCaption,
+                 favouriteChord,
+                 favouritesPath,
                  error,
                  accessibilityCaption,
                  accessibility,
@@ -293,8 +313,10 @@ void SettingsPage::resized()
     row(summonCaption, summonChord);
     row(backCaption, backChord);
     row(quitCaption, quitChord);
-    error.setBounds(area.removeFromTop(24.f));
+    row(favouriteCaption, favouriteChord);
     row(accessibilityCaption, accessibility);
+    favouritesPath.setBounds(area.removeFromTop(22.f));
+    error.setBounds(area.removeFromTop(22.f));
 
     done.setBounds(area.removeFromBottom(46.f).removeFromRight(90.f).inset(0.f, 9.f));
 }
@@ -434,6 +456,7 @@ PanelView::PanelView()
     settings.summonChord.onClick = [this] { startCapture("summon"); };
     settings.backChord.onClick = [this] { startCapture("back"); };
     settings.quitChord.onClick = [this] { startCapture("quit"); };
+    settings.favouriteChord.onClick = [this] { startCapture("favourite"); };
     settings.accessibility.onClick = [this] { onRequestAccessibility(); };
     settings.done.onClick = [this] { onCloseSettings(); };
 
@@ -494,15 +517,41 @@ void PanelView::setSettings(const SettingsModel& model)
                                                        : model.summonLabel);
     settings.backChord.setText(capturing == "back" ? "Press keys…" : model.backLabel);
     settings.quitChord.setText(capturing == "quit" ? "Press keys…" : model.quitLabel);
+    settings.favouriteChord.setText(capturing == "favourite" ? "Press keys…"
+                                                             : model.favouriteLabel);
+    settings.favouritesPath.setText("Favourites file: " + model.favouritesPath);
     settings.error.setText(model.error);
     settings.accessibility.setText(model.accessibilityTrusted ? "Allowed" : "Allow…");
 
-    root.switcher.footer.setText(model.summonLabel + " switch   ·   " + model.backLabel
-                                 + " back   ·   " + model.quitLabel + " quit app");
+    updateFooter();
     root.switcher.preview.grant.setVisible(!trusted);
 
     if (!settingsOpen())
         root.switcher.query.grabKeyboardFocus();
+}
+
+void PanelView::setFooterError(const std::string& error)
+{
+    footerError = error;
+    updateFooter();
+}
+
+void PanelView::updateFooter()
+{
+    auto& footer = root.switcher.footer;
+    auto& model = settingsModel;
+
+    if (!footerError.empty())
+    {
+        footer.setColour(Color(0.88f, 0.39f, 0.36f, 1.f));
+        footer.setText(footerError);
+        return;
+    }
+
+    footer.setColour(dimText);
+    footer.setText(model.summonLabel + " switch   ·   " + model.backLabel + " back   ·   "
+                   + model.favouriteLabel + " favourite   ·   " + model.quitLabel
+                   + " quit app");
 }
 
 void PanelView::startCapture(const std::string& action)
@@ -634,8 +683,13 @@ void PanelView::keyDown(const Graphics::KeyEvent& event)
     auto quit = parseChord(settingsModel.quit);
     auto& mods = event.modifiers;
 
+    auto favourite = parseChord(settingsModel.favourite);
+
     if (quit && matchesChord(*quit, key, mods.control, mods.alt, mods.shift, mods.command))
         onQuitSelected();
+    else if (favourite
+             && matchesChord(*favourite, key, mods.control, mods.alt, mods.shift, mods.command))
+        onToggleFavourite();
     else if (editQuery(event))
         return;
     else if (key == KeyCode::DownArrow || (ctrl && key == KeyCode::N))

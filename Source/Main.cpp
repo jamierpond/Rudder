@@ -1,4 +1,5 @@
 #include "BackStack.h"
+#include "Favourites.h"
 #include "ContextServer.h"
 #include "Icon.h"
 #include "Keybinding.h"
@@ -12,6 +13,7 @@
 #include <eacp/Core/App/LoginItem.h>
 #include <eacp/UI/UI.h>
 #include <emberstore/AppDatabase.h>
+#include <emberstore/FileWatcher.h>
 
 #include <algorithm>
 #include <chrono>
@@ -19,6 +21,9 @@
 #include <cstdio>
 #include <cstdlib>
 #include <ctime>
+#include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <map>
 #include <optional>
 #include <string>
@@ -77,6 +82,7 @@ struct RudderApp
             });
 
         bindPanel();
+        loadFavourites();
         watchInstalledApps();
         loadKeybindings();
         registerHotKeys();
@@ -123,6 +129,22 @@ struct RudderApp
             if (auto found = installedPaths.find(appId); found != installedPaths.end())
                 return platform::bundleIcon(appId, found->second);
 
+            // A url or path favourite, asked for by its row id: the icon of
+            // what it opens in, or of the file itself.
+            for (auto& item: allItems)
+            {
+                if (item.id != appId || item.kind != "favourite")
+                    continue;
+
+                if (!item.path.empty())
+                    return platform::bundleIcon(appId, item.path);
+
+                auto handler = platform::handlerFor(item.url, item.openWith);
+
+                if (!handler.empty())
+                    return platform::bundleIcon(appId, handler);
+            }
+
             return noIcon;
         };
 
@@ -164,6 +186,8 @@ struct RudderApp
             Threads::callAsync([this, chosen] { openItem(chosen); });
         };
         panel.onQuitSelected = [this] { Threads::callAsync([this] { quitSelected(); }); };
+        panel.onToggleFavourite = [this]
+        { Threads::callAsync([this] { toggleFavouriteSelected(); }); };
 
         panel.onCancel = [this]
         {
@@ -295,7 +319,8 @@ struct RudderApp
 
         for (auto& [name, bound]: {std::pair {"summon", &bindings.summon},
                                    std::pair {"back", &bindings.back},
-                                   std::pair {"quit", &bindings.quit}})
+                                   std::pair {"quit", &bindings.quit},
+                                   std::pair {"favourite", &bindings.favourite}})
         {
             if (action != name && *bound == canonical)
             {
@@ -304,9 +329,9 @@ struct RudderApp
             }
         }
 
-        // Quit only acts inside the panel, where Rudder has the keyboard; the
-        // two global hotkeys must not be ones macOS keeps for itself.
-        if (action != "quit"
+        // Quit and favourite only act inside the panel, where Rudder has the
+        // keyboard; the two global hotkeys must not be ones macOS keeps.
+        if (action != "quit" && action != "favourite"
             && platform::isSystemShortcut(*keyCodeFor(chord->key), modifiersOf(*chord)))
         {
             settingsError = "macOS already uses " + displayChord(*chord)
@@ -320,6 +345,8 @@ struct RudderApp
             bindings.back = canonical;
         else if (action == "quit")
             bindings.quit = canonical;
+        else if (action == "favourite")
+            bindings.favourite = canonical;
 
         settingsStore.doc(keybindingsDoc).set(bindings);
     }
@@ -662,6 +689,9 @@ struct RudderApp
                                      { return mru.lastUsed(id); });
         allItems = mergeInstalled(std::move(allItems), closed);
 
+        auto starred = favouriteItems(favourites);
+        allItems.insert(allItems.begin(), starred.begin(), starred.end());
+
         filtered = rankItems(allItems, query);
         selected = initialSelection(filtered, query, frontAppId);
         pendingPreview.reset();
@@ -719,9 +749,20 @@ struct RudderApp
         if (!item.running)
             return;
 
+        // A favourite previews only what is already open: the tab showing its
+        // url, or its app if running. Anything else stays unopened.
+        auto target = item.kind == "favourite" ? openTargetFor(item)
+                                               : std::optional<RudderItem> {item};
+
+        if (!target)
+            return;
+
+        target->id = item.id;
+        previewedAppId = target->appId;
+
         // After the next frame: the list shows the keystroke first, and the
         // activation (an AX round trip to the target) follows at once.
-        pendingPreview = item;
+        pendingPreview = *target;
         panel.repaint();
     }
 
@@ -766,6 +807,141 @@ struct RudderApp
         publishResults();
     }
 
+    // --- Favourites ---------------------------------------------------------------
+
+    // favourites.json beside the rest of Rudder's store: one pretty-printed
+    // document, Rudder's own writes in a stable (sorted-key) order, and meant
+    // to be edited by hand or by an agent. Edits from outside are picked up
+    // as they land; a bad one is reported in the footer and the last good
+    // list stays.
+    eacp::FilePath favouritesPath() const
+    {
+        return durable.directory() / "favourites.json";
+    }
+
+    void loadFavourites()
+    {
+        auto path = favouritesPath();
+        std::fprintf(stderr, "Rudder favourites: %s\n", path.str().c_str());
+
+        if (!std::filesystem::exists(path.str()))
+            favouritesDocument.set(favourites);
+
+        reloadFavourites();
+        favouritesWatcher.emplace(path, [this] { reloadFavourites(); });
+    }
+
+    void reloadFavourites()
+    {
+        auto file = std::ifstream {favouritesPath().str()};
+
+        if (!file)
+            return;
+
+        auto text = std::string {std::istreambuf_iterator<char> {file}, {}};
+        auto result = parseFavourites(text);
+
+        if (!result.list)
+        {
+            logEvent(("favourites: " + result.error).c_str());
+            panel.setFooterError(result.error);
+            return;
+        }
+
+        favourites = std::move(*result.list);
+        panel.setFooterError({});
+        logEvent(("favourites: " + std::to_string(favourites.favourites.size())).c_str());
+
+        if (panelVisible)
+            rebuildFavouriteRows();
+    }
+
+    // The favourite rows changed under an open panel: swap them in, keep the
+    // query.
+    void rebuildFavouriteRows()
+    {
+        std::erase_if(allItems,
+                      [](const RudderItem& item) { return item.kind == "favourite"; });
+
+        auto starred = favouriteItems(favourites);
+        allItems.insert(allItems.begin(), starred.begin(), starred.end());
+
+        filtered = rankItems(allItems, query);
+        selected = std::clamp(selected, 0, std::max((int) filtered.size() - 1, 0));
+        publishResults();
+    }
+
+    // The favourite binding: star the selection, or unstar a favourite.
+    void toggleFavouriteSelected()
+    {
+        if (!panelVisible || filtered.empty())
+            return;
+
+        auto favourite = favouriteFor(filtered[(std::size_t) selected]);
+
+        if (!favourite)
+            return;
+
+        auto added = toggleFavourite(favourites, *favourite);
+        logEvent(((added ? "favourited " : "unfavourited ") + favourite->title).c_str());
+        favouritesDocument.set(favourites);
+        rebuildFavouriteRows();
+    }
+
+    // What a favourite stands for among things already open: the tab showing
+    // its url, or its app's row if the app is running.
+    std::optional<RudderItem> openTargetFor(const RudderItem& favourite)
+    {
+        if (!favourite.url.empty())
+            return contextForUrl(allItems, favourite.url);
+
+        if (!favourite.appId.empty())
+            if (auto app = findRunningNow(favourite.appId))
+            {
+                auto row = RudderItem {};
+                row.id = row.appId = app->id;
+                row.title = app->name;
+                return row;
+            }
+
+        return std::nullopt;
+    }
+
+    void openFavourite(const RudderItem& favourite)
+    {
+        // An open tab with the url (or the running app) is reused, not
+        // duplicated.
+        if (auto open = openTargetFor(favourite))
+        {
+            openItem(*open);
+            return;
+        }
+
+        if (!favourite.appId.empty())
+        {
+            if (auto path = installedPaths.find(favourite.appId); path != installedPaths.end())
+            {
+                auto closed = RudderItem {};
+                closed.id = closed.appId = favourite.appId;
+                closed.title = favourite.title;
+                closed.running = false;
+                closed.path = path->second;
+                openItem(closed);
+            }
+
+            return;
+        }
+
+        logEvent(("open favourite -> " + favourite.title).c_str());
+        quick_window::rememberAppForHandoff(0);
+        hidePanel();
+
+        if (!favourite.url.empty())
+            platform::openUrl(favourite.url, favourite.openWith);
+        else if (!favourite.path.empty())
+            platform::openPath(favourite.path);
+    }
+
     // --- Contexts ---------------------------------------------------------------
 
     // Provider apps (Wim's tabs, ...) connect over the contexts socket. The
@@ -793,7 +969,12 @@ struct RudderApp
             auto contexts = std::vector<RudderContext> {};
 
             for (auto& context: pushed)
-                contexts.push_back({context.id, context.title, context.subtitle, context.url});
+            {
+                auto converted =
+                    RudderContext {context.id, context.title, context.subtitle, context.url};
+                converted.open = context.open;
+                contexts.push_back(std::move(converted));
+            }
 
             logEvent(("provider contexts: " + app->second + " "
                       + std::to_string(contexts.size()))
@@ -957,6 +1138,12 @@ struct RudderApp
         if (!panelVisible)
             return;
 
+        if (item.kind == "favourite")
+        {
+            openFavourite(item);
+            return;
+        }
+
         // A context goes to its provider as `activate {contextId}`; the app
         // is activated either way so the context's window comes forward.
         if (item.kind == "context")
@@ -1029,7 +1216,10 @@ struct RudderApp
         panel.setSettings({label(bindings.summon),
                            label(bindings.back),
                            label(bindings.quit),
+                           label(bindings.favourite),
                            bindings.quit,
+                           bindings.favourite,
+                           favouritesPath().str(),
                            platform::accessibilityTrusted(false),
                            settingsError});
     }
@@ -1077,6 +1267,10 @@ struct RudderApp
     emberstore::Collection<Keybindings> settingsStore {
         durable.collection<Keybindings>("settings")};
     wim::MruStore mru {atomic};
+    emberstore::Document<FavouriteList> favouritesDocument {
+        durable.directory() / "favourites.json"};
+    FavouriteList favourites;
+    std::optional<emberstore::FileWatcher> favouritesWatcher;
     BackStack backStack;
     ContextProviders providers;
     Keybindings bindings;
@@ -1152,7 +1346,8 @@ int snapshot(const std::string& directory)
 
             panel.setBounds({0.f, 0.f, 640.f, 420.f});
             panel.resized();
-            panel.setSettings({"⌥Space", "⌥`", "⌃Q", "control+q", true, {}});
+            panel.setSettings(
+                {"⌥Space", "⌥`", "⌃Q", "⌘D", "control+q", "command+d", "", true, {}});
 
             auto selected = items.size() > 1 ? 1 : 0;
             auto windows = selected < (int) apps.size()

@@ -146,6 +146,16 @@ const eacp::Graphics::Image& bundleIcon(const std::string& id, const std::string
 // unsaved-changes dialog) and stay running. Never a force quit.
 bool quitApp(const RunningApp& app);
 
+// Opens a url in the app with bundle id `openWith`, or the default handler.
+bool openUrl(const std::string& url, const std::string& openWith);
+
+// Opens a file or folder (a leading ~ is the home folder) in its default
+// app, Finder for a folder.
+bool openPath(const std::string& path);
+
+// The bundle path of the app a url would open in, for its icon.
+std::string handlerFor(const std::string& url, const std::string& openWith);
+
 // Launches (and activates) the app at `path`.
 bool launchApp(const std::string& path);
 

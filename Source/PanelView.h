@@ -29,9 +29,14 @@ struct SettingsModel
     std::string summonLabel;
     std::string backLabel;
     std::string quitLabel;
+    std::string favouriteLabel;
 
-    // Canonical chord text: the panel matches quit itself.
+    // Canonical chord text: the panel matches these itself.
     std::string quit;
+    std::string favourite;
+
+    // Where favourites.json lives, for anyone (or any agent) editing it.
+    std::string favouritesPath;
 
     bool accessibilityTrusted = false;
     std::string error;
@@ -126,6 +131,9 @@ public:
     eacp::UI::Button backChord;
     eacp::UI::Label quitCaption {"Quit the selected app (in the panel)"};
     eacp::UI::Button quitChord;
+    eacp::UI::Label favouriteCaption {"Favourite / unfavourite the selection"};
+    eacp::UI::Button favouriteChord;
+    eacp::UI::Label favouritesPath;
     eacp::UI::Label error;
     eacp::UI::Label accessibilityCaption {"Live preview (Accessibility)"};
     eacp::UI::Button accessibility {"Allow…"};
@@ -219,6 +227,13 @@ public:
     std::function<void(int)> onChoose = [](int) {};
     std::function<void()> onCancel = [] {};
 
+    // The favourite binding (⌘D by default): star the selection, or unstar a
+    // favourite.
+    std::function<void()> onToggleFavourite = [] {};
+
+    // A problem with favourites.json, shown in the footer until it's fixed.
+    void setFooterError(const std::string& error);
+
     // The quit binding (⌃Q by default): quit the selected app, never Rudder.
     // ⌘Q does nothing in the panel.
     std::function<void()> onQuitSelected = [] {};
@@ -243,7 +258,10 @@ private:
     void showPage(bool showSettings);
 
     PanelRoot root;
+    void updateFooter();
+
     SettingsModel settingsModel;
+    std::string footerError;
     std::string capturing;
     bool trusted = false;
 };
