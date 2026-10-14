@@ -54,7 +54,7 @@ struct Keybindings
 {
     std::string summon = "option+space";
     std::string back = "option+`";
-    std::string quit = "command+q";
+    std::string quit = "control+q";
 
     MIRO_REFLECT(summon, back, quit)
 };

@@ -87,10 +87,11 @@ auto tMatches = test("Keybinding/a press matches only its exact chord") = []
 {
     auto quit = *parseChord(Keybindings {}.quit);
 
-    check(matchesChord(quit, 0x0C, false, false, false, true));
-    check(!matchesChord(quit, 0x0C, false, false, true, true));
-    check(!matchesChord(quit, 0x0C, false, false, false, false));
-    check(!matchesChord(quit, 0x0D, false, false, false, true));
+    // control+q by default; ⌘Q is not it.
+    check(matchesChord(quit, 0x0C, true, false, false, false));
+    check(!matchesChord(quit, 0x0C, true, false, true, false));
+    check(!matchesChord(quit, 0x0C, false, false, false, true));
+    check(!matchesChord(quit, 0x0D, true, false, false, false));
 };
 
 auto tOldDocumentsGetQuit = test("Keybinding/a document from before quit gets the default")
@@ -110,5 +111,5 @@ auto tOldDocumentsGetQuit = test("Keybinding/a document from before quit gets th
 
     check(stored.has_value());
     check(stored->summon == "control+space");
-    check(stored->quit == "command+q");
+    check(stored->quit == "control+q");
 };

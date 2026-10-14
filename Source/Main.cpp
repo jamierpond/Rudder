@@ -752,7 +752,7 @@ struct RudderApp
         publishResults();
     }
 
-    // ⌘Q: quit the selection, cmd-tab style. The panel stays up; the row
+    // The quit binding (⌃Q by default): quit the selection, cmd-tab style. The panel stays up; the row
     // turns "not running" when the app is actually gone (markQuit), so an app
     // that refuses -- an unsaved-changes dialog -- simply stays running.
     void quitSelected()
@@ -1010,7 +1010,7 @@ int snapshot(const std::string& directory)
 
             panel.setBounds({0.f, 0.f, 640.f, 420.f});
             panel.resized();
-            panel.setSettings({"⌥Space", "⌥`", "⌘Q", "command+q", true, {}});
+            panel.setSettings({"⌥Space", "⌥`", "⌃Q", "control+q", true, {}});
 
             auto selected = items.size() > 1 ? 1 : 0;
             auto windows = selected < (int) apps.size()

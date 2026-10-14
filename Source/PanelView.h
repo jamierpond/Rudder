@@ -219,7 +219,8 @@ public:
     std::function<void(int)> onChoose = [](int) {};
     std::function<void()> onCancel = [] {};
 
-    // The quit binding (⌘Q by default): quit the selected app, never Rudder.
+    // The quit binding (⌃Q by default): quit the selected app, never Rudder.
+    // ⌘Q does nothing in the panel.
     std::function<void()> onQuitSelected = [] {};
 
     // Settings: recording starts (old hotkeys must stop firing), a chord was
