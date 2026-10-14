@@ -50,13 +50,14 @@ target_link_libraries(RudderSwitcher PUBLIC emberstore)
 # tricks. Only macOS is implemented; a Platform-Windows.cpp slots in here.
 if (APPLE)
     add_library(RudderPlatform STATIC
+            Platform/Permissions.mm
             Platform/Platform-macOS.mm
             Platform/QuickWindow-macOS.mm)
     target_link_libraries(RudderPlatform PRIVATE
             "-framework AppKit"
             "-framework ApplicationServices")
-    # The QuickWindow port keeps its original manual retain/release; the rest
-    # of the platform layer is ARC.
+    # The tamber-web ports (QuickWindow, Permissions) keep their original
+    # manual retain/release; Rudder's own platform code is ARC.
     set_source_files_properties(Platform/Platform-macOS.mm
             PROPERTIES COMPILE_OPTIONS -fobjc-arc)
 endif ()
@@ -67,6 +68,7 @@ target_link_libraries(RudderPlatform PUBLIC eacp-graphics)
 # The panel is an eacp UI component tree in one GPUView: no web view, so no
 # second process to keep warm.
 add_executable(Rudder
+        Source/Icon.cpp
         Source/Main.cpp
         Source/PanelView.cpp)
 

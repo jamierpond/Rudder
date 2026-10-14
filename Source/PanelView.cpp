@@ -1,4 +1,5 @@
 #include "PanelView.h"
+#include "Icon.h"
 #include "Keybinding.h"
 
 #include <algorithm>
@@ -146,7 +147,8 @@ bool ResultsList::mouseWheelMove(const UI::MouseEvent& event)
 
 PreviewPane::PreviewPane()
 {
-    addChildComponent(grant);
+    addAndMakeVisible(grant);
+    grant.setVisible(false);
 }
 
 void PreviewPane::setPreview(const RudderItem* item,
@@ -298,16 +300,107 @@ void SettingsPage::paint(UI::Graphics& g)
     g.fillRect({0.f, queryHeight - 1.f, getWidth(), 1.f});
 }
 
+DragTile::DragTile()
+{
+    setInterceptsMouseClicks(true);
+}
+
+void DragTile::paint(UI::Graphics& g)
+{
+    auto bounds = getLocalBounds();
+
+    g.setColour(Color(1.f, 1.f, 1.f, 0.04f));
+    g.fillRoundedRect(bounds, 14.f);
+    g.setColour(Color(0.39f, 0.83f, 0.49f, 0.8f));
+    g.drawRoundedRect(bounds.inset(0.5f), 14.f, 1.f);
+
+    if (icon == nullptr)
+        if (auto* host = getHost())
+            icon = host->getImageCache().get(makeAppIcon(128));
+
+    if (icon != nullptr)
+        g.drawImage(icon, {(bounds.w - 64.f) / 2.f, 14.f, 64.f, 64.f});
+
+    g.setColour(text);
+    g.setFontSize(12.f);
+    g.drawText("Drag Rudder into the list",
+               {0.f, 84.f, bounds.w, 20.f},
+               UI::Justification::Centred);
+}
+
+void DragTile::mouseDown(const UI::MouseEvent&)
+{
+    onDragStart();
+}
+
+AccessibilityOverlay::AccessibilityOverlay()
+{
+    setInterceptsMouseClicks(true);
+    addChildren({tile, openSettings});
+}
+
+Rect AccessibilityOverlay::card() const
+{
+    auto bounds = getLocalBounds();
+    return {(bounds.w - 500.f) / 2.f, (bounds.h - 364.f) / 2.f, 500.f, 364.f};
+}
+
+void AccessibilityOverlay::resized()
+{
+    auto area = card();
+    tile.setBounds({area.x + (area.w - 220.f) / 2.f, area.y + 92.f, 220.f, 112.f});
+    openSettings.setBounds(
+        {area.x + (area.w - 220.f) / 2.f, area.bottom() - 52.f, 220.f, 28.f});
+}
+
+void AccessibilityOverlay::paint(UI::Graphics& g)
+{
+    g.fillAll(Color(0.f, 0.f, 0.f, 0.5f));
+
+    auto area = card();
+    g.setColour(Color(0.15f, 0.15f, 0.18f, 1.f));
+    g.fillRoundedRect(area, 22.f);
+
+    auto line = [&](const char* words, float y, float size, Color colour)
+    {
+        g.setFontSize(size);
+        g.setColour(colour);
+        g.drawText(words, {area.x, area.y + y, area.w, size + 6.f}, UI::Justification::Centred);
+    };
+
+    g.setFontStyle(Text::FontStyle::Bold);
+    line("Unlock Rudder", 22.f, 19.f, text);
+    g.setFontStyle(Text::FontStyle::Regular);
+    line("Rudder is running, but it needs macOS Accessibility", 54.f, 12.f, dimText);
+    line("access to preview and switch to other apps' windows.", 70.f, 12.f, dimText);
+
+    auto steps = area.y + 216.f;
+    auto step = [&](const char* words, float y)
+    {
+        g.setFontSize(11.f);
+        g.setColour(dimText);
+        g.drawText(words, {area.x + 36.f, steps + y, area.w - 60.f, 16.f});
+    };
+
+    step("1. Start dragging the icon: System Settings opens at", 0.f);
+    step("    Privacy & Security › Accessibility.", 15.f);
+    step("2. Drop it into the list, or press + there and choose Rudder.", 32.f);
+    step("3. Turn Rudder on. This goes away by itself.", 49.f);
+}
+
 PanelRoot::PanelRoot()
 {
-    addAndMakeVisible(switcher);
-    addChildComponent(settings);
+    // eacp components start visible, so the two that wait are hidden here.
+    addChildren({switcher, settings, overlay});
+    settings.setVisible(false);
+    overlay.setVisible(false);
 }
 
 void PanelRoot::resized()
 {
     switcher.setBounds(getLocalBounds());
     settings.setBounds(getLocalBounds());
+    overlay.setBounds(getLocalBounds());
 }
 
 void PanelRoot::paint(UI::Graphics& g)
@@ -337,6 +430,21 @@ PanelView::PanelView()
     settings.backChord.onClick = [this] { startCapture("back"); };
     settings.accessibility.onClick = [this] { onRequestAccessibility(); };
     settings.done.onClick = [this] { onCloseSettings(); };
+
+    root.overlay.tile.onDragStart = [this] { onUnlockDrag(); };
+    root.overlay.openSettings.onClick = [this] { onRequestAccessibility(); };
+}
+
+void PanelView::setAccessibilityGate(bool show)
+{
+    if (root.overlay.isVisible() != show)
+        root.overlay.setVisible(show);
+
+    // Typing into the switcher behind the cover would preview nothing.
+    if (show)
+        root.switcher.query.giveAwayKeyboardFocus();
+    else if (!settingsOpen())
+        root.switcher.query.grabKeyboardFocus();
 }
 
 void PanelView::reset(bool showSettings)
@@ -426,9 +534,17 @@ void PanelView::recordChord(const Graphics::KeyEvent& event)
     onCaptureEnd(action, serialiseChord(chord));
 }
 
+void PanelView::render(GPU::Frame& frame)
+{
+    ComponentHost::render(frame);
+    onFrame();
+}
+
 void PanelView::keyDown(const Graphics::KeyEvent& event)
 {
     using namespace Graphics;
+
+    lastKeyTime = event.timestamp;
 
     if (!capturing.empty())
     {
@@ -438,6 +554,14 @@ void PanelView::keyDown(const Graphics::KeyEvent& event)
 
     auto ctrl = event.modifiers.control;
     auto key = event.keyCode;
+
+    if (accessibilityGateShown())
+    {
+        if (key == KeyCode::Escape)
+            onCancel();
+
+        return;
+    }
 
     if (settingsOpen())
     {

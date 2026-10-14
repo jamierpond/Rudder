@@ -125,6 +125,40 @@ public:
     eacp::UI::Button done {"Done"};
 };
 
+// The app's icon in a dashed-looking tile: pressing it starts an OS drag of
+// Rudder.app, which is what the Accessibility list accepts.
+class DragTile final : public eacp::UI::Component
+{
+public:
+    DragTile();
+
+    void paint(eacp::UI::Graphics& g) override;
+    void mouseDown(const eacp::UI::MouseEvent& event) override;
+
+    std::function<void()> onDragStart = [] {};
+
+private:
+    eacp::UI::ImageRef icon;
+};
+
+// Shown over the switcher while Accessibility isn't granted (tamber-web's
+// AccessibilityPermissionGate, drawn natively): a translucent cover, a card
+// explaining the grant, the draggable app icon and a button for the pane.
+class AccessibilityOverlay final : public eacp::UI::Component
+{
+public:
+    AccessibilityOverlay();
+
+    void paint(eacp::UI::Graphics& g) override;
+    void resized() override;
+
+    DragTile tile;
+    eacp::UI::Button openSettings {"Open Accessibility settings"};
+
+private:
+    eacp::Graphics::Rect card() const;
+};
+
 class PanelRoot final : public eacp::UI::Component
 {
 public:
@@ -135,6 +169,7 @@ public:
 
     SwitcherPage switcher;
     SettingsPage settings;
+    AccessibilityOverlay overlay;
 };
 
 // The panel's content view: one ComponentHost (a GPUView) drawing the whole
@@ -149,6 +184,10 @@ public:
     void reset(bool showSettings);
     bool settingsOpen() const { return root.settings.isVisible(); }
 
+    // The unlock overlay over everything, while the grant is missing.
+    void setAccessibilityGate(bool show);
+    bool accessibilityGateShown() const { return root.overlay.isVisible(); }
+
     void setModel(const PanelModel& model);
     void setSettings(const SettingsModel& model);
 
@@ -156,6 +195,14 @@ public:
     // accepts, Esc cancels -- the text field would otherwise take the arrows.
     // While a chord is being recorded every key goes to the recorder.
     void keyDown(const eacp::Graphics::KeyEvent& event) override;
+
+    // After the host has drawn a frame. For latency tracing only.
+    void render(eacp::GPU::Frame& frame) override;
+    std::function<void()> onFrame = [] {};
+
+    // The uptime (seconds) of the last key event that reached the panel, for
+    // keystroke-to-frame tracing.
+    double lastKeyTime = 0.0;
 
     IconLookup iconFor;
 
@@ -171,6 +218,9 @@ public:
     std::function<void(const std::string& action, const std::string& chord)>
         onCaptureEnd = [](auto&, auto&) {};
     std::function<void()> onRequestAccessibility = [] {};
+
+    // The overlay's icon was pressed: start the bundle drag, open the pane.
+    std::function<void()> onUnlockDrag = [] {};
     std::function<void()> onCloseSettings = [] {};
 
 private:

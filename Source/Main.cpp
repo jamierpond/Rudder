@@ -1,4 +1,5 @@
 #include "BackStack.h"
+#include "Icon.h"
 #include "Keybinding.h"
 #include "Mru.h"
 #include "PanelView.h"
@@ -16,6 +17,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <ctime>
 #include <optional>
 #include <string>
 #include <utility>
@@ -38,42 +40,6 @@ void logEvent(const char* message)
     using namespace std::chrono;
     auto ms = duration_cast<milliseconds>(steady_clock::now().time_since_epoch());
     std::fprintf(stderr, "[rudder %lld] %s\n", (long long) ms.count() % 100000, message);
-}
-
-// A helm-ish ring with a hub, drawn so the app needs no asset file. The menu
-// bar renders it as a template (alpha only, system tinted).
-Image makeTrayIcon()
-{
-    constexpr int size = 36;
-    auto image = Image(size, size);
-
-    auto center = (size - 1) / 2.f;
-
-    for (auto y = 0; y < size; ++y)
-    {
-        for (auto x = 0; x < size; ++x)
-        {
-            auto dx = (float) x - center;
-            auto dy = (float) y - center;
-            auto distance = std::sqrt(dx * dx + dy * dy);
-
-            auto ring = std::clamp(2.2f - std::abs(distance - 12.f), 0.f, 1.f);
-            auto hub = std::clamp(4.5f - distance, 0.f, 1.f);
-
-            // Four spokes, out past the ring like a ship's wheel's handles.
-            auto spoke = 0.f;
-
-            if (distance > 4.f && distance < 17.f)
-                spoke = std::clamp(1.4f - std::min(std::abs(dx), std::abs(dy)), 0.f, 1.f);
-
-            auto coverage = std::max({ring, hub, spoke});
-
-            if (coverage > 0.f)
-                image.set(x, y, Color(0.f, 0.f, 0.f, coverage));
-        }
-    }
-
-    return image;
 }
 
 ModifierKeys modifiersOf(const Chord& chord)
@@ -101,7 +67,12 @@ struct RudderApp
         // Opening Rudder.app again while it runs (Finder, Spotlight) arrives
         // as a reopen: summon the panel. quick_window swallows the reopens its
         // own activation escalation causes.
-        quick_window::installReopenHandler([this] { reveal(false); });
+        quick_window::installReopenHandler(
+            [this]
+            {
+                logEvent("reopen");
+                reveal(false);
+            });
 
         bindPanel();
         loadKeybindings();
@@ -126,7 +97,11 @@ struct RudderApp
             platform::appIcon(app);
 
         publishSettings();
-        platform::accessibilityTrusted(true);
+
+        // As Tamby does: a launch without the grant opens the pane for it.
+        if (!platform::accessibilityTrusted(false))
+            platform::openAccessibilitySettings();
+
         platform::announceStarted();
     }
 
@@ -145,6 +120,26 @@ struct RudderApp
         };
 
         panel.onQueryChange = [this](const std::string& text) { setQuery(text); };
+
+        // RUDDER_LOG latency trace: hotkey to the first frame on screen, and
+        // each key event (by its OS timestamp) to the frame that shows it.
+        panel.onFrame = [this]
+        {
+            auto now = uptime();
+
+            if (hotkeyTime > 0.0)
+            {
+                logEvent(("hotkey -> first frame " + millis(now - hotkeyTime)).c_str());
+                hotkeyTime = 0.0;
+                snapshotIfAsked();
+            }
+
+            if (panel.lastKeyTime > 0.0)
+            {
+                logEvent(("key -> frame " + millis(now - panel.lastKeyTime)).c_str());
+                panel.lastKeyTime = 0.0;
+            }
+        };
         panel.onMove = [this](int delta) { moveSelection(delta); };
         panel.onAccept = [this] { Threads::callAsync([this] { activateSelection(); }); };
         panel.onChoose = [this](int index)
@@ -155,7 +150,11 @@ struct RudderApp
             auto chosen = filtered[(std::size_t) index];
             Threads::callAsync([this, chosen] { openItem(chosen); });
         };
-        panel.onCancel = [this] { Threads::callAsync([this] { cancel(); }); };
+        panel.onCancel = [this]
+        {
+            logEvent("panel: escape");
+            Threads::callAsync([this] { cancel(); });
+        };
 
         // While a chord is recorded the old ones must not fire -- pressing
         // ⌥Space to rebind it would otherwise close the panel.
@@ -171,10 +170,13 @@ struct RudderApp
             publishSettings();
         };
 
-        panel.onRequestAccessibility = [this]
+        panel.onRequestAccessibility = [] { platform::openAccessibilitySettings(); };
+
+        // Starting the drag opens the pane, so the list is there to drop on.
+        panel.onUnlockDrag = [this]
         {
-            platform::accessibilityTrusted(true);
-            publishSettings();
+            platform::startFileDrag(panel, platform::appBundlePath());
+            platform::openAccessibilitySettings();
         };
 
         panel.onCloseSettings = [this]
@@ -340,6 +342,9 @@ struct RudderApp
 
     void togglePanel()
     {
+        logEvent("summon hotkey");
+        hotkeyTime = uptime();
+
         if (panelVisible)
             cancel();
         else
@@ -352,7 +357,8 @@ struct RudderApp
 
         // BEFORE the panel takes key: that app gets focus back on the way out.
         quick_window::rememberFrontmostApp();
-        platform::rememberPreviewOrigin();
+        origin = platform::frontmostApp();
+        platform::rememberPreviewOrigin(origin);
 
         panel.reset(showSettings);
         resetPanel();
@@ -371,6 +377,7 @@ struct RudderApp
         quick_window::activateForPanel();
 
         panel.focus();
+        syncAccessibilityGate(true);
         logEvent("reveal: shown");
     }
 
@@ -382,6 +389,7 @@ struct RudderApp
         logEvent("hidePanel: begin");
         panelVisible = false;
         setCapturing(false);
+        syncAccessibilityGate(false);
         previewedId.clear();
 
         // Deferred on macOS: hiding a key panel while the app is active
@@ -400,9 +408,53 @@ struct RudderApp
                                              });
     }
 
+    // The unlock overlay shows while the panel is up without the grant. macOS
+    // has no notification for a TCC change, so the grant is checked once a
+    // second -- but only while the overlay is on screen, so an idle Rudder
+    // never wakes for it. `opening` is a fresh summon: like Tamby's gate, it
+    // opens the pane right away.
+    void syncAccessibilityGate(bool opening)
+    {
+        auto trusted = platform::accessibilityTrusted(false);
+        auto gate = panelVisible && !trusted;
+
+        panel.setAccessibilityGate(gate);
+
+        if (!gate)
+        {
+            accessibilityPoll.reset();
+            return;
+        }
+
+        if (opening)
+            platform::openAccessibilitySettings();
+
+        if (!accessibilityPoll)
+            accessibilityPoll.emplace([this] { checkAccessibility(); }, 1);
+    }
+
+    void checkAccessibility()
+    {
+        if (!platform::accessibilityTrusted(false))
+            return;
+
+        logEvent("accessibility granted");
+
+        // Live preview works from here on: capture the origin window that
+        // couldn't be read without the grant, and lift the overlay.
+        platform::rememberPreviewOrigin(origin);
+        syncAccessibilityGate(false);
+        publishSettings();
+        panel.focus();
+    }
+
     void onPanelActivationChanged(bool isKey)
     {
-        if (isKey || !window.isVisible())
+        logEvent(isKey ? "panel became key" : "panel lost key");
+
+        // The unlock flow sends the user to System Settings and back; the
+        // panel waits for them instead of hiding.
+        if (isKey || !window.isVisible() || panel.accessibilityGateShown())
             return;
 
         Threads::callAsync(
@@ -417,7 +469,7 @@ struct RudderApp
     // with its contexts attached, selection on the previous app.
     void resetPanel()
     {
-        frontAppId = platform::frontmostApp().id;
+        frontAppId = origin.id;
         running = platform::runningApps();
         query.clear();
         allItems.clear();
@@ -472,11 +524,12 @@ struct RudderApp
         publishResults();
     }
 
-    // Raise the selection's window behind the panel as it changes, without
-    // activating it -- the panel keeps key, so typing carries on. Only on a
-    // real change: re-raising the same window per keystroke is wasted IPC.
-    // The app the panel was summoned over is the screen as it was, so it
-    // previews by restoring the origin window.
+    // Wim's palette preview, for windows: whenever the results change -- a
+    // keystroke or an arrow -- the selection's front window is raised behind
+    // the panel at once, without activating its app, so the panel keeps key
+    // and typing carries on. Skipped when the selection didn't change. The
+    // app the panel was summoned over is the screen as it was, so it previews
+    // by restoring the origin window.
     void previewSelection()
     {
         if (filtered.empty())
@@ -496,6 +549,8 @@ struct RudderApp
         if (!app)
             return;
 
+        auto start = uptime();
+
         if (app->id == frontAppId)
         {
             platform::restorePreviewOrigin();
@@ -504,7 +559,25 @@ struct RudderApp
         else
             previewRaised = platform::previewApp(*app);
 
-        previewWindows = platform::windowTitles(*app);
+        logEvent(("raise " + app->name + " " + millis(uptime() - start)
+                  + (previewRaised ? "" : " (not raised)"))
+                     .c_str());
+
+        // The window titles are a walk of the app's windows, so they follow a
+        // turn later instead of holding up the raise and the list's frame.
+        auto id = app->id;
+        Threads::callAsync(
+            [this, id]
+            {
+                if (!panelVisible || previewedId != id)
+                    return;
+
+                if (auto target = findRunning(id))
+                {
+                    previewWindows = platform::windowTitles(*target);
+                    publishResults();
+                }
+            });
     }
 
     // Enter: open whatever is selected -- with no query that's the previous
@@ -547,6 +620,8 @@ struct RudderApp
         if (!panelVisible)
             return;
 
+        logEvent("cancel");
+
         if (!previewedId.empty() && previewedId != frontAppId)
             platform::restorePreviewOrigin();
 
@@ -570,6 +645,39 @@ struct RudderApp
                            label(bindings.back),
                            platform::accessibilityTrusted(false),
                            settingsError});
+    }
+
+    static double uptime()
+    {
+        return (double) clock_gettime_nsec_np(CLOCK_UPTIME_RAW) / 1e9;
+    }
+
+    static std::string millis(double seconds)
+    {
+        char text[32];
+        std::snprintf(text, sizeof(text), "%.1f ms", seconds * 1000.0);
+        return text;
+    }
+
+    // RUDDER_SNAPSHOT=<path.png>: save what the panel drew on its first frame
+    // -- the real panel's pixels, for a machine where screencapture has no
+    // screen-recording grant.
+    void snapshotIfAsked()
+    {
+        auto* path = std::getenv("RUDDER_SNAPSHOT");
+
+        if (path == nullptr)
+            return;
+
+        auto target = std::string {path};
+        Threads::callAsync(
+            [this, target]
+            {
+                auto image = panel.renderToImage(2.f);
+
+                if (image.isValid())
+                    image.save(FilePath {target});
+            });
     }
 
     static constexpr auto panelWidth = 640.f;
@@ -602,13 +710,81 @@ struct RudderApp
     std::vector<RudderItem> filtered;
     int selected = 0;
     Image noIcon;
+    double hotkeyTime = 0.0;
+    platform::RunningApp origin;
+    std::optional<Threads::Timer> accessibilityPoll;
 
     TrayIcon tray;
     PanelView panel;
     Window window {panel, panelWindowOptions()};
 };
 
+namespace
+{
+// `Rudder --snapshot <dir>`: render the panel with no window -- the switcher
+// over the apps running now, then the unlock overlay -- to panel.png and
+// unlock.png. Real pixels from the real views, for docs, on a machine where
+// screencapture has no screen-recording grant.
+int snapshot(const std::string& directory)
+{
+    return Apps::run(
+        [directory]
+        {
+            auto panel = PanelView {};
+            auto items = std::vector<RudderItem> {};
+            auto apps = platform::runningApps();
+            auto front = platform::frontmostApp();
+
+            for (auto& app: apps)
+            {
+                auto item = RudderItem {};
+                item.id = item.appId = app.id;
+                item.title = app.name;
+                item.subtitle = app.id == front.id ? "Current" : "";
+                items.push_back(std::move(item));
+            }
+
+            panel.iconFor = [&](const std::string& id) -> const Image&
+            {
+                static const auto none = Image {};
+
+                for (auto& app: apps)
+                    if (app.id == id)
+                        return platform::appIcon(app);
+
+                return none;
+            };
+
+            panel.setBounds({0.f, 0.f, 640.f, 420.f});
+            panel.resized();
+            panel.setSettings({"⌥Space", "⌥`", true, {}});
+
+            auto selected = items.size() > 1 ? 1 : 0;
+            auto windows = selected < (int) apps.size()
+                               ? platform::windowTitles(apps[(std::size_t) selected])
+                               : std::vector<std::string> {};
+            panel.setModel({items, selected, windows, !windows.empty()});
+
+            auto save = [&](const std::string& name)
+            {
+                panel.renderToImage(2.f);
+                auto image = panel.renderToImage(2.f);
+
+                if (image.isValid())
+                    image.save(FilePath {directory + "/" + name});
+            };
+
+            save("panel.png");
+            panel.setAccessibilityGate(true);
+            save("unlock.png");
+        });
+}
+} // namespace
+
 int main(int argc, char* argv[])
 {
+    if (argc == 3 && std::string {argv[1]} == "--snapshot")
+        return snapshot(argv[2]);
+
     return Apps::run<RudderApp>(argc, argv);
 }

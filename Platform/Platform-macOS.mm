@@ -1,4 +1,5 @@
 #include "Platform.h"
+#include "Permissions.h"
 
 #import <AppKit/AppKit.h>
 #import <ApplicationServices/ApplicationServices.h>
@@ -6,6 +7,19 @@
 #include <algorithm>
 #include <map>
 #include <utility>
+
+// Offers the dragged file for copy or link -- what Finder and System
+// Settings' privacy lists accept from another app.
+@interface RudderFileDragSource : NSObject <NSDraggingSource>
+@end
+
+@implementation RudderFileDragSource
+- (NSDragOperation)draggingSession:(NSDraggingSession*)session
+    sourceOperationMaskForDraggingContext:(NSDraggingContext)context
+{
+    return NSDragOperationCopy | NSDragOperationLink | NSDragOperationGeneric;
+}
+@end
 
 namespace rudder::platform
 {
@@ -40,6 +54,9 @@ NSRunningApplication* lookUp(const RunningApp& app)
     return [NSRunningApplication runningApplicationWithProcessIdentifier:app.pid];
 }
 
+// A hung app must not hang the switcher: every AX round trip gives up fast.
+constexpr auto axTimeoutSeconds = 0.25f;
+
 // The window a user would call "the app's window": focused, else main, else
 // the first one listed. Returned +1 (Create rule), or null.
 AXUIElementRef copyFrontWindow(pid_t pid)
@@ -48,6 +65,8 @@ AXUIElementRef copyFrontWindow(pid_t pid)
 
     if (appElement == nullptr)
         return nullptr;
+
+    AXUIElementSetMessagingTimeout(appElement, axTimeoutSeconds);
 
     CFTypeRef window = nullptr;
 
@@ -85,6 +104,62 @@ std::map<std::string, eacp::Graphics::Image>& iconCache()
 }
 
 AXUIElementRef previewOrigin = nullptr;
+
+// Each app's front window element, so a preview raise is one AX call rather
+// than a walk to find the window first. Refreshed when the app activates (its
+// front window may have changed) and when a raise reports the element stale.
+std::map<pid_t, AXUIElementRef>& frontWindows()
+{
+    static auto windows = std::map<pid_t, AXUIElementRef> {};
+    return windows;
+}
+
+void forgetFrontWindow(pid_t pid)
+{
+    auto& windows = frontWindows();
+
+    if (auto found = windows.find(pid); found != windows.end())
+    {
+        if (found->second != nullptr)
+            CFRelease(found->second);
+
+        windows.erase(found);
+    }
+}
+
+AXUIElementRef refreshFrontWindow(pid_t pid)
+{
+    forgetFrontWindow(pid);
+    auto window = copyFrontWindow(pid);
+
+    if (window != nullptr)
+        frontWindows()[pid] = window;
+
+    return window;
+}
+
+AXUIElementRef cachedFrontWindow(pid_t pid)
+{
+    auto& windows = frontWindows();
+
+    if (auto found = windows.find(pid); found != windows.end())
+        return found->second;
+
+    return refreshFrontWindow(pid);
+}
+
+bool raiseFrontWindow(pid_t pid)
+{
+    auto window = cachedFrontWindow(pid);
+
+    if (window != nullptr && AXUIElementPerformAction(window, kAXRaiseAction) == kAXErrorSuccess)
+        return true;
+
+    // Closed or replaced since it was cached: look again, once.
+    window = refreshFrontWindow(pid);
+    return window != nullptr
+           && AXUIElementPerformAction(window, kAXRaiseAction) == kAXErrorSuccess;
+}
 
 id activateObserver = nil;
 id launchObserver = nil;
@@ -206,15 +281,11 @@ bool activateApp(const RunningApp& app)
     if (AXIsProcessTrusted())
     {
         auto appElement = AXUIElementCreateApplication(app.pid);
+        AXUIElementSetMessagingTimeout(appElement, axTimeoutSeconds);
         AXUIElementSetAttributeValue(appElement, kAXFrontmostAttribute, kCFBooleanTrue);
         CFRelease(appElement);
 
-        if (auto window = copyFrontWindow(app.pid))
-        {
-            AXUIElementPerformAction(window, kAXRaiseAction);
-            CFRelease(window);
-        }
-
+        raiseFrontWindow(app.pid);
         activated = true;
     }
 
@@ -226,17 +297,10 @@ bool previewApp(const RunningApp& app)
     if (!AXIsProcessTrusted())
         return false;
 
-    auto window = copyFrontWindow(app.pid);
-
-    if (window == nullptr)
-        return false;
-
-    auto raised = AXUIElementPerformAction(window, kAXRaiseAction) == kAXErrorSuccess;
-    CFRelease(window);
-    return raised;
+    return raiseFrontWindow(app.pid);
 }
 
-void rememberPreviewOrigin()
+void rememberPreviewOrigin(const RunningApp& origin)
 {
     if (previewOrigin != nullptr)
     {
@@ -244,10 +308,13 @@ void rememberPreviewOrigin()
         previewOrigin = nullptr;
     }
 
-    auto front = frontmostApp();
+    if (origin.pid != 0 && AXIsProcessTrusted())
+    {
+        previewOrigin = cachedFrontWindow(origin.pid);
 
-    if (front.pid != 0 && AXIsProcessTrusted())
-        previewOrigin = copyFrontWindow(front.pid);
+        if (previewOrigin != nullptr)
+            CFRetain(previewOrigin);
+    }
 }
 
 void restorePreviewOrigin()
@@ -264,6 +331,7 @@ std::vector<std::string> windowTitles(const RunningApp& app)
         return titles;
 
     auto appElement = AXUIElementCreateApplication(app.pid);
+    AXUIElementSetMessagingTimeout(appElement, axTimeoutSeconds);
     CFTypeRef windows = nullptr;
 
     if (AXUIElementCopyAttributeValue(appElement, kAXWindowsAttribute, &windows)
@@ -299,11 +367,41 @@ std::vector<std::string> windowTitles(const RunningApp& app)
 
 bool accessibilityTrusted(bool prompt)
 {
-    if (!prompt)
-        return AXIsProcessTrusted();
+    return ui_automation::isAccessibilityTrusted(prompt);
+}
 
-    auto* options = @{(__bridge NSString*) kAXTrustedCheckOptionPrompt: @YES};
-    return AXIsProcessTrustedWithOptions((__bridge CFDictionaryRef) options);
+bool openAccessibilitySettings()
+{
+    return ui_automation::openAccessibilitySettings();
+}
+
+std::string appBundlePath()
+{
+    return ui_automation::currentAppBundlePath();
+}
+
+bool startFileDrag(eacp::Graphics::View& view, const std::string& path)
+{
+    auto* nsView = (__bridge NSView*) view.getHandle();
+    auto* event = NSApp.currentEvent;
+
+    if (nsView == nil || event == nil || path.empty())
+        return false;
+
+    static auto* source = [RudderFileDragSource new];
+
+    auto* filePath = [NSString stringWithUTF8String:path.c_str()];
+    auto* item = [[NSDraggingItem alloc]
+        initWithPasteboardWriter:[NSURL fileURLWithPath:filePath]];
+
+    auto* image = [NSWorkspace.sharedWorkspace iconForFile:filePath];
+    image.size = NSMakeSize(64, 64);
+
+    auto at = [nsView convertPoint:event.locationInWindow fromView:nil];
+    [item setDraggingFrame:NSMakeRect(at.x - 32, at.y - 32, 64, 64) contents:image];
+
+    return [nsView beginDraggingSessionWithItems:@[item] event:event source:source]
+           != nil;
 }
 
 void observeWorkspace(WorkspaceEvents events)
@@ -333,7 +431,12 @@ void observeWorkspace(WorkspaceEvents events)
                              queue:NSOperationQueue.mainQueue
                         usingBlock:^(NSNotification* note) {
                           if (auto* app = appIn(note))
+                          {
+                              if (AXIsProcessTrusted())
+                                  refreshFrontWindow(app.processIdentifier);
+
                               shared->onActivated(describe(app));
+                          }
                         }];
 
     launchObserver =
@@ -356,7 +459,10 @@ void observeWorkspace(WorkspaceEvents events)
                               note.userInfo[NSWorkspaceApplicationKey];
 
                           if (app != nil && !isSelf(app))
+                          {
+                              forgetFrontWindow(app.processIdentifier);
                               shared->onTerminated(describe(app));
+                          }
                         }];
 }
 

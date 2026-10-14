@@ -35,14 +35,18 @@ void forgetIcon(const std::string& appId);
 // Really switch: activate the app and bring its frontmost window forward.
 bool activateApp(const RunningApp& app);
 
-// The live preview. Raise the app's frontmost window to the top of the window
-// stack WITHOUT activating the app, so the panel keeps key and typing goes
-// on. False when it couldn't (no accessibility permission, no window).
+// The live preview. Raise the app's front window WITHOUT activating the app,
+// so the panel keeps key and typing goes on. On macOS this is an AX raise,
+// and the window server only lets it go as far as just under the front window
+// of the app the panel was summoned over: anything not covered by that window
+// shows, a maximised one hides it. (Activating the target and taking key back
+// lands it on top but leaves keystrokes going to the target; not shipped.)
+// False when it couldn't (no accessibility permission, no window).
 bool previewApp(const RunningApp& app);
 
-// Captured at summon, before any preview: the window that was in front. Esc
-// raises it again so the screen is exactly as it was.
-void rememberPreviewOrigin();
+// Captured at summon, before any preview: `origin`'s front window. Esc raises
+// it again so the screen is exactly as it was.
+void rememberPreviewOrigin(const RunningApp& origin);
 void restorePreviewOrigin();
 
 // The app's window titles, front to back (needs accessibility). For the
@@ -52,6 +56,17 @@ std::vector<std::string> windowTitles(const RunningApp& app);
 // Whether Rudder may drive other apps' windows. `prompt` shows the system
 // dialog that sends the user to System Settings.
 bool accessibilityTrusted(bool prompt);
+
+// Privacy & Security > Accessibility in System Settings.
+bool openAccessibilitySettings();
+
+// What the user drags into the Accessibility list to grant Rudder.
+std::string appBundlePath();
+
+// Starts an OS file drag of `path` out of `view`, from the mouse-down being
+// handled right now -- so it can land in another app (the Accessibility
+// list). The drag image is the file's Finder icon.
+bool startFileDrag(eacp::Graphics::View& view, const std::string& path);
 
 struct WorkspaceEvents
 {
