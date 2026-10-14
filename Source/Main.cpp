@@ -297,7 +297,7 @@ struct RudderApp
         for (auto* text: {&bindings.summon, &bindings.back})
             if (auto chord = parseChord(*text);
                 chord && platform::isSystemShortcut(*keyCodeFor(chord->key), modifiersOf(*chord)))
-                logEvent(("hotkey clashes with a macOS shortcut: " + *text).c_str());
+                logEvent(("hotkey clashes with a system shortcut: " + *text).c_str());
 
         if (auto chord = parseChord(bindings.summon))
             summonKey.emplace(modifiersOf(*chord),
@@ -346,12 +346,16 @@ struct RudderApp
         }
 
         // Quit and favourite only act inside the panel, where Rudder has the
-        // keyboard; the two global hotkeys must not be ones macOS keeps.
+        // keyboard; the two global hotkeys must not be ones the OS keeps.
         if (action != "quit" && action != "favourite"
             && platform::isSystemShortcut(*keyCodeFor(chord->key), modifiersOf(*chord)))
         {
-            settingsError = "macOS already uses " + displayChord(*chord)
-                            + " (Keyboard Shortcuts in System Settings).";
+            if constexpr (eacp::Platform::isWindows())
+                settingsError = "Windows or another app already uses "
+                                + displayChord(*chord) + ".";
+            else
+                settingsError = "macOS already uses " + displayChord(*chord)
+                                + " (Keyboard Shortcuts in System Settings).";
             return;
         }
 
@@ -1124,20 +1128,20 @@ struct RudderApp
     {
         contextServer.onHello = [this](int connection, const protocol::Hello& hello)
         {
-            logEvent(("provider hello: " + hello.app + " (" + hello.bundleId + ")").c_str());
-            connectionApps[connection] = hello.bundleId;
-
-            // A newer connection from the same app takes over its contexts;
-            // the older one closing later mustn't drop them.
-            providerConnection[hello.bundleId] = connection;
-            providers.connect({hello.app, hello.bundleId, hello.pid},
-                              [this, connection](const std::string& contextId, bool raise)
-                              { contextServer.sendActivate(connection, contextId, raise); });
+            connectionHellos[connection] = hello;
+            connectProvider(connection, hello);
         };
 
         contextServer.onContexts =
             [this](int connection, std::vector<protocol::Context> pushed)
         {
+            // An app that said hello before its first window showed is filed
+            // under its bundle id until a push finds its row.
+            if (auto hello = connectionHellos.find(connection);
+                hello != connectionHellos.end()
+                && providerAppId(hello->second) != connectionApps[connection])
+                connectProvider(connection, hello->second);
+
             auto app = connectionApps.find(connection);
 
             if (app == connectionApps.end() || providerConnection[app->second] != connection)
@@ -1170,6 +1174,7 @@ struct RudderApp
 
             auto bundleId = app->second;
             connectionApps.erase(app);
+            connectionHellos.erase(connection);
 
             if (providerConnection[bundleId] != connection)
                 return;
@@ -1183,6 +1188,41 @@ struct RudderApp
 
         if (!contextServer.start())
             logEvent("contexts socket unavailable");
+    }
+
+    void connectProvider(int connection, const protocol::Hello& hello)
+    {
+        auto appId = providerAppId(hello);
+        logEvent(("provider hello: " + hello.app + " (" + appId + ")").c_str());
+
+        if (auto previous = connectionApps.find(connection);
+            previous != connectionApps.end() && previous->second != appId
+            && providerConnection[previous->second] == connection)
+        {
+            providerConnection.erase(previous->second);
+            providers.disconnect(previous->second);
+        }
+
+        connectionApps[connection] = appId;
+
+        // A newer connection from the same app takes over its contexts; the
+        // older one closing later mustn't drop them.
+        providerConnection[appId] = connection;
+        providers.connect({hello.app, appId, hello.pid},
+                          [this, connection](const std::string& contextId, bool raise)
+                          { contextServer.sendActivate(connection, contextId, raise); });
+    }
+
+    // The id of the app row a provider's contexts belong under: the running
+    // app with the provider's pid. On macOS that is its bundle id anyway;
+    // Windows has no bundle ids, and names apps by executable.
+    std::string providerAppId(const protocol::Hello& hello)
+    {
+        for (auto& app: platform::runningApps())
+            if (app.pid == hello.pid)
+                return app.id;
+
+        return hello.bundleId;
     }
 
     // A provider pushed or went away while the panel is up: every running
@@ -1556,6 +1596,7 @@ struct RudderApp
 
     platform::ContextServer contextServer;
     std::map<int, std::string> connectionApps;
+    std::map<int, protocol::Hello> connectionHellos;
     std::map<std::string, int> providerConnection;
     std::optional<Threads::Timer> accessibilityPoll;
 

@@ -12,8 +12,10 @@
 // and Platform-Windows.cpp implement it. All calls are main thread only.
 namespace rudder::platform
 {
-// A running, user-facing app (macOS: activation policy regular). `id` is its
-// bundle id, or "pid:<n>" for the odd app without one.
+// A running, user-facing app (macOS: activation policy regular; Windows: a
+// process with a window in the taskbar). `id` is its bundle id, or
+// "pid:<n>" for the odd app without one; on Windows, which has no bundle ids,
+// its executable's file name ("chrome.exe").
 struct RunningApp
 {
     std::string id;

@@ -86,8 +86,15 @@ if (APPLE)
 elseif (WIN32)
     add_library(RudderPlatform STATIC
             Platform/ContextServer-Windows.cpp
-            Platform/Permissions-Windows.cpp)
-    target_link_libraries(RudderPlatform PRIVATE eacp-network)
+            Platform/Permissions-Windows.cpp
+            Platform/Platform-Windows.cpp
+            Platform/QuickWindow-Windows.cpp)
+    target_link_libraries(RudderPlatform PRIVATE
+            eacp-network
+            dwmapi
+            shcore
+            shlwapi
+            version)
 endif ()
 
 target_include_directories(RudderPlatform PUBLIC Platform)
