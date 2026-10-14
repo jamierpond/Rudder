@@ -14,7 +14,7 @@ export function platformScript(name) {
   return join(ROOT, 'Scripts', `${name}-${platform}.mjs`);
 }
 
-export function run(command, args = [], options = {}) {
+export function run(command, args = [], { allowFail = false, ...options } = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, {
       cwd: ROOT,
@@ -23,7 +23,7 @@ export function run(command, args = [], options = {}) {
       ...options,
     });
     child.on('exit', (code) =>
-      code === 0
+      code === 0 || allowFail
         ? resolve()
         : reject(new Error(`${command} ${args.join(' ')} exited with ${code}`)),
     );
@@ -42,5 +42,22 @@ export async function main(fn) {
   } catch (error) {
     console.error(error.message);
     process.exit(1);
+  }
+}
+
+// Rudder as the dev scripts see it: which privacy grants a dev launch resets.
+export const RUDDER = {
+  bundleId: 'com.pond.rudder',
+  devResetsPrivacy: ['Accessibility'],
+};
+
+/** Every dev build is ad-hoc signed with a fresh cdhash, so macOS keeps the
+ *  old privacy grant switched on in System Settings while refusing it to the
+ *  new binary. Resetting before launch makes the app ask again for real. */
+export async function resetDevPrivacyGrants(app) {
+  if (process.platform !== 'darwin' || !app.bundleId) return;
+  for (const service of app.devResetsPrivacy) {
+    console.log(`[run] resetting ${service} for ${app.bundleId}`);
+    await run('tccutil', ['reset', service, app.bundleId], { allowFail: true });
   }
 }
