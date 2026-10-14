@@ -1593,6 +1593,15 @@ NSString* expandedPath(const std::string& path)
 }
 } // namespace
 
+bool hasApp(const std::string& bundleId)
+{
+    return !bundleId.empty()
+           && [NSWorkspace.sharedWorkspace
+                  URLForApplicationWithBundleIdentifier:[NSString
+                                                            stringWithUTF8String:bundleId.c_str()]]
+                  != nil;
+}
+
 bool openUrl(const std::string& url, const std::string& openWith)
 {
     auto* target = urlFor(url);
@@ -1600,18 +1609,29 @@ bool openUrl(const std::string& url, const std::string& openWith)
     if (target == nil)
         return false;
 
-    auto* app = openWith.empty()
-                    ? nil
-                    : [NSWorkspace.sharedWorkspace
-                          URLForApplicationWithBundleIdentifier:[NSString stringWithUTF8String:openWith.c_str()]];
-
-    if (app == nil)
+    if (openWith.empty())
         return [NSWorkspace.sharedWorkspace openURL:target];
+
+    auto* app = [NSWorkspace.sharedWorkspace
+        URLForApplicationWithBundleIdentifier:[NSString stringWithUTF8String:openWith.c_str()]];
+
+    // Never quietly the default browser instead: the favourite asked for
+    // this app.
+    if (app == nil)
+    {
+        NSLog(@"Rudder: no app with bundle id %s for %s", openWith.c_str(), url.c_str());
+        return false;
+    }
+
+    auto* label = [NSString stringWithFormat:@"%s with %s", url.c_str(), openWith.c_str()];
 
     [NSWorkspace.sharedWorkspace openURLs:@[target]
                      withApplicationAtURL:app
                             configuration:[NSWorkspaceOpenConfiguration configuration]
-                        completionHandler:nil];
+                        completionHandler:^(NSRunningApplication*, NSError* error) {
+                          if (error != nil)
+                              NSLog(@"Rudder: opening %@ failed: %@", label, error);
+                        }];
     return true;
 }
 

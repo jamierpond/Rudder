@@ -592,6 +592,9 @@ struct RudderApp
         platform::rememberPreviewOrigin(origin);
 
         panel.reset(showSettings);
+        // A failed open's message lasts one summon; a bad favourites file's
+        // until it's fixed.
+        panel.setFooterError(favouritesError);
         resetPanel();
         settingsError.clear();
         publishSettings();
@@ -939,11 +942,13 @@ struct RudderApp
         if (!result.list)
         {
             logEvent(("favourites: " + result.error).c_str());
-            panel.setFooterError(result.error);
+            favouritesError = result.error;
+            panel.setFooterError(favouritesError);
             return;
         }
 
         favourites = std::move(*result.list);
+        favouritesError.clear();
         panel.setFooterError({});
         logEvent(("favourites: " + std::to_string(favourites.favourites.size())).c_str());
 
@@ -1024,6 +1029,16 @@ struct RudderApp
                 openItem(closed);
             }
 
+            return;
+        }
+
+        // Checked before the panel goes, so the footer can say why nothing
+        // opened.
+        if (!favourite.url.empty() && !favourite.openWith.empty()
+            && !platform::hasApp(favourite.openWith))
+        {
+            logEvent(("open favourite: no app " + favourite.openWith).c_str());
+            panel.setFooterError("No app with bundle id " + favourite.openWith);
             return;
         }
 
@@ -1427,6 +1442,8 @@ struct RudderApp
     wim::MruStore mru {atomic};
     emberstore::Document<FavouriteList> favouritesDocument {favouritesPath()};
     FavouriteList favourites;
+    // rudder.json's parse error, if any: the footer's standing message.
+    std::string favouritesError;
     std::optional<emberstore::FileWatcher> favouritesWatcher;
     BackStack backStack;
     ContextProviders providers;
