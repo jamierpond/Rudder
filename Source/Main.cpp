@@ -809,14 +809,16 @@ struct RudderApp
 
     // --- Favourites ---------------------------------------------------------------
 
-    // favourites.json beside the rest of Rudder's store: one pretty-printed
-    // document, Rudder's own writes in a stable (sorted-key) order, and meant
-    // to be edited by hand or by an agent. Edits from outside are picked up
-    // as they land; a bad one is reported in the footer and the last good
-    // list stays.
-    eacp::FilePath favouritesPath() const
+    // ~/.config/rudder.json: one pretty-printed document, read and written
+    // through emberstore (a Document at that exact path), Rudder's own writes
+    // in a stable (sorted-key) order, and meant to be edited by hand or by an
+    // agent. Edits from outside are picked up as they land; a bad one is
+    // reported in the footer and the last good list stays.
+    static eacp::FilePath favouritesPath()
     {
-        return durable.directory() / "favourites.json";
+        auto* home = std::getenv("HOME");
+        return eacp::FilePath {std::string {home != nullptr ? home : ""}} / ".config"
+               / "rudder.json";
     }
 
     void loadFavourites()
@@ -824,11 +826,43 @@ struct RudderApp
         auto path = favouritesPath();
         std::fprintf(stderr, "Rudder favourites: %s\n", path.str().c_str());
 
+        auto folder = std::filesystem::path {path.str()}.parent_path();
+        auto error = std::error_code {};
+        std::filesystem::create_directories(folder, error);
+
+        migrateFavourites();
+
         if (!std::filesystem::exists(path.str()))
             favouritesDocument.set(favourites);
 
         reloadFavourites();
+
+        // The watcher sits on ~/.config and reacts to rudder.json alone, so an
+        // editor's save-by-rename is seen and other files' churn isn't.
         favouritesWatcher.emplace(path, [this] { reloadFavourites(); });
+    }
+
+    // Favourites used to live in Rudder's emberstore folder. Moved over once,
+    // only when the new file isn't there yet, then the old one goes.
+    void migrateFavourites()
+    {
+        auto old = (durable.directory() / "favourites.json").str();
+        auto now = favouritesPath().str();
+
+        if (!std::filesystem::exists(old) || std::filesystem::exists(now))
+            return;
+
+        auto error = std::error_code {};
+        std::filesystem::copy_file(old, now, error);
+
+        if (error)
+        {
+            logEvent(("favourites: couldn't move " + old + ": " + error.message()).c_str());
+            return;
+        }
+
+        std::filesystem::remove(old, error);
+        logEvent(("favourites: moved " + old + " to " + now).c_str());
     }
 
     void reloadFavourites()
@@ -1267,8 +1301,7 @@ struct RudderApp
     emberstore::Collection<Keybindings> settingsStore {
         durable.collection<Keybindings>("settings")};
     wim::MruStore mru {atomic};
-    emberstore::Document<FavouriteList> favouritesDocument {
-        durable.directory() / "favourites.json"};
+    emberstore::Document<FavouriteList> favouritesDocument {favouritesPath()};
     FavouriteList favourites;
     std::optional<emberstore::FileWatcher> favouritesWatcher;
     BackStack backStack;

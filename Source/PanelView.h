@@ -35,7 +35,7 @@ struct SettingsModel
     std::string quit;
     std::string favourite;
 
-    // Where favourites.json lives, for anyone (or any agent) editing it.
+    // Where the favourites file (~/.config/rudder.json) lives, for anyone (or any agent) editing it.
     std::string favouritesPath;
 
     bool accessibilityTrusted = false;
@@ -231,7 +231,7 @@ public:
     // favourite.
     std::function<void()> onToggleFavourite = [] {};
 
-    // A problem with favourites.json, shown in the footer until it's fixed.
+    // A problem with ~/.config/rudder.json, shown in the footer until it's fixed.
     void setFooterError(const std::string& error);
 
     // The quit binding (⌃Q by default): quit the selected app, never Rudder.

@@ -166,11 +166,11 @@ FavouritesResult parseFavourites(std::string_view text)
     }
     catch (const std::exception& error)
     {
-        return {std::nullopt, std::string {"favourites.json: "} + error.what()};
+        return {std::nullopt, std::string {"rudder.json: "} + error.what()};
     }
 
     if (!json.isObject())
-        return {std::nullopt, "favourites.json: the top level must be an object"};
+        return {std::nullopt, "rudder.json: the top level must be an object"};
 
     auto config = FavouriteList {};
     auto* favourites = Miro::Json::find(json.asObject(), "favourites");
@@ -179,7 +179,7 @@ FavouritesResult parseFavourites(std::string_view text)
         return {config, {}};
 
     if (!favourites->isArray())
-        return {std::nullopt, "favourites.json: \"favourites\" must be a list"};
+        return {std::nullopt, "rudder.json: \"favourites\" must be a list"};
 
     auto index = std::size_t {0};
 
@@ -189,7 +189,7 @@ FavouritesResult parseFavourites(std::string_view text)
         auto favourite = readFavourite(entry, index++, error);
 
         if (!favourite)
-            return {std::nullopt, "favourites.json: " + error};
+            return {std::nullopt, "rudder.json: " + error};
 
         config.favourites.push_back(std::move(*favourite));
     }

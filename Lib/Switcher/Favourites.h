@@ -27,9 +27,8 @@ struct Favourite
     MIRO_REFLECT(title, url, app, path, keywords, openWith)
 };
 
-// The favourites document: favourites.json in Rudder's emberstore folder,
-// pretty-printed and meant to be edited by hand (or by an agent) as much as
-// from the panel.
+// The favourites document, ~/.config/rudder.json: pretty-printed and meant to
+// be edited by hand (or by an agent) as much as from the panel.
 struct FavouriteList
 {
     std::vector<Favourite> favourites;

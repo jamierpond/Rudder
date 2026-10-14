@@ -43,8 +43,8 @@ the grant first.
 ## Favourites
 
 Starred rows at the top of the panel, always searchable. They live in
-`~/Library/Application Support/pond/Rudder/favourites.json` (also shown in
-Settings), which Rudder reloads whenever it changes on disk:
+`~/.config/rudder.json` (also shown in Settings), which Rudder reloads
+whenever it changes on disk:
 
 ```json
 {
