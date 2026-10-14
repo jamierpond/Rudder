@@ -54,6 +54,7 @@ add_subdirectory(Client)
 # the app shell.
 add_library(RudderSwitcher STATIC
         Lib/Switcher/BackStack.cpp
+        Lib/Switcher/Favourites.cpp
         Lib/Switcher/Keybinding.cpp
         Lib/Switcher/LineEdit.cpp
         Lib/Switcher/Mru.cpp

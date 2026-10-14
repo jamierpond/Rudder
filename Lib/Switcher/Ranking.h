@@ -22,8 +22,9 @@ std::vector<RudderItem> orderByRecency(std::vector<RudderItem> apps,
 std::vector<RudderItem> mergeInstalled(std::vector<RudderItem> running,
                                        const std::vector<RudderItem>& installed);
 
-// The list for the current query. Empty query: the running apps only -- the
-// switcher, not a launcher of hundreds. Otherwise fuzzy-rank the app titles
+// The list for the current query. Empty query: favourites (in list order, as
+// `all` has them first) and the running apps -- the switcher, not a launcher
+// of hundreds. Otherwise fuzzy-rank the app titles
 // together with every app's contexts (matched on "app title url"), each
 // context flattened into a row of its own (kind "context" or "window") so a
 // tab, a session or a window is one Enter away. Only real
@@ -47,9 +48,14 @@ PreviewAction previewActionFor(const RudderItem& item,
                                bool runningNow,
                                const std::string& originAppId);
 
-// Where the selection starts. With no query the top row is the app the panel
-// was summoned over, so cmd-tab style it starts on the next one -- Enter
-// goes back to the previous app. Typing selects the best hit.
+// Added to a favourite's match score: a favourite that matches at all beats
+// an app that matches about as well.
+constexpr auto favouriteBoost = 20;
+
+// Where the selection starts. With no query the first app row is the app the
+// panel was summoned over, so cmd-tab style it starts on the next one (below
+// any favourites) -- Enter goes back to the previous app. Typing selects the
+// best hit.
 int initialSelection(const std::vector<RudderItem>& items,
                      const std::string& query,
                      const std::string& frontAppId);

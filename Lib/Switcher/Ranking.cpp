@@ -19,7 +19,19 @@ RudderItem contextRow(const RudderItem& app, const RudderContext& context)
                                             : app.title + " · " + context.subtitle;
     row.appId = app.id;
     row.contextId = context.id;
+    row.url = context.url;
     return row;
+}
+
+// What a favourite is found by: its title, its keywords and its target.
+std::string favouriteText(const RudderItem& item)
+{
+    auto text = item.title;
+
+    for (auto& keyword: item.keywords)
+        text += " " + keyword;
+
+    return text + " " + item.subtitle;
 }
 } // namespace
 
@@ -57,19 +69,28 @@ std::vector<RudderItem> rankItems(const std::vector<RudderItem>& all,
 {
     if (query.empty())
     {
-        auto running = std::vector<RudderItem> {};
+        auto browsing = std::vector<RudderItem> {};
 
         for (auto& item: all)
-            if (item.running)
-                running.push_back(item);
+            if (item.kind == "favourite" || item.running)
+                browsing.push_back(item);
 
-        return running;
+        return browsing;
     }
 
     auto scored = std::vector<std::pair<int, RudderItem>> {};
 
     for (auto& app: all)
     {
+        if (app.kind == "favourite")
+        {
+            // Favourites are what the user asked to find first.
+            if (auto score = wim::fuzzyScore(query, favouriteText(app)))
+                scored.push_back({*score + favouriteBoost, app});
+
+            continue;
+        }
+
         if (auto score = wim::fuzzyScore(query, app.title))
             scored.push_back({*score, app});
 
@@ -114,9 +135,20 @@ int initialSelection(const std::vector<RudderItem>& items,
                      const std::string& query,
                      const std::string& frontAppId)
 {
-    if (!query.empty() || items.size() < 2)
+    if (!query.empty())
         return 0;
 
-    return items.front().id == frontAppId ? 1 : 0;
+    // Favourites sit above the apps; cmd-tab behaviour is about the apps.
+    auto first = (int) std::count_if(items.begin(),
+                                     items.end(),
+                                     [](const RudderItem& item)
+                                     { return item.kind == "favourite"; });
+
+    if (first >= (int) items.size())
+        return 0;
+
+    auto skipFront = items[(std::size_t) first].id == frontAppId
+                     && first + 1 < (int) items.size();
+    return first + (skipFront ? 1 : 0);
 }
 } // namespace rudder
