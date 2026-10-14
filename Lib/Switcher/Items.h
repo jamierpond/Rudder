@@ -25,7 +25,14 @@ struct RudderContext
     // A provider's place that isn't open yet (protocol open: false).
     bool open = true;
 
-    MIRO_REFLECT(id, title, subtitle, url, kind, open)
+    // The directory it is about (a pane's cwd), matched on but not shown.
+    std::string path;
+
+    // The context its app is showing now; Esc switches back to it after a
+    // preview moved the app elsewhere.
+    bool focused = false;
+
+    MIRO_REFLECT(id, title, subtitle, url, kind, open, path, focused)
 };
 
 // One row in the panel. kind "app" is a running app (id = appId = its bundle

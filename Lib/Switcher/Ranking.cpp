@@ -43,8 +43,64 @@ std::string favouriteText(const RudderItem& item)
 // tab) sits below the app row and below contexts whose own text matched.
 constexpr auto appNameOnlyPenalty = 8;
 
+// Taken off a match on a context's other fields, so on an equal match the
+// title wins, then the directory's name, then the subtitle, then the full
+// path: title >= dirname > subtitle > path.
+constexpr auto dirNamePenalty = 1;
+constexpr auto subtitlePenalty = 6;
+constexpr auto pathPenalty = 12;
+
+// The subtitle and the full path are long and alike from row to row ("Tab 3
+// · pane 1 · main", "/Users/me/projects/..."), so letters scattered through
+// them match almost anything. They count only for a tight match: at least
+// this much score per letter typed, about half of what a run of consecutive
+// letters earns.
+constexpr auto tightPerLetter = 4;
+
+int letterCount(const std::string& query)
+{
+    return (int) std::count_if(query.begin(), query.end(), [](char c) { return c != ' '; });
+}
+
+std::string lastComponent(std::string path)
+{
+    while (path.size() > 1 && path.back() == '/')
+        path.pop_back();
+
+    auto slash = path.find_last_of('/');
+    return slash == std::string::npos ? path : path.substr(slash + 1);
+}
+
+// How well `query` finds a context by its own text: the title and url as
+// they read, the name of its directory nearly as well (so a pane is found by
+// its project whatever the program in it set its title to), and the subtitle
+// and full path below both, and only on a tight match.
+std::optional<int> ownScore(const std::string& query, const RudderContext& context)
+{
+    auto best = grazer::fuzzyScore(query, context.title + " " + context.url);
+
+    auto consider = [&](const std::string& text, int penalty, bool tightOnly)
+    {
+        if (text.empty())
+            return;
+
+        auto score = grazer::fuzzyScore(query, text);
+
+        if (!score || (tightOnly && *score < tightPerLetter * letterCount(query)))
+            return;
+
+        if (!best || *score - penalty > *best)
+            best = *score - penalty;
+    };
+
+    consider(lastComponent(context.path), dirNamePenalty, false);
+    consider(context.subtitle, subtitlePenalty, true);
+    consider(context.path, pathPenalty, true);
+    return best;
+}
+
 // How well `query` finds a context: some leading part of the query on the
-// app's name and the rest on the context's own title and url, best split
+// app's name and the rest on the context's own text (ownScore), best split
 // wins. Scoring the halves separately keeps app-name letters from stealing
 // the query: matched greedily against "CowTerm ~/projects/Wim" (Grazer's old
 // name), "wim" took the w of CowTerm and scored like any pane with a w, i and m
@@ -54,8 +110,7 @@ std::optional<int> contextScore(const std::string& query,
                                 const RudderItem& app,
                                 const RudderContext& context)
 {
-    const auto own = context.title + " " + context.url;
-    auto best = grazer::fuzzyScore(query, own);
+    auto best = ownScore(query, context);
 
     for (std::size_t split = 1; split <= query.size(); ++split)
     {
@@ -76,7 +131,7 @@ std::optional<int> contextScore(const std::string& query,
             continue;
         }
 
-        if (auto onContext = grazer::fuzzyScore(rest, own))
+        if (auto onContext = ownScore(rest, context))
             if (!best || *onApp + *onContext > *best)
                 best = *onApp + *onContext;
     }
@@ -155,8 +210,9 @@ std::vector<ScoredItem> scoreItems(const std::vector<RudderItem>& all,
         if (auto score = grazer::fuzzyScore(query, app.title))
             scored.push_back({*score, app});
 
-        // A context matches on its app's name, its title and its url, so
-        // "grazer github" finds the GitHub tab in Grazer.
+        // A context matches on its app's name, its title and url, its
+        // directory and its subtitle, so "grazer github" finds the GitHub tab
+        // in Grazer and "grazer" the pane sitting in ~/projects/Grazer.
         for (auto& context: app.contexts)
             if (auto score = contextScore(query, app, context))
                 scored.push_back({*score, contextRow(app, context)});

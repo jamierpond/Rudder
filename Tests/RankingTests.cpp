@@ -328,3 +328,172 @@ auto tAppNameAloneListsContextsBelowApp
     check(!ranked.empty() && ranked.front().id == "com.eacp.cowterm");
     check(ranked.size() == 8);
 };
+
+namespace
+{
+// The pane Jamie couldn't find: Claude Code set its title to the
+// conversation, so the project is only in its path (and CowTerm's subtitle
+// names the tab and its branch).
+RudderContext keychainPane()
+{
+    auto pane = RudderContext {"pane:keychain",
+                               "2.1.299 · Password autofill and apple keychain",
+                               "Tab 3 · pane 1 · main",
+                               ""};
+    pane.path = "/Users/jamiepond/projects/Grazer";
+    return pane;
+}
+
+// CowTerm at its real size: the pane above among ~140 zsh panes (title the
+// cwd, as a shell at its prompt says nothing else) and places not open yet,
+// with Grazer and a few of its tabs running alongside.
+std::vector<RudderItem> busyCowTerm()
+{
+    const auto names = std::vector<std::string> {
+        "tamber-web", "tamber-api", "CowTerm", "Rudder", "eacp", "emberstore",
+        "Miro", "NanoTest", "iac", "dotfiles", "swift2mm", "GameExperiments",
+        "graphics-analyzer", "grader", "gaze-tracker", "garden-planner", "rage-clicks",
+        "eacp-updater", "acme-suite", "sonic-atlas", "keys-and-chords", "web-audio-lab",
+        "old-stuff", "zsh-config", "razor-blog", "laser-cutter", "eraser-tool",
+        "tamber-docs", "tamber-infra", "tamber-ios", "tamber-android", "pond-site",
+        "wave-editor", "midi-router", "synth-voice", "dsp-notes", "shader-toy",
+        "audio-graph", "grid-layout", "terraform-modules", "k8s-manifests",
+        "ci-scripts", "release-notes", "design-system", "icons", "fonts",
+        "data-pipeline", "analytics", "llm-evals", "prompt-lab", "agents",
+        "notebook", "scratch", "playground", "benchmarks", "perf-traces",
+        "crash-reports", "bug-bash", "feature-flags", "auth-service",
+        "billing-service", "search-service", "sync-engine", "file-watcher",
+        "image-cache", "video-encoder", "pdf-renderer", "markdown-parser",
+        "json-schema", "proto-defs"};
+
+    auto cowTerm = app("com.eacp.cowterm", "CowTerm");
+    auto tab = 0;
+
+    for (auto& name: names)
+    {
+        auto pane = RudderContext {"pane:" + name,
+                                   "~/projects/" + name,
+                                   "Tab " + std::to_string(++tab) + " · pane 1 · " + name,
+                                   ""};
+        pane.path = "/Users/jamiepond/projects/" + name;
+        cowTerm.contexts.push_back(pane);
+
+        auto second = RudderContext {"pane:" + name + "/lib",
+                                     "~/projects/" + name + "/lib",
+                                     "Tab " + std::to_string(tab) + " · pane 2 · main",
+                                     ""};
+        second.path = "/Users/jamiepond/projects/" + name + "/lib";
+        cowTerm.contexts.push_back(second);
+    }
+
+    cowTerm.contexts.insert(cowTerm.contexts.begin() + 40, keychainPane());
+
+    for (auto name: {"Unbrowse", "skills", "web-scraper", "voice-memos", "ear-trainer"})
+    {
+        auto place = RudderContext {"place:/Users/jamiepond/projects/" + std::string {name},
+                                    name,
+                                    "~/projects/" + std::string {name},
+                                    ""};
+        place.path = "/Users/jamiepond/projects/" + std::string {name};
+        place.open = false;
+        cowTerm.contexts.push_back(place);
+    }
+
+    auto grazerApp = app("audio.pond.grazer", "Grazer");
+
+    for (auto i = 0; i < 5; ++i)
+        grazerApp.contexts.push_back({"tab-" + std::to_string(i),
+                                      "Tab " + std::to_string(i),
+                                      "",
+                                      "https://example.com/" + std::to_string(i)});
+
+    return {cowTerm, grazerApp, app("com.apple.Safari", "Safari")};
+}
+
+int countFrom(const std::vector<RudderItem>& ranked, const std::string& appId)
+{
+    return (int) std::count_if(ranked.begin(),
+                               ranked.end(),
+                               [&](const RudderItem& item)
+                               { return item.appId == appId && item.kind != "app"; });
+}
+} // namespace
+
+auto tProjectFindsRetitledPane =
+    test("Ranking/a project name finds a pane whose title says something else") = []
+{
+    auto all = busyCowTerm();
+    check(all.front().contexts.size() > 140);
+
+    auto ranked = rankItems(all, "grazer");
+
+    // The Grazer app is a perfect title match; the pane is right under it,
+    // above Grazer's tabs (app name only) and every directory that merely
+    // has the letters (graphics-analyzer, grader, razor-blog).
+    check(!ranked.empty() && ranked.front().id == "audio.pond.grazer");
+    check(rankOf(ranked, "pane:keychain") == 1);
+    check(rankOf(ranked, "pane:graphics-analyzer") > rankOf(ranked, "tab-0"));
+};
+
+auto tAppThenProjectByPath =
+    test("Ranking/app name then project finds the pane by its directory") = []
+{
+    for (auto query: {"cowtermgrazer", "cowterm grazer"})
+        check(rankOf(rankItems(busyCowTerm(), query), "pane:keychain") == 0);
+};
+
+auto tTitleStillFinds = test("Ranking/the title still finds the pane") = []
+{
+    auto ranked = rankItems(busyCowTerm(), "keychain");
+
+    check(rankOf(ranked, "pane:keychain") == 0);
+
+    // Nothing else has those letters close together; the subtitles and long
+    // paths add no stragglers.
+    check(countFrom(ranked, "com.eacp.cowterm") == 1);
+};
+
+auto tScatteredPathsDontFlood =
+    test("Ranking/letters scattered through paths and subtitles don't match") = []
+{
+    // u(sers) j(amie)p(on)d: in every path, all of it far apart.
+    check(countFrom(rankItems(busyCowTerm(), "ujpd"), "com.eacp.cowterm") == 0);
+
+    // Ta(b) (1)2 · mai(n) in the subtitles, likewise.
+    check(countFrom(rankItems(busyCowTerm(), "b1n"), "com.eacp.cowterm") == 0);
+};
+
+auto tTitleBeatsSubtitle = test("Ranking/a title match beats the same on a subtitle") = []
+{
+    auto cowTerm = app("com.eacp.cowterm", "CowTerm");
+    auto onTitle = RudderContext {"pane:site", "~/projects/main-site", "Tab 1 · pane 1 · dev", ""};
+    onTitle.path = "/Users/jamiepond/projects/main-site";
+    cowTerm.contexts = {keychainPane(), onTitle};
+
+    auto ranked = rankItems({cowTerm}, "main");
+
+    check(rankOf(ranked, "pane:site") == 0);
+    check(rankOf(ranked, "pane:keychain") == 1, "the subtitle's branch still finds it");
+};
+
+auto tDirNameBeatsSubtitleAndPath =
+    test("Ranking/a directory's name beats its subtitle and full path") = []
+{
+    auto cowTerm = app("com.eacp.cowterm", "CowTerm");
+
+    auto byDir = RudderContext {"pane:dir", "claude", "", ""};
+    byDir.path = "/Users/j/projects/sonic";
+
+    auto bySubtitle = RudderContext {"pane:sub", "claude", "Tab 2 · pane 1 · sonic", ""};
+
+    auto byPath = RudderContext {"pane:path", "claude", "", ""};
+    byPath.path = "/Users/j/sonic/lib";
+
+    cowTerm.contexts = {byPath, bySubtitle, byDir};
+
+    auto ranked = rankItems({cowTerm}, "sonic");
+
+    check(rankOf(ranked, "pane:dir") == 0);
+    check(rankOf(ranked, "pane:sub") == 1);
+    check(rankOf(ranked, "pane:path") == 2);
+};

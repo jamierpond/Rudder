@@ -1150,6 +1150,8 @@ struct RudderApp
                 auto converted =
                     RudderContext {context.id, context.title, context.subtitle, context.url};
                 converted.open = context.open;
+                converted.path = context.path;
+                converted.focused = context.focused;
                 contexts.push_back(std::move(converted));
             }
 
