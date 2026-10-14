@@ -16,7 +16,8 @@
 //
 //   app -> Rudder   {"type":"hello","app":"Grazer","bundleId":"audio.pond.grazer","pid":42}
 //   app -> Rudder   {"type":"contexts","contexts":[{"id":"3","title":"…","url":"…"}]}
-//                   (each context may also carry "subtitle" and "open": false)
+//                   (each context may also carry "subtitle", "path", "open": false
+//                   and "focused": true)
 //   Rudder -> app   {"type":"activate","contextId":"3","raise":true}
 //
 // activate with "raise": false is a preview: the app only switches to the
@@ -51,7 +52,16 @@ struct Context
     // activates those on Enter, never to preview them.
     bool open = true;
 
-    MIRO_REFLECT(id, title, subtitle, url, open)
+    // The absolute directory the context is about, if it has one: a terminal
+    // pane's cwd, a project folder. Rudder matches on it (its last component
+    // most of all), so a pane is found by its project whatever its title says.
+    std::string path;
+
+    // The one context the app is showing now (its front tab, its focused
+    // pane). Rudder switches the app back to it when Esc undoes a preview.
+    bool focused = false;
+
+    MIRO_REFLECT(id, title, subtitle, url, open, path, focused)
 
     bool operator==(const Context&) const = default;
 };

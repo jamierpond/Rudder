@@ -36,6 +36,21 @@ bool readString(const Object& object, std::string_view key, std::string& out)
     return true;
 }
 
+// The same for a bool.
+bool readBool(const Object& object, std::string_view key, bool& out)
+{
+    auto* value = Miro::Json::find(object, key);
+
+    if (value == nullptr)
+        return true;
+
+    if (!value->isBool())
+        return false;
+
+    out = value->asBool();
+    return true;
+}
+
 std::optional<Message> readHello(const Object& object)
 {
     auto hello = Hello {};
@@ -75,16 +90,11 @@ std::optional<Message> readContexts(const Object& object)
         if (!readString(fields, "id", context.id) || context.id.empty()
             || !readString(fields, "title", context.title)
             || !readString(fields, "subtitle", context.subtitle)
-            || !readString(fields, "url", context.url))
+            || !readString(fields, "url", context.url)
+            || !readString(fields, "path", context.path)
+            || !readBool(fields, "open", context.open)
+            || !readBool(fields, "focused", context.focused))
             return std::nullopt;
-
-        if (auto* open = Miro::Json::find(fields, "open"))
-        {
-            if (!open->isBool())
-                return std::nullopt;
-
-            context.open = open->asBool();
-        }
 
         contexts.contexts.push_back(std::move(context));
     }

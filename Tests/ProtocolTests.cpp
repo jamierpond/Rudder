@@ -29,7 +29,8 @@ auto tContextsRoundTrip = test("Protocol/contexts keep every field") = []
 {
     auto sent = Contexts {{{"3", "GitHub", "https://github.com", "https://github.com"},
                            {"4", "Hacker \"News\"\n", "", ""},
-                           {"place:/Users/j/projects/tamber-web", "tamber-web", "", "", false}}};
+                           {"place:/Users/j/projects/tamber-web", "tamber-web", "", "", false},
+                           {"pane:9", "claude", "Tab 3", "", true, "/Users/j/projects/Grazer", true}}};
     auto line = encode(sent);
     auto message = decode(line.substr(0, line.size() - 1));
     auto* received = message ? std::get_if<Contexts>(&*message) : nullptr;
@@ -80,7 +81,9 @@ auto tOptionalFields = test("Protocol/subtitle and url may be left out") = []
     if (contexts != nullptr && !contexts->contexts.empty())
     {
         check(contexts->contexts.front().url.empty());
+        check(contexts->contexts.front().path.empty());
         check(contexts->contexts.front().open);
+        check(!contexts->contexts.front().focused);
     }
 };
 
@@ -95,6 +98,8 @@ auto tGarbageIgnored = test("Protocol/garbage decodes to nothing") = []
     check(!decode(R"({"type":"contexts","contexts":"nope"})").has_value());
     check(!decode(R"({"type":"hello","pid":"not a number"})").has_value());
     check(!decode(R"({"type":"contexts","contexts":[{"id":"1","open":"no"}]})").has_value());
+    check(!decode(R"({"type":"contexts","contexts":[{"id":"1","path":7}]})").has_value());
+    check(!decode(R"({"type":"contexts","contexts":[{"id":"1","focused":1}]})").has_value());
 };
 
 auto tLinesSplit = test("Protocol/lines split across chunks reassemble") = []
@@ -131,4 +136,25 @@ auto tClosedPlaces = test("Protocol/open: false marks a place that isn't open ye
 
     check(contexts != nullptr && contexts->contexts.size() == 1
           && !contexts->contexts.front().open);
+};
+
+auto tPathAndFocused = test("Protocol/path and focused decode, and older apps' lines still do") = []
+{
+    auto message = decode(
+        R"({"type":"contexts","contexts":[{"id":"pane:1","title":"t","path":"/Users/j/projects/Grazer","focused":true}]})");
+    auto* contexts = message ? std::get_if<Contexts>(&*message) : nullptr;
+
+    check(contexts != nullptr && contexts->contexts.size() == 1);
+
+    if (contexts != nullptr && !contexts->contexts.empty())
+    {
+        check(contexts->contexts.front().path == "/Users/j/projects/Grazer");
+        check(contexts->contexts.front().focused);
+    }
+
+    // What a Rudder built before these fields reads: it looks up only the
+    // keys it knows, so the extra ones are simply ignored.
+    auto line = encode(Contexts {{{"1", "Docs"}}});
+    check(line.find(R"("path":"")") != std::string::npos);
+    check(line.find(R"("focused":false)") != std::string::npos);
 };
