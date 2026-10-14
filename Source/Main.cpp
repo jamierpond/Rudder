@@ -294,6 +294,8 @@ struct RudderApp
         if (panelVisible)
             cancel();
 
+        logStack("back pressed");
+
         while (auto target = backStack.back())
         {
             if (auto app = findRunning(*target))
@@ -337,6 +339,17 @@ struct RudderApp
     {
         mru.touch(appId);
         backStack.record(appId);
+        logStack("activated " + appId);
+    }
+
+    void logStack(const std::string& what)
+    {
+        auto text = what + " | stack:";
+
+        for (auto& id: backStack.entries())
+            text += " " + id;
+
+        logEvent((text + (backStack.walking() ? " (walking)" : "")).c_str());
     }
 
     // --- Key capture ------------------------------------------------------------
