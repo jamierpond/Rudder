@@ -35,9 +35,20 @@ std::vector<RudderItem> mergeInstalled(std::vector<RudderItem> running,
 std::vector<RudderItem> rankItems(const std::vector<RudderItem>& all,
                                   const std::string& query);
 
+struct ScoredItem
+{
+    int score = 0;
+    RudderItem item;
+};
+
+// rankItems for a non-empty query, keeping each row's score (a favourite's
+// includes favouriteBoost), best first.
+std::vector<ScoredItem> scoreItems(const std::vector<RudderItem>& all,
+                                   const std::string& query);
+
 // What the live preview does for a selection. Only ever brings forward an
 // app that is running at the moment of the call; anything else -- a closed
-// app, an app that quit since the list was built -- is left alone. The
+// app, an app that quit since the list was built, a web row -- is left alone. The
 // preview never launches, opens or activates something that isn't running.
 enum class PreviewAction
 {

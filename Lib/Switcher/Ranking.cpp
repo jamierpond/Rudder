@@ -128,7 +128,18 @@ std::vector<RudderItem> rankItems(const std::vector<RudderItem>& all,
         return browsing;
     }
 
-    auto scored = std::vector<std::pair<int, RudderItem>> {};
+    auto ranked = std::vector<RudderItem> {};
+
+    for (auto& [score, item]: scoreItems(all, query))
+        ranked.push_back(std::move(item));
+
+    return ranked;
+}
+
+std::vector<ScoredItem> scoreItems(const std::vector<RudderItem>& all,
+                                   const std::string& query)
+{
+    auto scored = std::vector<ScoredItem> {};
 
     for (auto& app: all)
     {
@@ -155,25 +166,21 @@ std::vector<RudderItem> rankItems(const std::vector<RudderItem>& all,
                      scored.end(),
                      [](const auto& a, const auto& b)
                      {
-                         if (a.first != b.first)
-                             return a.first > b.first;
+                         if (a.score != b.score)
+                             return a.score > b.score;
 
-                         return a.second.running && !b.second.running;
+                         return a.item.running && !b.item.running;
                      });
 
-    auto ranked = std::vector<RudderItem> {};
-
-    for (auto& [score, item]: scored)
-        ranked.push_back(std::move(item));
-
-    return ranked;
+    return scored;
 }
 
 PreviewAction previewActionFor(const RudderItem& item,
                                bool runningNow,
                                const std::string& originAppId)
 {
-    if (!item.running || !runningNow)
+    // A web row opens a page, so only Enter does it.
+    if (item.kind == "web" || !item.running || !runningNow)
         return PreviewAction::none;
 
     return item.appId == originAppId ? PreviewAction::restoreOrigin
