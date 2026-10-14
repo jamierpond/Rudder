@@ -61,6 +61,14 @@ Each needs a `title` and one of `url`, `app` (bundle id) or `path`; `openWith`
 (bundle id) picks the app a url opens in. A url that's already open in a
 provider's tab (Wim) switches to that tab instead of opening another.
 
+## Icons
+
+`Assets/Icon/Source.png` is the art; `Scripts/make-icons.sh` (ImageMagick 7)
+turns it into the macOS app icon (`Icon.png`, Apple's 824-on-1024 grid), the
+Windows `Icon.ico` (near full-bleed tile, plain silhouette at 16–48 px) and the
+tray glyphs (`Tray.png` template for the menu bar, `TrayWindows.png`). The
+outputs are committed; rerun the script only when the art changes.
+
 ## Debugging
 
 - `RUDDER_LOG=1` traces the show/hide handshake, previews, the back stack and
