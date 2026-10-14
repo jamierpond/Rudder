@@ -255,6 +255,11 @@ struct RudderApp
         if (capturing)
             return;
 
+        for (auto* text: {&bindings.summon, &bindings.back})
+            if (auto chord = parseChord(*text);
+                chord && platform::isSystemShortcut(*keyCodeFor(chord->key), modifiersOf(*chord)))
+                logEvent(("hotkey clashes with a macOS shortcut: " + *text).c_str());
+
         if (auto chord = parseChord(bindings.summon))
             summonKey.emplace(modifiersOf(*chord),
                               *keyCodeFor(chord->key),
@@ -286,6 +291,13 @@ struct RudderApp
 
         auto canonical = serialiseChord(*chord);
         auto& other = action == "summon" ? bindings.back : bindings.summon;
+
+        if (platform::isSystemShortcut(*keyCodeFor(chord->key), modifiersOf(*chord)))
+        {
+            settingsError = "macOS already uses " + displayChord(*chord)
+                            + " (Keyboard Shortcuts in System Settings).";
+            return;
+        }
 
         if (canonical == other)
         {

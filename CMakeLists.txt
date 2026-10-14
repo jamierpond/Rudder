@@ -56,7 +56,8 @@ if (APPLE)
             Platform/QuickWindow-macOS.mm)
     target_link_libraries(RudderPlatform PRIVATE
             "-framework AppKit"
-            "-framework ApplicationServices")
+            "-framework ApplicationServices"
+            "-framework Carbon")
     # The tamber-web ports (QuickWindow, Permissions) keep their original
     # manual retain/release; Rudder's own platform code is ARC.
     set_source_files_properties(Platform/Platform-macOS.mm

@@ -3,6 +3,7 @@
 
 #import <AppKit/AppKit.h>
 #import <ApplicationServices/ApplicationServices.h>
+#import <Carbon/Carbon.h>
 #import <CoreServices/CoreServices.h>
 
 #include <algorithm>
@@ -829,6 +830,44 @@ bool launchApp(const std::string& path)
                                         configuration:configuration
                                     completionHandler:nil];
     return url != nil;
+}
+
+bool isSystemShortcut(std::uint16_t keyCode, const eacp::Graphics::ModifierKeys& modifiers)
+{
+    auto wanted = UInt32 {0};
+
+    if (modifiers.shift)
+        wanted |= shiftKey;
+    if (modifiers.control)
+        wanted |= controlKey;
+    if (modifiers.alt)
+        wanted |= optionKey;
+    if (modifiers.command)
+        wanted |= cmdKey;
+
+    CFArrayRef shortcuts = nullptr;
+
+    if (CopySymbolicHotKeys(&shortcuts) != noErr || shortcuts == nullptr)
+        return false;
+
+    auto relevant = UInt32 {shiftKey | controlKey | optionKey | cmdKey};
+    auto found = false;
+
+    for (NSDictionary* shortcut in (__bridge NSArray*) shortcuts)
+    {
+        auto enabled = [shortcut[(__bridge NSString*) kHISymbolicHotKeyEnabled] boolValue];
+        auto code = [shortcut[(__bridge NSString*) kHISymbolicHotKeyCode] unsignedIntValue];
+        auto mods = [shortcut[(__bridge NSString*) kHISymbolicHotKeyModifiers] unsignedIntValue];
+
+        if (enabled && code == keyCode && (mods & relevant) == wanted)
+        {
+            found = true;
+            break;
+        }
+    }
+
+    CFRelease(shortcuts);
+    return found;
 }
 
 void announceStarted()
