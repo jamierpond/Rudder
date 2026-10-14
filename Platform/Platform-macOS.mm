@@ -157,8 +157,22 @@ bool raiseFrontWindow(pid_t pid)
 
     // Closed or replaced since it was cached: look again, once.
     window = refreshFrontWindow(pid);
-    return window != nullptr
-           && AXUIElementPerformAction(window, kAXRaiseAction) == kAXErrorSuccess;
+
+    if (window == nullptr)
+    {
+        NSLog(@"Rudder: preview raise failed for pid %d: no window found "
+              @"(trusted: %d)",
+              pid,
+              AXIsProcessTrusted());
+        return false;
+    }
+
+    auto error = AXUIElementPerformAction(window, kAXRaiseAction);
+
+    if (error != kAXErrorSuccess)
+        NSLog(@"Rudder: preview raise failed for pid %d: AXError %d", pid, (int) error);
+
+    return error == kAXErrorSuccess;
 }
 
 id activateObserver = nil;
@@ -292,12 +306,139 @@ bool activateApp(const RunningApp& app)
     return activated;
 }
 
+namespace
+{
+CFMachPortRef captureTap = nullptr;
+KeyCapture activeCapture;
+NSWindow* capturePanel = nil;
+
+eacp::Graphics::KeyEvent toKeyEvent(CGEventType type, CGEventRef event)
+{
+    auto key = eacp::Graphics::KeyEvent {};
+    key.type = type == kCGEventKeyUp ? eacp::Graphics::KeyEventType::Up
+                                     : eacp::Graphics::KeyEventType::Down;
+    key.keyCode =
+        (std::uint16_t) CGEventGetIntegerValueField(event, kCGKeyboardEventKeycode);
+    key.isRepeat = CGEventGetIntegerValueField(event, kCGKeyboardEventAutorepeat) != 0;
+    key.timestamp = (double) CGEventGetTimestamp(event) / 1e9;
+
+    auto flags = CGEventGetFlags(event);
+    key.modifiers.shift = (flags & kCGEventFlagMaskShift) != 0;
+    key.modifiers.control = (flags & kCGEventFlagMaskControl) != 0;
+    key.modifiers.alt = (flags & kCGEventFlagMaskAlternate) != 0;
+    key.modifiers.command = (flags & kCGEventFlagMaskCommand) != 0;
+
+    UniChar buffer[8];
+    UniCharCount length = 0;
+    CGEventKeyboardGetUnicodeString(event, 8, &length, buffer);
+    key.characters = toString([NSString stringWithCharacters:buffer length:length]);
+
+    // What the key types with no modifiers held, as AppKit reports it.
+    auto* plain = [NSEvent eventWithCGEvent:event];
+    key.charactersIgnoringModifiers =
+        plain != nil && (type == kCGEventKeyDown || type == kCGEventKeyUp)
+            ? toString(plain.charactersIgnoringModifiers)
+            : std::string {};
+
+    return key;
+}
+
+CGEventRef captureCallback(CGEventTapProxy, CGEventType type, CGEventRef event, void*)
+{
+    // macOS switches a slow tap off; switch it straight back on.
+    if (type == kCGEventTapDisabledByTimeout || type == kCGEventTapDisabledByUserInput)
+    {
+        if (captureTap != nullptr)
+            CGEventTapEnable(captureTap, true);
+
+        return event;
+    }
+
+    if (type == kCGEventLeftMouseDown || type == kCGEventRightMouseDown)
+    {
+        auto at = CGEventGetLocation(event);
+        auto frame = capturePanel != nil ? capturePanel.frame : NSZeroRect;
+
+        // CG measures down from the primary display's top, Cocoa up from its
+        // bottom.
+        auto primaryHeight = NSScreen.screens.firstObject.frame.size.height;
+        auto point = NSMakePoint(at.x, primaryHeight - at.y);
+
+        if (!NSPointInRect(point, frame) && activeCapture.onMouseDownOutside)
+            activeCapture.onMouseDownOutside();
+
+        return event;
+    }
+
+    if (type != kCGEventKeyDown && type != kCGEventKeyUp)
+        return event;
+
+    if (activeCapture.onKey && activeCapture.onKey(toKeyEvent(type, event)))
+        return nullptr;
+
+    return event;
+}
+} // namespace
+
+bool startKeyCapture(eacp::Graphics::Window& panel, KeyCapture capture)
+{
+    activeCapture = std::move(capture);
+    capturePanel = (__bridge NSWindow*) panel.getHandle();
+
+    if (captureTap == nullptr)
+    {
+        auto mask = CGEventMaskBit(kCGEventKeyDown) | CGEventMaskBit(kCGEventKeyUp)
+                    | CGEventMaskBit(kCGEventLeftMouseDown)
+                    | CGEventMaskBit(kCGEventRightMouseDown);
+
+        captureTap = CGEventTapCreate(kCGSessionEventTap,
+                                      kCGHeadInsertEventTap,
+                                      kCGEventTapOptionDefault,
+                                      mask,
+                                      captureCallback,
+                                      nullptr);
+
+        if (captureTap == nullptr)
+        {
+            NSLog(@"Rudder: key capture unavailable (trusted: %d)", AXIsProcessTrusted());
+            return false;
+        }
+
+        auto source = CFMachPortCreateRunLoopSource(nullptr, captureTap, 0);
+        CFRunLoopAddSource(CFRunLoopGetMain(), source, kCFRunLoopCommonModes);
+        CFRelease(source);
+    }
+
+    CGEventTapEnable(captureTap, true);
+    return true;
+}
+
+void stopKeyCapture()
+{
+    if (captureTap != nullptr)
+        CGEventTapEnable(captureTap, false);
+
+    activeCapture = {};
+    capturePanel = nil;
+}
+
 bool previewApp(const RunningApp& app)
 {
     if (!AXIsProcessTrusted())
         return false;
 
-    return raiseFrontWindow(app.pid);
+    auto appElement = AXUIElementCreateApplication(app.pid);
+    AXUIElementSetMessagingTimeout(appElement, axTimeoutSeconds);
+    auto error =
+        AXUIElementSetAttributeValue(appElement, kAXFrontmostAttribute, kCFBooleanTrue);
+    CFRelease(appElement);
+
+    if (error != kAXErrorSuccess)
+        NSLog(@"Rudder: preview activation failed for %s: AXError %d",
+              app.name.c_str(),
+              (int) error);
+
+    return raiseFrontWindow(app.pid) && error == kAXErrorSuccess;
 }
 
 void rememberPreviewOrigin(const RunningApp& origin)

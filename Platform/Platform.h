@@ -32,17 +32,30 @@ RunningApp frontmostApp();
 const eacp::Graphics::Image& appIcon(const RunningApp& app);
 void forgetIcon(const std::string& appId);
 
-// Really switch: activate the app and bring its frontmost window forward.
+// Really switch: activate the app and bring its front window forward. Also
+// the live preview, which activates for real under key capture: an AX raise
+// alone stops under the previously active app's front window.
 bool activateApp(const RunningApp& app);
 
-// The live preview. Raise the app's front window WITHOUT activating the app,
-// so the panel keeps key and typing goes on. On macOS this is an AX raise,
-// and the window server only lets it go as far as just under the front window
-// of the app the panel was summoned over: anything not covered by that window
-// shows, a maximised one hides it. (Activating the target and taking key back
-// lands it on top but leaves keystrokes going to the target; not shipped.)
-// False when it couldn't (no accessibility permission, no window).
+// The preview's cheaper activation: AXFrontmost plus a raise of the cached
+// front window, no LaunchServices round trip. Needs accessibility.
 bool previewApp(const RunningApp& app);
+
+// While the panel is up, the keyboard is Rudder's whichever app is active:
+// every key event system-wide goes to `onKey` (on the main thread) and is
+// swallowed when it returns true. This is what lets the preview really
+// activate the selected app -- its window then sits on top, under the panel
+// -- while typing carries on into the panel. `onMouseDownOutside` fires for a
+// click anywhere but `panel`. Needs accessibility; off (no tap, no cost)
+// between summons.
+struct KeyCapture
+{
+    std::function<bool(const eacp::Graphics::KeyEvent&)> onKey;
+    std::function<void()> onMouseDownOutside;
+};
+
+bool startKeyCapture(eacp::Graphics::Window& panel, KeyCapture capture);
+void stopKeyCapture();
 
 // Captured at summon, before any preview: `origin`'s front window. Esc raises
 // it again so the screen is exactly as it was.

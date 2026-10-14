@@ -125,6 +125,12 @@ struct RudderApp
         // each key event (by its OS timestamp) to the frame that shows it.
         panel.onFrame = [this]
         {
+            if (!pendingPreview.empty())
+            {
+                auto id = std::exchange(pendingPreview, {});
+                Threads::callAsync([this, id] { previewNow(id); });
+            }
+
             auto now = uptime();
 
             if (hotkeyTime > 0.0)
@@ -305,10 +311,12 @@ struct RudderApp
     {
         auto events = platform::WorkspaceEvents {};
 
+        // Previews activate apps while the panel is up; only what the panel
+        // commits to counts (openItem records it).
         events.onActivated = [this](const platform::RunningApp& app)
         {
-            mru.touch(app.id);
-            backStack.record(app.id);
+            if (!panelVisible)
+                recordActivation(app.id);
         };
 
         // Rendering the icon now keeps the next summon free of it.
@@ -323,6 +331,61 @@ struct RudderApp
         };
 
         platform::observeWorkspace(std::move(events));
+    }
+
+    void recordActivation(const std::string& appId)
+    {
+        mru.touch(appId);
+        backStack.record(appId);
+    }
+
+    // --- Key capture ------------------------------------------------------------
+
+    // While the panel is up the keyboard is ours, whichever app the preview
+    // has activated. The two hotkeys pass through so they still toggle and go
+    // back -- except while a new chord is being recorded.
+    void startKeyCapture()
+    {
+        if (!platform::accessibilityTrusted(false))
+            return;
+
+        auto capture = platform::KeyCapture {};
+        capture.onKey = [this](const KeyEvent& event) { return onCapturedKey(event); };
+        capture.onMouseDownOutside = [this]
+        { Threads::callAsync([this] { cancel(); }); };
+
+        capturingKeys = platform::startKeyCapture(window, std::move(capture));
+    }
+
+    void stopKeyCapture()
+    {
+        if (!capturingKeys)
+            return;
+
+        capturingKeys = false;
+        platform::stopKeyCapture();
+    }
+
+    bool onCapturedKey(const KeyEvent& event)
+    {
+        if (!capturing && (isChord(event, bindings.summon) || isChord(event, bindings.back)))
+            return false;
+
+        if (event.type == KeyEventType::Down)
+            panel.keyDown(event);
+
+        return true;
+    }
+
+    static bool isChord(const KeyEvent& event, const std::string& text)
+    {
+        auto chord = parseChord(text);
+
+        return chord && keyCodeFor(chord->key) == event.keyCode
+               && chord->control == event.modifiers.control
+               && chord->option == event.modifiers.alt
+               && chord->shift == event.modifiers.shift
+               && chord->command == event.modifiers.command;
     }
 
     std::optional<platform::RunningApp> findRunning(const std::string& id)
@@ -378,6 +441,7 @@ struct RudderApp
 
         panel.focus();
         syncAccessibilityGate(true);
+        startKeyCapture();
         logEvent("reveal: shown");
     }
 
@@ -390,6 +454,7 @@ struct RudderApp
         panelVisible = false;
         setCapturing(false);
         syncAccessibilityGate(false);
+        stopKeyCapture();
         previewedId.clear();
 
         // Deferred on macOS: hiding a key panel while the app is active
@@ -454,7 +519,8 @@ struct RudderApp
 
         // The unlock flow sends the user to System Settings and back; the
         // panel waits for them instead of hiding.
-        if (isKey || !window.isVisible() || panel.accessibilityGateShown())
+        if (isKey || !window.isVisible() || panel.accessibilityGateShown()
+            || capturingKeys)
             return;
 
         Threads::callAsync(
@@ -496,6 +562,7 @@ struct RudderApp
 
         filtered = allItems;
         selected = initialSelection(filtered, query, frontAppId);
+        pendingPreview.clear();
         previewedId.clear();
         previewWindows.clear();
         previewRaised = false;
@@ -525,11 +592,9 @@ struct RudderApp
     }
 
     // Wim's palette preview, for windows: whenever the results change -- a
-    // keystroke or an arrow -- the selection's front window is raised behind
-    // the panel at once, without activating its app, so the panel keeps key
-    // and typing carries on. Skipped when the selection didn't change. The
-    // app the panel was summoned over is the screen as it was, so it previews
-    // by restoring the origin window.
+    // keystroke or an arrow -- the selection comes to the front behind the
+    // panel at once. Skipped when the selection didn't change. The app the
+    // panel was summoned over previews as the screen was: its origin window.
     void previewSelection()
     {
         if (filtered.empty())
@@ -544,40 +609,42 @@ struct RudderApp
         previewWindows.clear();
         previewRaised = false;
 
-        auto app = findRunning(item.appId);
+        // After the next frame: the list shows the keystroke first, and the
+        // activation (an AX round trip to the target) follows at once.
+        pendingPreview = item.appId;
+        panel.repaint();
+    }
+
+    void previewNow(const std::string& id)
+    {
+        if (!panelVisible || previewedId != id)
+            return;
+
+        auto app = findRunning(id);
 
         if (!app)
             return;
 
         auto start = uptime();
 
-        if (app->id == frontAppId)
+        // Under key capture the preview can activate for real -- the only
+        // way the window gets above everything -- and typing still lands in
+        // the panel. Without it (no grant), nothing is raised: the pane shows
+        // the selection instead.
+        if (capturingKeys)
         {
-            platform::restorePreviewOrigin();
-            previewRaised = true;
-        }
-        else
             previewRaised = platform::previewApp(*app);
 
-        logEvent(("raise " + app->name + " " + millis(uptime() - start)
+            if (app->id == frontAppId)
+                platform::restorePreviewOrigin();
+        }
+
+        logEvent(("preview " + app->name + " " + millis(uptime() - start)
                   + (previewRaised ? "" : " (not raised)"))
                      .c_str());
 
-        // The window titles are a walk of the app's windows, so they follow a
-        // turn later instead of holding up the raise and the list's frame.
-        auto id = app->id;
-        Threads::callAsync(
-            [this, id]
-            {
-                if (!panelVisible || previewedId != id)
-                    return;
-
-                if (auto target = findRunning(id))
-                {
-                    previewWindows = platform::windowTitles(*target);
-                    publishResults();
-                }
-            });
+        previewWindows = platform::windowTitles(*app);
+        publishResults();
     }
 
     // Enter: open whatever is selected -- with no query that's the previous
@@ -612,6 +679,7 @@ struct RudderApp
         quick_window::rememberAppForHandoff(app->pid);
         hidePanel();
         platform::activateApp(*app);
+        recordActivation(app->id);
     }
 
     // Esc / losing focus: put the screen back exactly as it was.
@@ -622,10 +690,15 @@ struct RudderApp
 
         logEvent("cancel");
 
-        if (!previewedId.empty() && previewedId != frontAppId)
-            platform::restorePreviewOrigin();
-
+        // A preview activated another app; hand the screen back as it was.
+        auto previewed = !previewedId.empty() && previewedId != frontAppId;
         hidePanel();
+
+        if (previewed && !origin.id.empty())
+        {
+            platform::activateApp(origin);
+            platform::restorePreviewOrigin();
+        }
     }
 
     void publishResults()
@@ -712,6 +785,8 @@ struct RudderApp
     Image noIcon;
     double hotkeyTime = 0.0;
     platform::RunningApp origin;
+    bool capturingKeys = false;
+    std::string pendingPreview;
     std::optional<Threads::Timer> accessibilityPoll;
 
     TrayIcon tray;
