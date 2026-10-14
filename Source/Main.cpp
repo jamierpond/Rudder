@@ -987,6 +987,10 @@ struct RudderApp
         {
             logEvent(("provider hello: " + hello.app + " (" + hello.bundleId + ")").c_str());
             connectionApps[connection] = hello.bundleId;
+
+            // A newer connection from the same app takes over its contexts;
+            // the older one closing later mustn't drop them.
+            providerConnection[hello.bundleId] = connection;
             providers.connect({hello.app, hello.bundleId, hello.pid},
                               [this, connection](const std::string& contextId)
                               { contextServer.sendActivate(connection, contextId); });
@@ -997,7 +1001,7 @@ struct RudderApp
         {
             auto app = connectionApps.find(connection);
 
-            if (app == connectionApps.end())
+            if (app == connectionApps.end() || providerConnection[app->second] != connection)
                 return;
 
             auto contexts = std::vector<RudderContext> {};
@@ -1023,9 +1027,15 @@ struct RudderApp
             if (app == connectionApps.end())
                 return;
 
-            logEvent(("provider gone: " + app->second).c_str());
-            providers.disconnect(app->second);
+            auto bundleId = app->second;
             connectionApps.erase(app);
+
+            if (providerConnection[bundleId] != connection)
+                return;
+
+            logEvent(("provider gone: " + bundleId).c_str());
+            providerConnection.erase(bundleId);
+            providers.disconnect(bundleId);
         };
 
         providers.onChanged = [this] { refreshContexts(); };
@@ -1334,6 +1344,7 @@ struct RudderApp
 
     platform::ContextServer contextServer;
     std::map<int, std::string> connectionApps;
+    std::map<std::string, int> providerConnection;
     std::optional<Threads::Timer> accessibilityPoll;
 
     TrayIcon tray;
