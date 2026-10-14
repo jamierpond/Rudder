@@ -4,28 +4,34 @@
 
 <h1 align="center">Rudder</h1>
 
-A macOS fzf-style app switcher. Hit **⌥Space**, type, **Enter**. The panel
-appears instantly over everything, filters running apps (and their windows,
-and installed apps that aren't running) as you type, and brings the selection
-to the front behind it while you type. **⌥`** jumps back to where you were
-before, and keeps walking back on each press.
+An fzf-style app switcher for macOS and Windows. Hit **⌥Space** (**Alt+Space**
+on Windows), type, **Enter**. The panel appears instantly over everything,
+filters running apps (and their windows, and installed apps that aren't
+running) as you type, and brings the selection to the front behind it while
+you type. **⌥`** (**Alt+`**) jumps back to where you were before, and keeps
+walking back on each press.
 
 Drawn with eacp's GPU component tier (one `ComponentHost`), no web view.
 
 ## Build and run
 
 ```sh
-just build   # configure + build (CMake/Ninja, deps via CPM)
-just run     # build, quit any running Rudder, reset its dev Accessibility grant, open it
+just build   # configure + build (macOS: Ninja, Windows: the default Visual Studio generator; deps via CPM)
+just run     # build, quit any running Rudder (macOS: and reset its dev Accessibility grant), open it
 just test    # unit tests
 ```
 
-Rudder is an agent app: no Dock icon, a menu-bar icon (Open, Settings…, Quit),
-and it registers itself to start at login.
+Rudder is an agent app: no Dock icon or taskbar button, a menu-bar / tray icon
+(Open, Settings…, Quit), and it registers itself to start at login (on Windows
+under `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`). Launching it again
+while it runs opens the panel.
 
 ## Permissions
 
-Accessibility, for the live preview, window rows and the keyboard while the
+Windows needs none: any app may read and raise another's windows, so there is
+no grant to ask for and the unlock overlay never shows.
+
+On macOS, Accessibility, for the live preview, window rows and the keyboard while the
 panel is up. Without it the panel shows an unlock overlay: drag the Rudder
 icon into System Settings › Privacy & Security › Accessibility and switch it
 on. Every dev build is ad-hoc signed with a new cdhash, so `just run` resets
@@ -33,16 +39,22 @@ the grant first.
 
 ## Keys
 
-| | |
-|---|---|
-| ⌥Space | open / close the panel (rebindable) |
-| ⌥\` | go back (rebindable) |
-| ↑ ↓, ⌃N ⌃P | move |
-| Enter | switch (launches a closed app, focuses a window row) |
-| Esc | close and put the screen back |
-| ⌃Q | quit the selected app (rebindable) |
-| ⌘D | favourite / unfavourite the selection (rebindable) |
-| ⌃W ⌃U ⌃K ⌃A ⌃E ⌃B ⌃F ⌃H ⌃D, ⌥B ⌥F ⌥⌫ | readline editing |
+| macOS | Windows | |
+|---|---|---|
+| ⌥Space | Alt+Space | open / close the panel (rebindable) |
+| ⌥\` | Alt+\` | go back (rebindable) |
+| ↑ ↓, ⌃N ⌃P | ↑ ↓, Ctrl+N Ctrl+P | move |
+| Enter | Enter | switch (launches a closed app, focuses a window row) |
+| Esc | Esc | close and put the screen back |
+| ⌃Q | Ctrl+Q | quit the selected app (rebindable) |
+| ⌘D | Ctrl+D | favourite / unfavourite the selection (rebindable) |
+| ⌃W ⌃U ⌃K ⌃A ⌃E ⌃B ⌃F ⌃H ⌃D, ⌥B ⌥F ⌥⌫ | the same with Ctrl and Alt | readline editing |
+
+On Windows, Alt+Space normally opens the focused window's menu (Restore, Move,
+Close…). That menu is the app's own reaction to the key rather than a
+registered hotkey, so Rudder's RegisterHotKey takes the chord before any app
+sees it. Only another app that registered it first (PowerToys Run, say) wins;
+Settings then says so, and you can pick another chord.
 
 ## Favourites
 
@@ -62,7 +74,8 @@ whenever it changes on disk:
 ```
 
 Each needs a `title` and one of `url`, `app` (bundle id) or `path`; `openWith`
-(bundle id) picks the app a url opens in. A url that's already open in a
+(bundle id) picks the app a url opens in. On Windows an app's id is its
+executable's file name: `"app": "notepad.exe"`, `"openWith": "firefox.exe"`. A url that's already open in a
 provider's tab (Grazer) switches to that tab instead of opening another.
 
 ## Icons
@@ -81,10 +94,12 @@ outputs are committed; rerun the script only when the art changes.
 
 ## Publishing contexts from an app
 
-Apps can list their own places (tabs, sessions) in Rudder. Rudder listens on
-`~/Library/Application Support/Rudder/rudder.sock` for newline-delimited JSON
-(see `Client/RudderProtocol.h`) and posts the distributed notification
-`rudder.started` when it starts. The `RudderClient` library does the client
+Apps can list their own places (tabs, sessions) in Rudder. Rudder listens for
+newline-delimited JSON (see `Client/RudderProtocol.h`): on macOS on
+`~/Library/Application Support/Rudder/rudder.sock`, posting the distributed
+notification `rudder.started` when it starts; on Windows on a per-user named
+pipe (an eacp IPC channel), keeping the named event `Local\rudder.started` set
+while it runs. The `RudderClient` library does the client
 side; pull in just that with CPM:
 
 ```cmake
