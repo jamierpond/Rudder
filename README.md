@@ -37,7 +37,29 @@ the grant first.
 | Enter | switch (launches a closed app, focuses a window row) |
 | Esc | close and put the screen back |
 | ⌃Q | quit the selected app (rebindable) |
+| ⌘D | favourite / unfavourite the selection (rebindable) |
 | ⌃W ⌃U ⌃K ⌃A ⌃E ⌃B ⌃F ⌃H ⌃D, ⌥B ⌥F ⌥⌫ | readline editing |
+
+## Favourites
+
+Starred rows at the top of the panel, always searchable. They live in
+`~/Library/Application Support/pond/Rudder/favourites.json` (also shown in
+Settings), which Rudder reloads whenever it changes on disk:
+
+```json
+{
+  "favourites": [
+    {"title": "tamber-web PRs", "url": "https://github.com/tamber-inc/tamber-web/pulls",
+     "keywords": ["prs", "pulls"]},
+    {"title": "Notes", "app": "com.apple.Notes"},
+    {"title": "Projects", "path": "~/projects"}
+  ]
+}
+```
+
+Each needs a `title` and one of `url`, `app` (bundle id) or `path`; `openWith`
+(bundle id) picks the app a url opens in. A url that's already open in a
+provider's tab (Wim) switches to that tab instead of opening another.
 
 ## Debugging
 
