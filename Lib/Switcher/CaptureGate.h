@@ -29,9 +29,13 @@ enum class CaptureEvent
 {
     keyDown,
     keyUp,
-    // The OS switched the tap off: it took too long, or the user's input did
-    // (secure input, a password field). Never switched back on.
+    // The OS switched the tap off because it took too long. Never switched
+    // back on.
     tapTimedOut,
+    // The notice macOS also sends when Rudder itself switches the tap off
+    // (every stop, and the reset at each start). It arrives late, after the
+    // next start, so it says nothing about the capture now on: ignored, and
+    // never a reason to switch the tap back on.
     tapDisabledByUser,
     other,
 };

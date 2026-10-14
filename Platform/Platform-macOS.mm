@@ -454,7 +454,7 @@ void disableTap()
 {
     captureOn = false;
 
-    if (auto tap = captureTap.load())
+    if (auto tap = captureTap.load(); tap != nullptr && CGEventTapIsEnabled(tap))
         CGEventTapEnable(tap, false);
 }
 
@@ -495,6 +495,8 @@ void queueAbort(const char* reason)
 {
     if (abortQueued.exchange(true))
         return;
+
+    os_log_error(OS_LOG_DEFAULT, "Rudder: key capture off: %{public}s", reason);
 
     dispatch_async(dispatch_get_main_queue(),
                    ^{
@@ -580,12 +582,9 @@ CGEventRef captureCallback(CGEventTapProxy, CGEventType type, CGEventRef event, 
         {
             disableTap();
 
-            auto* reason = kind == CaptureEvent::tapTimedOut ? "the OS timed the tap out"
-                           : kind == CaptureEvent::tapDisabledByUser
-                               ? "the OS disabled the tap (user input)"
-                               : "the main thread stopped taking keys";
-            os_log_error(OS_LOG_DEFAULT, "Rudder: key capture off: %{public}s", reason);
-            queueAbort(reason);
+            queueAbort(kind == CaptureEvent::tapTimedOut
+                           ? "the OS timed the tap out"
+                           : "the main thread stopped taking keys");
             return event;
         }
 

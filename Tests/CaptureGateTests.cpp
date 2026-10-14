@@ -49,15 +49,21 @@ auto tRecordingTakesHotkeys = test("CaptureGate/recording a chord swallows the h
           == CaptureVerdict::swallow);
 };
 
-auto tTimeoutAborts = test("CaptureGate/an OS disable is never undone") = []
+auto tTimeoutAborts = test("CaptureGate/an OS timeout aborts and is never undone") = []
 {
-    for (auto event: {CaptureEvent::tapTimedOut, CaptureEvent::tapDisabledByUser})
-    {
-        check(decideCapture(event, open, std::nullopt, hotkeys)
-              == CaptureVerdict::passAndAbort);
-        check(decideCapture(event, {}, std::nullopt, hotkeys)
-              == CaptureVerdict::passAndAbort);
-    }
+    check(decideCapture(CaptureEvent::tapTimedOut, open, std::nullopt, hotkeys)
+          == CaptureVerdict::passAndAbort);
+    check(decideCapture(CaptureEvent::tapTimedOut, {}, std::nullopt, hotkeys)
+          == CaptureVerdict::passAndAbort);
+};
+
+auto tOwnDisableIgnored = test("CaptureGate/the notice of Rudder's own disable is ignored") = []
+{
+    // It lands after the next start: aborting on it closed every fresh panel.
+    check(decideCapture(CaptureEvent::tapDisabledByUser, open, std::nullopt, hotkeys)
+          == CaptureVerdict::pass);
+    check(decideCapture(CaptureEvent::tapDisabledByUser, {}, std::nullopt, hotkeys)
+          == CaptureVerdict::pass);
 };
 
 auto tNoPanelPasses = test("CaptureGate/no panel on screen: everything passes, tap off") = []

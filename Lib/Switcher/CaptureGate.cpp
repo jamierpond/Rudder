@@ -40,8 +40,11 @@ CaptureVerdict decideCapture(CaptureEvent event,
 {
     // Re-enabling here is what turned a slow Rudder into a frozen machine:
     // the OS's safety net is honoured, always.
-    if (event == CaptureEvent::tapTimedOut || event == CaptureEvent::tapDisabledByUser)
+    if (event == CaptureEvent::tapTimedOut)
         return CaptureVerdict::passAndAbort;
+
+    if (event == CaptureEvent::tapDisabledByUser)
+        return CaptureVerdict::pass;
 
     if (!state.capturing || !state.panelShown)
         return CaptureVerdict::passAndStop;
