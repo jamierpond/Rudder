@@ -68,11 +68,11 @@ target_include_directories(RudderSwitcher PUBLIC Lib/Switcher)
 target_link_libraries(RudderSwitcher PUBLIC emberstore RudderProtocol)
 
 # The OS seam: running apps, activation, preview and the quick-panel window
-# tricks. Only macOS is implemented; a Platform-Windows.cpp slots in here.
+# tricks, one file per feature and platform behind the headers in Platform/.
 if (APPLE)
     add_library(RudderPlatform STATIC
             Platform/ContextServer-macOS.mm
-            Platform/Permissions.mm
+            Platform/Permissions-macOS.mm
             Platform/Platform-macOS.mm
             Platform/QuickWindow-macOS.mm)
     target_link_libraries(RudderPlatform PRIVATE
@@ -83,6 +83,9 @@ if (APPLE)
     # manual retain/release; Rudder's own platform code is ARC.
     set_source_files_properties(Platform/Platform-macOS.mm Platform/ContextServer-macOS.mm
             PROPERTIES COMPILE_OPTIONS -fobjc-arc)
+elseif (WIN32)
+    add_library(RudderPlatform STATIC
+            Platform/Permissions-Windows.cpp)
 endif ()
 
 target_include_directories(RudderPlatform PUBLIC Platform)
