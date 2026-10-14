@@ -38,6 +38,7 @@ list(APPEND CMAKE_MODULE_PATH "${eacp_SOURCE_DIR}/CMake")
 # the app shell.
 add_library(RudderSwitcher STATIC
         Lib/Switcher/BackStack.cpp
+        Lib/Switcher/Keybinding.cpp
         Lib/Switcher/Mru.cpp
         Lib/Switcher/Ranking.cpp)
 

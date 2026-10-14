@@ -1,6 +1,7 @@
 add_executable(RudderTests
         BackStackTests.cpp
         FuzzyMatchTests.cpp
+        KeybindingTests.cpp
         MruTests.cpp
         RankingTests.cpp)
 
