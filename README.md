@@ -1,4 +1,8 @@
-# Rudder
+<p align="center">
+  <img src="Assets/Icon/Icon.png" width="160" alt="Rudder icon: a cow-spotted jet on a black tile">
+</p>
+
+<h1 align="center">Rudder</h1>
 
 A macOS fzf-style app switcher. Hit **⌥Space**, type, **Enter**. The panel
 appears instantly over everything, filters running apps (and their windows,
