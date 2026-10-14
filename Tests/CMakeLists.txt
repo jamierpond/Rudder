@@ -9,7 +9,8 @@ add_executable(RudderTests
         ProtocolTests.cpp
         ProvidersTests.cpp
         RankingTests.cpp
-        UrlTests.cpp)
+        UrlTests.cpp
+        WebTests.cpp)
 
 target_link_libraries(RudderTests PRIVATE NanoTest NanoTestMain RudderSwitcher)
 nano_discover_tests(RudderTests)
