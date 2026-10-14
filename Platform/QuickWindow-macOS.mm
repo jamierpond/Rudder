@@ -3,11 +3,11 @@
 #import <AppKit/AppKit.h>
 #import <objc/runtime.h>
 
-#include <tamber_apps/Apps/ReopenHandler.h>
+#include <eacp/Core/App/App.h>
 
 #include <utility>
 
-namespace tamber::quick_window
+namespace rudder::quick_window
 {
 namespace
 {
@@ -95,6 +95,11 @@ void enableWindowDragThroughHost()
       method_setImplementation(
           method, reinterpret_cast<IMP>(redirectedPerformWindowDrag));
     });
+}
+
+void rememberAppForHandoff(int pid)
+{
+    rememberedFrontPid = (pid_t) pid;
 }
 
 void rememberFrontmostApp()
@@ -283,11 +288,10 @@ void hideYieldingActivation(eacp::Graphics::Window& window,
 
 // Never install an NSApplicationDelegate here: a process has exactly one and the
 // last writer wins, which used to unhook eacp's applicationShouldTerminate: and
-// with it every Apps::setQuitHandler. Tamber::Apps also keeps a copy this
-// process can fire itself (Apps::requestReopen).
+// with it every Apps::setQuitHandler.
 void installReopenHandler(std::function<void()> onReopen)
 {
     reopenHandler = std::move(onReopen);
-    Tamber::Apps::installReopenHandler(dispatchReopenHandler);
+    eacp::Apps::setReopenHandler(dispatchReopenHandler);
 }
-} // namespace tamber::quick_window
+} // namespace rudder::quick_window

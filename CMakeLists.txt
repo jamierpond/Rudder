@@ -46,6 +46,24 @@ add_library(RudderSwitcher STATIC
 target_include_directories(RudderSwitcher PUBLIC Lib/Switcher)
 target_link_libraries(RudderSwitcher PUBLIC emberstore)
 
+# The OS seam: running apps, activation, preview and the quick-panel window
+# tricks. Only macOS is implemented; a Platform-Windows.cpp slots in here.
+if (APPLE)
+    add_library(RudderPlatform STATIC
+            Platform/Platform-macOS.mm
+            Platform/QuickWindow-macOS.mm)
+    target_link_libraries(RudderPlatform PRIVATE
+            "-framework AppKit"
+            "-framework ApplicationServices")
+    # The QuickWindow port keeps its original manual retain/release; the rest
+    # of the platform layer is ARC.
+    set_source_files_properties(Platform/Platform-macOS.mm
+            PROPERTIES COMPILE_OPTIONS -fobjc-arc)
+endif ()
+
+target_include_directories(RudderPlatform PUBLIC Platform)
+target_link_libraries(RudderPlatform PUBLIC eacp-graphics)
+
 if (NOT TARGET NanoTest)
     CPMAddPackage(
             NAME NanoTest

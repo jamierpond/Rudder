@@ -9,10 +9,15 @@
 // never composited on a full-screen Space, activation raises the app's KEY and
 // MAIN windows, keystrokes go to the ACTIVE app, and ordering a key window out
 // promotes the next one. Call in the order declared below; all no-ops off Apple.
-namespace tamber::quick_window
+namespace rudder::quick_window
 {
 // BEFORE the panel takes key: that is the app a dismiss hands focus back to.
 void rememberFrontmostApp();
+
+// Rudder addition: overrides the remembered app with the one the user picked,
+// so the dismiss after an Enter hands focus to the selection rather than back
+// to where the panel was summoned over.
+void rememberAppForHandoff(int pid);
 
 // eacp's alwaysOnTop maps to NSFloatingWindowLevel, which macOS won't reliably
 // draw on a full-screen Space.
@@ -37,4 +42,4 @@ void installReopenHandler(std::function<void()> onReopen);
 void enableWindowDragThroughHost();
 
 void setLogger(std::function<void(const char*)> log);
-} // namespace tamber::quick_window
+} // namespace rudder::quick_window
