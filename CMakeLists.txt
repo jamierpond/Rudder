@@ -60,7 +60,8 @@ add_library(RudderSwitcher STATIC
         Lib/Switcher/LineEdit.cpp
         Lib/Switcher/Mru.cpp
         Lib/Switcher/Providers.cpp
-        Lib/Switcher/Ranking.cpp)
+        Lib/Switcher/Ranking.cpp
+        Lib/Switcher/Url.cpp)
 
 target_include_directories(RudderSwitcher PUBLIC Lib/Switcher)
 target_link_libraries(RudderSwitcher PUBLIC emberstore RudderProtocol)

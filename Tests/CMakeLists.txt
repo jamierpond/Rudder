@@ -8,7 +8,8 @@ add_executable(RudderTests
         MruTests.cpp
         ProtocolTests.cpp
         ProvidersTests.cpp
-        RankingTests.cpp)
+        RankingTests.cpp
+        UrlTests.cpp)
 
 target_link_libraries(RudderTests PRIVATE NanoTest NanoTestMain RudderSwitcher)
 nano_discover_tests(RudderTests)
