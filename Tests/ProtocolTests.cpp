@@ -47,6 +47,27 @@ auto tActivateRoundTrips = test("Protocol/activate carries the context id") = []
     auto* activate = message ? std::get_if<Activate>(&*message) : nullptr;
 
     check(activate != nullptr && activate->contextId == "7");
+    check(activate != nullptr && activate->raise);
+};
+
+auto tPreviewRoundTrips = test("Protocol/a preview is an activate that doesn't raise") = []
+{
+    auto line = encode(Activate {"7", false});
+    check(line.find(R"("raise":false)") != std::string::npos);
+
+    auto message = decode(line);
+    auto* activate = message ? std::get_if<Activate>(&*message) : nullptr;
+
+    check(activate != nullptr && activate->contextId == "7" && !activate->raise);
+};
+
+auto tRaiseDefaults = test("Protocol/activate without raise raises") = []
+{
+    auto message = decode(R"({"type":"activate","contextId":"7"})");
+    auto* activate = message ? std::get_if<Activate>(&*message) : nullptr;
+
+    check(activate != nullptr && activate->raise);
+    check(!decode(R"({"type":"activate","contextId":"7","raise":"no"})").has_value());
 };
 
 auto tOptionalFields = test("Protocol/subtitle and url may be left out") = []

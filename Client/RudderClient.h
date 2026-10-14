@@ -29,8 +29,15 @@ public:
 
     bool isConnected() const;
 
-    // Rudder picked one of this app's contexts: bring it forward.
+    // Rudder picked one of this app's contexts (Enter): switch to it and
+    // bring the app forward.
     std::function<void(const std::string& contextId)> onActivate = [](auto&) {};
+
+    // Rudder is previewing one of this app's contexts: switch to it, but
+    // never activate the app or raise a window -- Rudder raises the app
+    // itself, and a late raise from here would land on top of wherever the
+    // user went next. Unset, a preview does nothing.
+    std::function<void(const std::string& contextId)> onPreview = [](auto&) {};
 
 private:
     struct Native;

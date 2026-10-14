@@ -17,7 +17,13 @@
 //   app -> Rudder   {"type":"hello","app":"Wim","bundleId":"com.pond.wim","pid":42}
 //   app -> Rudder   {"type":"contexts","contexts":[{"id":"3","title":"…","url":"…"}]}
 //                   (each context may also carry "subtitle" and "open": false)
-//   Rudder -> app   {"type":"activate","contextId":"3"}
+//   Rudder -> app   {"type":"activate","contextId":"3","raise":true}
+//
+// activate with "raise": false is a preview: the app only switches to the
+// context (its tab, its pane) and must not activate itself or raise a window
+// -- Rudder brings the app forward itself, and drops it again when the
+// selection moves on. "raise" left out means true, so an app built before it
+// existed still sees a plain activate; Enter is always a raising one.
 //
 // hello comes first; each contexts push replaces the app's whole list; the
 // connection closing means the app quit. Rudder posts the distributed
@@ -61,7 +67,10 @@ struct Activate
 {
     std::string contextId;
 
-    MIRO_REFLECT(contextId)
+    // False for a preview: switch to the context, nothing more.
+    bool raise = true;
+
+    MIRO_REFLECT(contextId, raise)
 };
 
 using Message = std::variant<Hello, Contexts, Activate>;

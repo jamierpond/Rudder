@@ -99,6 +99,14 @@ std::optional<Message> readActivate(const Object& object)
     if (!readString(object, "contextId", activate.contextId) || activate.contextId.empty())
         return std::nullopt;
 
+    if (auto* raise = Miro::Json::find(object, "raise"))
+    {
+        if (!raise->isBool())
+            return std::nullopt;
+
+        activate.raise = raise->asBool();
+    }
+
     return activate;
 }
 } // namespace
