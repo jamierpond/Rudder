@@ -32,7 +32,7 @@ struct RudderClient::Native
         if (state->socket >= 0)
             return;
 
-        auto path = protocol::socketPath();
+        auto path = protocol::endpoint();
         auto address = sockaddr_un {};
         address.sun_family = AF_UNIX;
 

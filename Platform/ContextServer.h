@@ -9,10 +9,11 @@
 
 namespace rudder::platform
 {
-// Rudder's end of the contexts socket: listens at protocol::socketPath(),
-// accepts provider apps and reads their newline-delimited messages. Driven
-// by dispatch sources on the main queue, so an idle socket costs nothing.
-// Callbacks run on the main thread; `connection` names one accepted socket.
+// Rudder's end of the contexts socket: listens at protocol::endpoint(),
+// accepts provider apps and reads their newline-delimited messages. Idle, it
+// costs nothing: dispatch sources on the main queue on macOS, threads parked
+// in blocking pipe reads on Windows. Callbacks run on the main thread;
+// `connection` names one accepted connection.
 class ContextServer
 {
 public:
@@ -22,7 +23,8 @@ public:
     ContextServer(const ContextServer&) = delete;
     ContextServer& operator=(const ContextServer&) = delete;
 
-    // Removes a stale socket file and starts listening. False if it can't.
+    // Starts listening (on macOS, after removing a stale socket file). False
+    // if it can't -- on Windows, when another Rudder already is.
     bool start();
 
     void sendActivate(int connection, const std::string& contextId, bool raise);

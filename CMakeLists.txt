@@ -85,7 +85,9 @@ if (APPLE)
             PROPERTIES COMPILE_OPTIONS -fobjc-arc)
 elseif (WIN32)
     add_library(RudderPlatform STATIC
+            Platform/ContextServer-Windows.cpp
             Platform/Permissions-Windows.cpp)
+    target_link_libraries(RudderPlatform PRIVATE eacp-network)
 endif ()
 
 target_include_directories(RudderPlatform PUBLIC Platform)

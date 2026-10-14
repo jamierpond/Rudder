@@ -124,7 +124,7 @@ ContextServer::~ContextServer()
 
 bool ContextServer::start()
 {
-    auto path = protocol::socketPath();
+    auto path = protocol::endpoint();
     auto address = sockaddr_un {};
     address.sun_family = AF_UNIX;
 

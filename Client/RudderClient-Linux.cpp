@@ -2,6 +2,7 @@
 
 namespace rudder
 {
+// Rudder has no Linux build, so there is never anyone to connect to.
 struct RudderClient::Native
 {
 };

@@ -27,8 +27,9 @@
 // existed still sees a plain activate; Enter is always a raising one.
 //
 // hello comes first; each contexts push replaces the app's whole list; the
-// connection closing means the app quit. Rudder posts the distributed
-// notification "rudder.started" when it starts, so apps reconnect.
+// connection closing means the app quit. Rudder announces "rudder.started"
+// when it starts, so apps reconnect: a distributed notification on macOS, a
+// named event it keeps set while it runs on Windows.
 namespace rudder::protocol
 {
 struct Hello
@@ -107,8 +108,10 @@ private:
     bool discarding = false;
 };
 
-// ~/Library/Application Support/Rudder/rudder.sock on macOS.
-std::string socketPath();
+// Where Rudder listens: the socket file
+// ~/Library/Application Support/Rudder/rudder.sock on macOS, the name of an
+// eacp IPC channel (a named pipe only this user can open) on Windows.
+std::string endpoint();
 
 constexpr auto startedNotification = "rudder.started";
 } // namespace rudder::protocol
