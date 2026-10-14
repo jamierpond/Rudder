@@ -24,8 +24,9 @@ struct Chord
 };
 
 // Case-insensitive; modifiers in any order, with the usual aliases (alt/opt,
-// cmd/win, ctrl). "command" is the Windows key on Windows. Nullopt for an unknown key, or a bare key that would swallow
-// ordinary typing system-wide -- only function keys may go unmodified.
+// cmd/win, ctrl); "command" is the Windows key on Windows. Nullopt for an
+// unknown key, or a bare key that would swallow ordinary typing system-wide --
+// only function keys may go unmodified.
 std::optional<Chord> parseChord(const std::string& text);
 
 std::string serialiseChord(const Chord& chord);
