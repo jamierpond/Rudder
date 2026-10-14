@@ -33,10 +33,12 @@ CPMAddPackage(
 
 list(APPEND CMAKE_MODULE_PATH "${eacp_SOURCE_DIR}/CMake")
 
-# The switcher's pure logic lives in a plain static library so it stays
-# unit-testable without the app shell.
+# The switcher's pure logic (ranking, MRU, back stack, keybindings, context
+# providers) lives in a plain static library so it stays unit-testable without
+# the app shell.
 add_library(RudderSwitcher STATIC
-        Lib/Switcher/Mru.cpp)
+        Lib/Switcher/Mru.cpp
+        Lib/Switcher/Ranking.cpp)
 
 target_include_directories(RudderSwitcher PUBLIC Lib/Switcher)
 target_link_libraries(RudderSwitcher PUBLIC emberstore)
