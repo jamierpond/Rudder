@@ -1,5 +1,7 @@
 #pragma once
 
+#include <CaptureGate.h>
+
 #include <eacp/Graphics/Graphics.h>
 
 #include <functional>
@@ -32,39 +34,65 @@ RunningApp frontmostApp();
 const eacp::Graphics::Image& appIcon(const RunningApp& app);
 void forgetIcon(const std::string& appId);
 
-// Really switch: activate the app and bring its front window forward. Also
-// the live preview, which activates for real under key capture: an AX raise
-// alone stops under the previously active app's front window.
+// Really switch: activate the app and bring its front window forward (the AX
+// part off the main thread).
 bool activateApp(const RunningApp& app);
 
-// The preview's cheaper activation: AXFrontmost plus a raise of the cached
-// front window, no LaunchServices round trip. Needs accessibility.
-bool previewApp(const RunningApp& app);
-
 // While the panel is up, the keyboard is Rudder's whichever app is active:
-// every key event system-wide goes to `onKey` (on the main thread) and is
-// swallowed when it returns true. This is what lets the preview really
-// activate the selected app -- its window then sits on top, under the panel
-// -- while typing carries on into the panel. `onMouseDownOutside` fires for a
-// click anywhere but `panel`. Needs accessibility; off (no tap, no cost)
-// between summons.
+// every key event system-wide is swallowed and handed to `onKey` on the main
+// thread, except the `passThrough` chords (the global hotkeys). This is what
+// lets the preview really activate the selected app -- its window then sits on
+// top, under the panel -- while typing carries on into the panel.
+//
+// The tap runs on its own thread and decides in O(1) (CaptureGate.h); it never
+// waits for the main thread. If the main thread sits on a key for more than
+// two seconds, the OS times the tap out, the panel leaves the screen or
+// accessibility is lost, capture switches itself off for good and `onAbort`
+// runs on the main thread: the panel must go. `onMouseDownOutside` fires for a
+// click in another app (a passive monitor: clicks are never held up). Needs
+// accessibility; off (no tap, no timer, no cost) between summons.
 struct KeyCapture
 {
-    std::function<bool(const eacp::Graphics::KeyEvent&)> onKey;
+    std::function<void(const eacp::Graphics::KeyEvent&)> onKey;
     std::function<void()> onMouseDownOutside;
+    std::function<void(const std::string& reason)> onAbort;
 };
 
-bool startKeyCapture(eacp::Graphics::Window& panel, KeyCapture capture);
+bool startKeyCapture(eacp::Graphics::Window& panel,
+                     KeyCapture capture,
+                     const std::vector<CaptureKey>& passThrough);
 void stopKeyCapture();
 
+// The chords that reach their hotkeys while capture is on; empty while a new
+// chord is being recorded. At most four.
+void setKeyCapturePassThrough(const std::vector<CaptureKey>& passThrough);
+
+// The live preview's activation, off the main thread so a hung app can't
+// stall Rudder: AXFrontmost plus a raise of the app's cached front window
+// (`windowId` empty), or of that exact window. `restoreOrigin` raises the
+// summon's origin window too (previewing the app the panel opened over).
+// `onDone` gets whether it raised and the app's window titles, front to back,
+// on the main thread. A newer preview supersedes one not yet started, which
+// then never reports. Under key capture only: activates for real.
+struct PreviewResult
+{
+    bool raised = false;
+    std::vector<std::string> windowTitles;
+};
+
+void previewApp(const RunningApp& app,
+                const std::string& windowId,
+                bool restoreOrigin,
+                std::function<void(PreviewResult)> onDone);
+
+// The app's window titles, front to back, synchronously (needs
+// accessibility). Only for --snapshot: the panel goes through previewApp.
+std::vector<std::string> windowTitles(const RunningApp& app);
+
 // Captured at summon, before any preview: `origin`'s front window. Esc raises
-// it again so the screen is exactly as it was.
+// it again so the screen is exactly as it was. Both queue behind any preview.
 void rememberPreviewOrigin(const RunningApp& origin);
 void restorePreviewOrigin();
-
-// The app's window titles, front to back (needs accessibility). For the
-// preview pane.
-std::vector<std::string> windowTitles(const RunningApp& app);
 
 // One of an app's windows, as a row the user can pick: titled standard
 // windows only (helpers and untitled panels are skipped), minimised ones
@@ -90,7 +118,9 @@ void watchWindows(const std::vector<RunningApp>& apps,
 void stopWatchingWindows();
 
 // Brings that exact window forward and makes its app frontmost, optionally
-// un-minimising it first. False if the window is gone.
+// un-minimising it first. False if the window isn't known; the AX work runs
+// off the main thread, and if the raise fails there the app is activated
+// instead.
 bool focusWindow(const RunningApp& app, const std::string& windowId, bool unminimize);
 
 // Whether Rudder may drive other apps' windows. `prompt` shows the system

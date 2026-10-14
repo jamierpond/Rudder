@@ -1,4 +1,5 @@
 #include "BackStack.h"
+#include "CaptureGate.h"
 #include "Favourites.h"
 #include "ContextServer.h"
 #include "Icon.h"
@@ -303,6 +304,9 @@ struct RudderApp
 
         capturing = shouldCapture;
         registerHotKeys();
+
+        if (capturingKeys)
+            platform::setKeyCapturePassThrough(passThroughKeys());
     }
 
     void setBinding(const std::string& action, const std::string& text)
@@ -349,6 +353,9 @@ struct RudderApp
             bindings.favourite = canonical;
 
         settingsStore.doc(keybindingsDoc).set(bindings);
+
+        if (capturingKeys)
+            platform::setKeyCapturePassThrough(passThroughKeys());
     }
 
     // --- Back stack -----------------------------------------------------------
@@ -459,11 +466,20 @@ struct RudderApp
             return;
 
         auto capture = platform::KeyCapture {};
-        capture.onKey = [this](const KeyEvent& event) { return onCapturedKey(event); };
+        capture.onKey = [this](const KeyEvent& event) { onCapturedKey(event); };
         capture.onMouseDownOutside = [this]
         { Threads::callAsync([this] { cancel(); }); };
 
-        capturingKeys = platform::startKeyCapture(window, std::move(capture));
+        // Capture has already switched itself off; the panel follows.
+        capture.onAbort = [this](const std::string& reason)
+        {
+            logEvent(("key capture aborted: " + reason).c_str());
+            capturingKeys = false;
+            cancel();
+        };
+
+        capturingKeys =
+            platform::startKeyCapture(window, std::move(capture), passThroughKeys());
     }
 
     void stopKeyCapture()
@@ -475,18 +491,33 @@ struct RudderApp
         platform::stopKeyCapture();
     }
 
-    bool onCapturedKey(const KeyEvent& event)
+    // The keys the tap lets through to the global hotkeys: none while a new
+    // chord is being recorded.
+    std::vector<CaptureKey> passThroughKeys() const
+    {
+        auto keys = std::vector<CaptureKey> {};
+
+        if (capturing)
+            return keys;
+
+        for (auto* text: {&bindings.summon, &bindings.back})
+            if (auto chord = parseChord(*text))
+                if (auto key = captureKeyFor(*chord))
+                    keys.push_back(*key);
+
+        return keys;
+    }
+
+    void onCapturedKey(const KeyEvent& event)
     {
         if (capturing && event.type == KeyEventType::Down)
             logEvent(("captured key " + std::to_string(event.keyCode)).c_str());
 
         if (!capturing && (isChord(event, bindings.summon) || isChord(event, bindings.back)))
-            return false;
+            return;
 
         if (event.type == KeyEventType::Down)
             panel.keyDown(event);
-
-        return true;
     }
 
     static bool isChord(const KeyEvent& event, const std::string& text)
@@ -592,6 +623,9 @@ struct RudderApp
                                                  if (panelVisible)
                                                      return;
 
+                                                 // Never a tap without a
+                                                 // panel.
+                                                 stopKeyCapture();
                                                  window.setVisible(false);
                                                  logEvent("hidePanel: ordered out");
                                              });
@@ -780,31 +814,42 @@ struct RudderApp
 
         auto start = uptime();
 
-        // Under key capture the preview can activate for real -- the only
-        // way the window gets above everything -- and typing still lands in
-        // the panel. Without it (no grant), nothing is raised: the pane shows
-        // the selection instead.
         // A provider's context: the app brings it forward itself, then the
         // usual preview raises the app.
         if (item.kind == "context")
             providers.activate(item.appId, item.contextId);
 
-        if (capturingKeys && item.kind == "window")
-            previewRaised = platform::focusWindow(*app, item.contextId, false);
-        else if (capturingKeys)
-        {
-            previewRaised = platform::previewApp(*app);
+        // Under key capture the preview can activate for real -- the only
+        // way the window gets above everything -- and typing still lands in
+        // the panel. Without it (no grant), nothing is raised: the pane shows
+        // the selection instead.
+        if (!capturingKeys)
+            return;
 
-            if (action == PreviewAction::restoreOrigin)
-                platform::restorePreviewOrigin();
-        }
+        // Off the main thread: a hung app answers late, and only its own
+        // preview waits.
+        auto id = item.id;
+        auto label = app->name + (item.kind == "window" ? " / " + item.title : std::string {});
+        auto windowId = item.kind == "window" ? item.contextId : std::string {};
 
-        logEvent(("preview " + app->name + (item.kind == "window" ? " / " + item.title : std::string {}) + " " + millis(uptime() - start)
-                  + (previewRaised ? "" : " (not raised)"))
-                     .c_str());
+        platform::previewApp(
+            *app,
+            windowId,
+            item.kind != "window" && action == PreviewAction::restoreOrigin,
+            [this, id, label, start](platform::PreviewResult result)
+            {
+                if (!panelVisible || previewedId != id)
+                    return;
 
-        previewWindows = platform::windowTitles(*app);
-        publishResults();
+                previewRaised = result.raised;
+                previewWindows = std::move(result.windowTitles);
+
+                logEvent(("preview " + label + " " + millis(uptime() - start)
+                          + (previewRaised ? "" : " (not raised)"))
+                             .c_str());
+
+                publishResults();
+            });
     }
 
     // --- Favourites ---------------------------------------------------------------

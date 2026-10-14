@@ -84,7 +84,7 @@ if (APPLE)
 endif ()
 
 target_include_directories(RudderPlatform PUBLIC Platform)
-target_link_libraries(RudderPlatform PUBLIC eacp-graphics RudderProtocol)
+target_link_libraries(RudderPlatform PUBLIC eacp-graphics RudderProtocol RudderSwitcher)
 
 # The panel is an eacp UI component tree in one GPUView: no web view, so no
 # second process to keep warm.

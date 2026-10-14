@@ -6,7 +6,11 @@
 #import <Carbon/Carbon.h>
 #import <CoreServices/CoreServices.h>
 
+#include <os/log.h>
+
 #include <algorithm>
+#include <array>
+#include <atomic>
 #include <map>
 #include <memory>
 #include <set>
@@ -61,6 +65,19 @@ NSRunningApplication* lookUp(const RunningApp& app)
 // A hung app must not hang the switcher: every AX round trip gives up fast.
 constexpr auto axTimeoutSeconds = 0.25f;
 
+// Where the preview and activation AX work runs, in order, so a slow or hung
+// target app costs the panel nothing. The front window cache and the preview
+// origin belong to it.
+dispatch_queue_t axQueue()
+{
+    static auto* queue = dispatch_queue_create("rudder.ax", DISPATCH_QUEUE_SERIAL);
+    return queue;
+}
+
+// AX says Rudder has lost accessibility -- an in-place rebuild or a tccutil
+// reset while running. Key capture must stop at once (defined with it).
+void noteAXError(AXError error);
+
 // The window a user would call "the app's window": focused, else main, else
 // the first one listed. Returned +1 (Create rule), or null.
 AXUIElementRef copyFrontWindow(pid_t pid)
@@ -98,6 +115,10 @@ AXUIElementRef copyFrontWindow(pid_t pid)
     }
 
     CFRelease(appElement);
+
+    if (window != nullptr)
+        AXUIElementSetMessagingTimeout((AXUIElementRef) window, axTimeoutSeconds);
+
     return (AXUIElementRef) window;
 }
 
@@ -107,10 +128,11 @@ std::map<std::string, eacp::Graphics::Image>& iconCache()
     return cache;
 }
 
+// axQueue only.
 AXUIElementRef previewOrigin = nullptr;
 
-// Each app's front window element, so a preview raise is one AX call rather
-// than a walk to find the window first. Refreshed when the app activates (its
+// axQueue only. Each app's front window element, so a preview raise is one
+// AX call rather than a walk to find the window first. Refreshed when the app activates (its
 // front window may have changed) and when a raise reports the element stale.
 std::map<pid_t, AXUIElementRef>& frontWindows()
 {
@@ -174,7 +196,10 @@ bool raiseFrontWindow(pid_t pid)
     auto error = AXUIElementPerformAction(window, kAXRaiseAction);
 
     if (error != kAXErrorSuccess)
+    {
         NSLog(@"Rudder: preview raise failed for pid %d: AXError %d", pid, (int) error);
+        noteAXError(error);
+    }
 
     return error == kAXErrorSuccess;
 }
@@ -305,23 +330,86 @@ bool activateApp(const RunningApp& app)
 
     if (AXIsProcessTrusted())
     {
-        auto appElement = AXUIElementCreateApplication(app.pid);
-        AXUIElementSetMessagingTimeout(appElement, axTimeoutSeconds);
-        AXUIElementSetAttributeValue(appElement, kAXFrontmostAttribute, kCFBooleanTrue);
-        CFRelease(appElement);
+        auto pid = app.pid;
 
-        raiseFrontWindow(app.pid);
+        dispatch_async(axQueue(),
+                       ^{
+                         auto appElement = AXUIElementCreateApplication(pid);
+                         AXUIElementSetMessagingTimeout(appElement, axTimeoutSeconds);
+                         AXUIElementSetAttributeValue(
+                             appElement, kAXFrontmostAttribute, kCFBooleanTrue);
+                         CFRelease(appElement);
+
+                         raiseFrontWindow(pid);
+                       });
+
         activated = true;
     }
 
     return activated;
 }
 
+// --- Key capture ---------------------------------------------------------------
+//
+// The tap is the one piece of Rudder that can hold up every key in the login
+// session, so it lives on its own thread and its callback only reads atomics:
+// no AppKit, no AX, no locks the main thread could be holding. Swallowed keys
+// reach the main thread by dispatch_async.
+
 namespace
 {
-CFMachPortRef captureTap = nullptr;
+// Shared with the tap thread.
+std::atomic<bool> captureOn {false};
+std::atomic<bool> capturePanelShown {false};
+std::atomic<CFMachPortRef> captureTap {nullptr};
+std::atomic<std::uint64_t> swallowedKeys {0};
+std::atomic<std::uint64_t> handledKeys {0};
+std::atomic<std::uint64_t> lastKeyProgress {0};
+std::atomic<bool> abortQueued {false};
+
+constexpr std::size_t maxPassThrough = 4;
+std::array<std::atomic<std::uint32_t>, maxPassThrough> passThroughKeys {};
+std::atomic<std::size_t> passThroughCount {0};
+
+// Main thread only.
 KeyCapture activeCapture;
-NSWindow* capturePanel = nil;
+__weak NSWindow* capturePanel = nil;
+id mouseMonitor = nil;
+NSTimer* captureWatch = nil;
+CFRunLoopSourceRef captureSource = nullptr;
+CFRunLoopRef tapRunLoop = nullptr;
+std::atomic<bool> trustProbeInFlight {false};
+
+std::uint64_t uptimeNanos()
+{
+    return clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
+}
+
+std::uint8_t captureModifiersOf(CGEventFlags flags)
+{
+    auto modifiers = std::uint8_t {0};
+
+    if ((flags & kCGEventFlagMaskControl) != 0)
+        modifiers |= captureModifiers::control;
+    if ((flags & kCGEventFlagMaskAlternate) != 0)
+        modifiers |= captureModifiers::option;
+    if ((flags & kCGEventFlagMaskShift) != 0)
+        modifiers |= captureModifiers::shift;
+    if ((flags & kCGEventFlagMaskCommand) != 0)
+        modifiers |= captureModifiers::command;
+
+    return modifiers;
+}
+
+std::uint32_t pack(CaptureKey key)
+{
+    return ((std::uint32_t) key.keyCode << 8) | key.modifiers;
+}
+
+CaptureKey unpack(std::uint32_t packed)
+{
+    return {(std::uint16_t) (packed >> 8), (std::uint8_t) (packed & 0xff)};
+}
 
 eacp::Graphics::KeyEvent toKeyEvent(CGEventType type, CGEventRef event)
 {
@@ -354,125 +442,439 @@ eacp::Graphics::KeyEvent toKeyEvent(CGEventType type, CGEventRef event)
     return key;
 }
 
+void disableTap()
+{
+    captureOn = false;
+
+    if (auto tap = captureTap.load())
+        CGEventTapEnable(tap, false);
+}
+
+void endCapture()
+{
+    disableTap();
+    capturePanelShown = false;
+
+    if (mouseMonitor != nil)
+    {
+        [NSEvent removeMonitor:mouseMonitor];
+        mouseMonitor = nil;
+    }
+
+    [captureWatch invalidate];
+    captureWatch = nil;
+    capturePanel = nil;
+}
+
+// Main thread. Capture has stopped itself; the app drops the panel.
+void abortCapture(const std::string& reason)
+{
+    if (!activeCapture.onKey)
+        return;
+
+    NSLog(@"Rudder: key capture aborted: %s", reason.c_str());
+
+    auto onAbort = std::move(activeCapture.onAbort);
+    endCapture();
+    activeCapture = {};
+
+    if (onAbort)
+        onAbort(reason);
+}
+
+// Any thread, at most one in flight.
+void queueAbort(const char* reason)
+{
+    if (abortQueued.exchange(true))
+        return;
+
+    dispatch_async(dispatch_get_main_queue(),
+                   ^{
+                     abortQueued = false;
+                     abortCapture(reason);
+                   });
+}
+
+// Main thread, for each key the tap took. When Rudder is the one that is
+// stuck, keys pile up here and run late -- by then capture is off and they
+// are dropped.
+void handleCapturedKey(CGEventType type, CGEventRef event)
+{
+    if (captureOn && activeCapture.onKey)
+        activeCapture.onKey(toKeyEvent(type, event));
+
+    handledKeys += 1;
+    lastKeyProgress = uptimeNanos();
+}
+
+CaptureEvent classify(CGEventType type)
+{
+    switch (type)
+    {
+        case kCGEventKeyDown:
+            return CaptureEvent::keyDown;
+        case kCGEventKeyUp:
+            return CaptureEvent::keyUp;
+        case kCGEventTapDisabledByTimeout:
+            return CaptureEvent::tapTimedOut;
+        case kCGEventTapDisabledByUserInput:
+            return CaptureEvent::tapDisabledByUser;
+        default:
+            return CaptureEvent::other;
+    }
+}
+
+// The tap thread. O(1): atomics, the event's own fields, a copy and a
+// dispatch_async.
 CGEventRef captureCallback(CGEventTapProxy, CGEventType type, CGEventRef event, void*)
 {
-    // macOS switches a slow tap off; switch it straight back on.
-    if (type == kCGEventTapDisabledByTimeout || type == kCGEventTapDisabledByUserInput)
-    {
-        if (captureTap != nullptr)
-            CGEventTapEnable(captureTap, true);
+    auto now = uptimeNanos();
+    auto kind = classify(type);
+    auto key = std::optional<CaptureKey> {};
 
-        return event;
+    if (kind == CaptureEvent::keyDown || kind == CaptureEvent::keyUp)
+        key = CaptureKey {
+            (std::uint16_t) CGEventGetIntegerValueField(event, kCGKeyboardEventKeycode),
+            captureModifiersOf(CGEventGetFlags(event))};
+
+    auto backlog = CaptureBacklog {};
+    backlog.swallowed = swallowedKeys;
+    backlog.handled = handledKeys;
+    backlog.lastProgress = lastKeyProgress;
+
+    auto state = CaptureState {};
+    state.capturing = captureOn;
+    state.panelShown = capturePanelShown;
+    state.stalled = mainStalled(backlog, now);
+
+    auto keys = std::array<CaptureKey, maxPassThrough> {};
+    auto count = std::min(passThroughCount.load(), maxPassThrough);
+
+    for (std::size_t i = 0; i < count; ++i)
+        keys[i] = unpack(passThroughKeys[i]);
+
+    switch (decideCapture(kind, state, key, std::span {keys.data(), count}))
+    {
+        case CaptureVerdict::pass:
+            return event;
+
+        case CaptureVerdict::passAndStop:
+            disableTap();
+            return event;
+
+        case CaptureVerdict::passAndAbort:
+        {
+            disableTap();
+
+            auto* reason = kind == CaptureEvent::tapTimedOut ? "the OS timed the tap out"
+                           : kind == CaptureEvent::tapDisabledByUser
+                               ? "the OS disabled the tap (user input)"
+                               : "the main thread stopped taking keys";
+            os_log_error(OS_LOG_DEFAULT, "Rudder: key capture off: %{public}s", reason);
+            queueAbort(reason);
+            return event;
+        }
+
+        case CaptureVerdict::swallow:
+            break;
     }
 
-    if (type == kCGEventLeftMouseDown || type == kCGEventRightMouseDown)
+    // A fresh backlog starts the stall clock now.
+    if (handledKeys.load() >= swallowedKeys.load())
+        lastKeyProgress = now;
+
+    swallowedKeys += 1;
+
+    auto copy = CGEventCreateCopy(event);
+
+    dispatch_async(dispatch_get_main_queue(),
+                   ^{
+                     handleCapturedKey(type, copy);
+                     CFRelease(copy);
+                   });
+
+    return nullptr;
+}
+
+// The tap's thread: a run loop of its own, started once, idle (blocked in
+// mach_msg) whenever the tap is off.
+CFRunLoopRef startTapThread()
+{
+    static dispatch_once_t once;
+
+    dispatch_once(&once,
+                  ^{
+                    auto ready = dispatch_semaphore_create(0);
+
+                    auto* thread = [[NSThread alloc] initWithBlock:^{
+                      tapRunLoop = CFRunLoopGetCurrent();
+                      [NSRunLoop.currentRunLoop addPort:NSMachPort.port
+                                                forMode:NSDefaultRunLoopMode];
+                      dispatch_semaphore_signal(ready);
+
+                      while (true)
+                          [NSRunLoop.currentRunLoop runMode:NSDefaultRunLoopMode
+                                                 beforeDate:NSDate.distantFuture];
+                    }];
+
+                    thread.name = @"rudder.key-capture";
+                    thread.qualityOfService = NSQualityOfServiceUserInteractive;
+                    [thread start];
+                    dispatch_semaphore_wait(ready, DISPATCH_TIME_FOREVER);
+                  });
+
+    return tapRunLoop;
+}
+
+bool ensureTap()
+{
+    auto tap = captureTap.load();
+
+    if (tap != nullptr && CFMachPortIsValid(tap))
+        return true;
+
+    auto runLoop = startTapThread();
+
+    if (tap != nullptr)
     {
-        auto at = CGEventGetLocation(event);
-        auto frame = capturePanel != nil ? capturePanel.frame : NSZeroRect;
-
-        // CG measures down from the primary display's top, Cocoa up from its
-        // bottom.
-        auto primaryHeight = NSScreen.screens.firstObject.frame.size.height;
-        auto point = NSMakePoint(at.x, primaryHeight - at.y);
-
-        if (!NSPointInRect(point, frame) && activeCapture.onMouseDownOutside)
-            activeCapture.onMouseDownOutside();
-
-        return event;
+        captureTap = nullptr;
+        CFRunLoopRemoveSource(runLoop, captureSource, kCFRunLoopCommonModes);
+        CFRelease(captureSource);
+        captureSource = nullptr;
+        CFMachPortInvalidate(tap);
+        CFRelease(tap);
     }
 
-    if (type != kCGEventKeyDown && type != kCGEventKeyUp)
-        return event;
+    // Keys only. Clicks go to a passive monitor, so the mouse can never wait
+    // on Rudder.
+    auto mask = CGEventMaskBit(kCGEventKeyDown) | CGEventMaskBit(kCGEventKeyUp);
 
-    if (activeCapture.onKey && activeCapture.onKey(toKeyEvent(type, event)))
-        return nullptr;
+    tap = CGEventTapCreate(kCGSessionEventTap,
+                           kCGHeadInsertEventTap,
+                           kCGEventTapOptionDefault,
+                           mask,
+                           captureCallback,
+                           nullptr);
 
-    return event;
+    if (tap == nullptr)
+        return false;
+
+    // Created enabled; nothing may be swallowed before start says so.
+    CGEventTapEnable(tap, false);
+
+    captureSource = CFMachPortCreateRunLoopSource(nullptr, tap, 0);
+    CFRunLoopAddSource(runLoop, captureSource, kCFRunLoopCommonModes);
+    CFRunLoopWakeUp(runLoop);
+    captureTap = tap;
+    return true;
+}
+
+// Main thread, twice a second while capture is on (never otherwise): the
+// panel must still be on screen and Rudder still trusted. AXIsProcessTrusted
+// can keep saying yes after a rebuild in place, so AX itself is asked, off
+// the main thread.
+void watchCapture()
+{
+    auto* panel = capturePanel;
+
+    if (panel == nil || !panel.isVisible)
+    {
+        capturePanelShown = false;
+        abortCapture("the panel is no longer on screen");
+        return;
+    }
+
+    if (!AXIsProcessTrusted())
+    {
+        abortCapture("accessibility was revoked");
+        return;
+    }
+
+    if (trustProbeInFlight.exchange(true))
+        return;
+
+    dispatch_async(axQueue(),
+                   ^{
+                     auto systemWide = AXUIElementCreateSystemWide();
+                     AXUIElementSetMessagingTimeout(systemWide, 0.1f);
+                     CFTypeRef focused = nullptr;
+                     auto error = AXUIElementCopyAttributeValue(
+                         systemWide, kAXFocusedApplicationAttribute, &focused);
+
+                     if (focused != nullptr)
+                         CFRelease(focused);
+
+                     CFRelease(systemWide);
+                     trustProbeInFlight = false;
+                     noteAXError(error);
+                   });
+}
+
+void setPassThrough(const std::vector<CaptureKey>& passThrough)
+{
+    auto count = std::min(passThrough.size(), maxPassThrough);
+    passThroughCount = 0;
+
+    for (std::size_t i = 0; i < count; ++i)
+        passThroughKeys[i] = pack(passThrough[i]);
+
+    passThroughCount = count;
 }
 } // namespace
 
-bool startKeyCapture(eacp::Graphics::Window& panel, KeyCapture capture)
+namespace
 {
-    activeCapture = std::move(capture);
-    capturePanel = (__bridge NSWindow*) panel.getHandle();
+void noteAXError(AXError error)
+{
+    if (error != kAXErrorAPIDisabled)
+        return;
 
-    if (captureTap == nullptr)
+    // Straight off at the tap, then the panel goes.
+    if (captureOn)
     {
-        auto mask = CGEventMaskBit(kCGEventKeyDown) | CGEventMaskBit(kCGEventKeyUp)
-                    | CGEventMaskBit(kCGEventLeftMouseDown)
-                    | CGEventMaskBit(kCGEventRightMouseDown);
+        disableTap();
+        queueAbort("accessibility was revoked (AX API disabled)");
+    }
+}
+} // namespace
 
-        captureTap = CGEventTapCreate(kCGSessionEventTap,
-                                      kCGHeadInsertEventTap,
-                                      kCGEventTapOptionDefault,
-                                      mask,
-                                      captureCallback,
-                                      nullptr);
+bool startKeyCapture(eacp::Graphics::Window& panel,
+                     KeyCapture capture,
+                     const std::vector<CaptureKey>& passThrough)
+{
+    endCapture();
 
-        if (captureTap == nullptr)
-        {
-            NSLog(@"Rudder: key capture unavailable (trusted: %d)", AXIsProcessTrusted());
-            return false;
-        }
-
-        auto source = CFMachPortCreateRunLoopSource(nullptr, captureTap, 0);
-        CFRunLoopAddSource(CFRunLoopGetMain(), source, kCFRunLoopCommonModes);
-        CFRelease(source);
+    if (!ensureTap())
+    {
+        NSLog(@"Rudder: key capture unavailable (trusted: %d)", AXIsProcessTrusted());
+        activeCapture = {};
+        return false;
     }
 
-    CGEventTapEnable(captureTap, true);
+    activeCapture = std::move(capture);
+    capturePanel = (__bridge NSWindow*) panel.getHandle();
+    setPassThrough(passThrough);
+
+    mouseMonitor = [NSEvent
+        addGlobalMonitorForEventsMatchingMask:NSEventMaskLeftMouseDown
+                                              | NSEventMaskRightMouseDown
+                                      handler:^(NSEvent*) {
+                                        if (activeCapture.onMouseDownOutside)
+                                            activeCapture.onMouseDownOutside();
+                                      }];
+
+    captureWatch = [NSTimer scheduledTimerWithTimeInterval:0.5
+                                                   repeats:YES
+                                                     block:^(NSTimer*) { watchCapture(); }];
+    [NSRunLoop.mainRunLoop addTimer:captureWatch forMode:NSRunLoopCommonModes];
+
+    lastKeyProgress = uptimeNanos();
+    capturePanelShown = capturePanel != nil && capturePanel.isVisible;
+    captureOn = true;
+    CGEventTapEnable(captureTap.load(), true);
     return true;
+}
+
+void setKeyCapturePassThrough(const std::vector<CaptureKey>& passThrough)
+{
+    setPassThrough(passThrough);
 }
 
 void stopKeyCapture()
 {
-    if (captureTap != nullptr)
-        CGEventTapEnable(captureTap, false);
-
+    endCapture();
     activeCapture = {};
-    capturePanel = nil;
 }
 
-bool previewApp(const RunningApp& app)
+namespace
 {
-    if (!AXIsProcessTrusted())
-        return false;
-
-    auto appElement = AXUIElementCreateApplication(app.pid);
+// axQueue only. The preview's activation: AXFrontmost plus a raise of the
+// cached front window.
+bool previewFrontWindow(pid_t pid, const std::string& name)
+{
+    auto appElement = AXUIElementCreateApplication(pid);
     AXUIElementSetMessagingTimeout(appElement, axTimeoutSeconds);
     auto error =
         AXUIElementSetAttributeValue(appElement, kAXFrontmostAttribute, kCFBooleanTrue);
     CFRelease(appElement);
 
     if (error != kAXErrorSuccess)
+    {
         NSLog(@"Rudder: preview activation failed for %s: AXError %d",
-              app.name.c_str(),
+              name.c_str(),
               (int) error);
+        noteAXError(error);
+    }
 
-    return raiseFrontWindow(app.pid) && error == kAXErrorSuccess;
+    return raiseFrontWindow(pid) && error == kAXErrorSuccess;
 }
+
+// axQueue only. That exact window to the front, its app frontmost.
+bool raiseWindow(pid_t pid, AXUIElementRef window, bool unminimize, const std::string& title)
+{
+    AXUIElementSetMessagingTimeout(window, axTimeoutSeconds);
+
+    if (unminimize)
+        AXUIElementSetAttributeValue(window, kAXMinimizedAttribute, kCFBooleanFalse);
+
+    auto appElement = AXUIElementCreateApplication(pid);
+    AXUIElementSetMessagingTimeout(appElement, axTimeoutSeconds);
+    AXUIElementSetAttributeValue(appElement, kAXFrontmostAttribute, kCFBooleanTrue);
+    CFRelease(appElement);
+
+    AXUIElementSetAttributeValue(window, kAXMainAttribute, kCFBooleanTrue);
+    auto error = AXUIElementPerformAction(window, kAXRaiseAction);
+
+    if (error != kAXErrorSuccess)
+    {
+        NSLog(@"Rudder: raising window '%s' failed: AXError %d", title.c_str(), (int) error);
+        noteAXError(error);
+    }
+
+    return error == kAXErrorSuccess;
+}
+
+std::vector<std::string> titlesOf(pid_t pid);
+
+std::atomic<std::uint64_t> latestPreview {0};
+} // namespace
 
 void rememberPreviewOrigin(const RunningApp& origin)
 {
-    if (previewOrigin != nullptr)
-    {
-        CFRelease(previewOrigin);
-        previewOrigin = nullptr;
-    }
+    auto pid = origin.pid;
+    auto trusted = pid != 0 && AXIsProcessTrusted();
 
-    if (origin.pid != 0 && AXIsProcessTrusted())
-    {
-        previewOrigin = cachedFrontWindow(origin.pid);
+    dispatch_async(axQueue(),
+                   ^{
+                     if (previewOrigin != nullptr)
+                     {
+                         CFRelease(previewOrigin);
+                         previewOrigin = nullptr;
+                     }
 
-        if (previewOrigin != nullptr)
-            CFRetain(previewOrigin);
-    }
+                     if (trusted)
+                     {
+                         previewOrigin = cachedFrontWindow(pid);
+
+                         if (previewOrigin != nullptr)
+                             CFRetain(previewOrigin);
+                     }
+                   });
 }
 
-void restorePreviewOrigin()
+namespace
+{
+// axQueue only.
+void raisePreviewOrigin()
 {
     if (previewOrigin != nullptr)
         AXUIElementPerformAction(previewOrigin, kAXRaiseAction);
+}
+} // namespace
+
+void restorePreviewOrigin()
+{
+    dispatch_async(axQueue(), ^{ raisePreviewOrigin(); });
 }
 
 namespace
@@ -696,51 +1098,34 @@ void stopWatchingWindows()
     windowObservers.clear();
 }
 
-bool focusWindow(const RunningApp& app, const std::string& windowId, bool unminimize)
+namespace
 {
-    if (!AXIsProcessTrusted())
-        return false;
-
-    auto found = windowCache().find(app.pid);
+// Main thread: the cached element for a window row, retained, or null.
+AXUIElementRef copyCachedWindow(pid_t pid, const std::string& windowId, AppWindow& window)
+{
+    auto found = windowCache().find(pid);
 
     if (found == windowCache().end())
-        return false;
+        return nullptr;
 
     for (auto& cached: found->second)
     {
         if (cached.window.id != windowId)
             continue;
 
-        if (unminimize && cached.window.minimized)
-            AXUIElementSetAttributeValue(cached.element, kAXMinimizedAttribute, kCFBooleanFalse);
-
-        auto appElement = AXUIElementCreateApplication(app.pid);
-        AXUIElementSetMessagingTimeout(appElement, axTimeoutSeconds);
-        AXUIElementSetAttributeValue(appElement, kAXFrontmostAttribute, kCFBooleanTrue);
-        CFRelease(appElement);
-
-        AXUIElementSetAttributeValue(cached.element, kAXMainAttribute, kCFBooleanTrue);
-        auto error = AXUIElementPerformAction(cached.element, kAXRaiseAction);
-
-        if (error != kAXErrorSuccess)
-            NSLog(@"Rudder: raising window '%s' failed: AXError %d",
-                  cached.window.title.c_str(),
-                  (int) error);
-
-        return error == kAXErrorSuccess;
+        window = cached.window;
+        CFRetain(cached.element);
+        return cached.element;
     }
 
-    return false;
+    return nullptr;
 }
 
-std::vector<std::string> windowTitles(const RunningApp& app)
+// axQueue, or the main thread in --snapshot.
+std::vector<std::string> titlesOf(pid_t pid)
 {
     auto titles = std::vector<std::string> {};
-
-    if (!AXIsProcessTrusted())
-        return titles;
-
-    auto appElement = AXUIElementCreateApplication(app.pid);
+    auto appElement = AXUIElementCreateApplication(pid);
     AXUIElementSetMessagingTimeout(appElement, axTimeoutSeconds);
     CFTypeRef windows = nullptr;
 
@@ -753,6 +1138,7 @@ std::vector<std::string> windowTitles(const RunningApp& app)
         for (CFIndex i = 0; i < CFArrayGetCount(list); ++i)
         {
             auto window = (AXUIElementRef) CFArrayGetValueAtIndex(list, i);
+            AXUIElementSetMessagingTimeout(window, axTimeoutSeconds);
             CFTypeRef title = nullptr;
 
             if (AXUIElementCopyAttributeValue(window, kAXTitleAttribute, &title)
@@ -773,6 +1159,97 @@ std::vector<std::string> windowTitles(const RunningApp& app)
 
     CFRelease(appElement);
     return titles;
+}
+} // namespace
+
+std::vector<std::string> windowTitles(const RunningApp& app)
+{
+    if (!AXIsProcessTrusted())
+        return {};
+
+    return titlesOf(app.pid);
+}
+
+bool focusWindow(const RunningApp& app, const std::string& windowId, bool unminimize)
+{
+    if (!AXIsProcessTrusted())
+        return false;
+
+    auto window = AppWindow {};
+    auto element = copyCachedWindow(app.pid, windowId, window);
+
+    if (element == nullptr)
+        return false;
+
+    auto pid = app.pid;
+    auto target = app;
+    auto minimized = unminimize && window.minimized;
+    auto title = window.title;
+
+    dispatch_async(axQueue(),
+                   ^{
+                     auto raised = raiseWindow(pid, element, minimized, title);
+                     CFRelease(element);
+
+                     if (!raised)
+                         dispatch_async(dispatch_get_main_queue(),
+                                        ^{ activateApp(target); });
+                   });
+
+    return true;
+}
+
+void previewApp(const RunningApp& app,
+                const std::string& windowId,
+                bool restoreOrigin,
+                std::function<void(PreviewResult)> onDone)
+{
+    auto generation = ++latestPreview;
+    auto window = AppWindow {};
+    auto element =
+        windowId.empty() ? nullptr : copyCachedWindow(app.pid, windowId, window);
+    auto byWindow = !windowId.empty();
+    auto pid = app.pid;
+    auto name = app.name;
+    auto title = window.title;
+    auto done = std::make_shared<std::function<void(PreviewResult)>>(std::move(onDone));
+
+    dispatch_async(axQueue(),
+                   ^{
+                     // Keys outran the AX round trips: only the newest
+                     // selection is worth showing.
+                     if (generation != latestPreview)
+                     {
+                         if (element != nullptr)
+                             CFRelease(element);
+
+                         return;
+                     }
+
+                     auto result = std::make_shared<PreviewResult>();
+
+                     if (byWindow)
+                         result->raised =
+                             element != nullptr && raiseWindow(pid, element, false, title);
+                     else
+                     {
+                         result->raised = previewFrontWindow(pid, name);
+
+                         if (restoreOrigin)
+                             raisePreviewOrigin();
+                     }
+
+                     if (element != nullptr)
+                         CFRelease(element);
+
+                     result->windowTitles = titlesOf(pid);
+
+                     dispatch_async(dispatch_get_main_queue(),
+                                    ^{
+                                      if (*done)
+                                          (*done)(std::move(*result));
+                                    });
+                   });
 }
 
 bool accessibilityTrusted(bool prompt)
@@ -843,7 +1320,10 @@ void observeWorkspace(WorkspaceEvents events)
                           if (auto* app = appIn(note))
                           {
                               if (AXIsProcessTrusted())
-                                  refreshFrontWindow(app.processIdentifier);
+                              {
+                                  auto pid = app.processIdentifier;
+                                  dispatch_async(axQueue(), ^{ refreshFrontWindow(pid); });
+                              }
 
                               shared->onActivated(describe(app));
                           }
@@ -870,7 +1350,8 @@ void observeWorkspace(WorkspaceEvents events)
 
                           if (app != nil && !isSelf(app))
                           {
-                              forgetFrontWindow(app.processIdentifier);
+                              auto pid = app.processIdentifier;
+                              dispatch_async(axQueue(), ^{ forgetFrontWindow(pid); });
                               releaseWindows(windowCache()[app.processIdentifier]);
                               windowCache().erase(app.processIdentifier);
                               shared->onTerminated(describe(app));
@@ -1197,4 +1678,5 @@ void announceStarted()
                     userInfo:nil
           deliverImmediately:YES];
 }
+
 } // namespace rudder::platform
