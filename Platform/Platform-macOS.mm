@@ -371,6 +371,14 @@ constexpr std::size_t maxPassThrough = 4;
 std::array<std::atomic<std::uint32_t>, maxPassThrough> passThroughKeys {};
 std::atomic<std::size_t> passThroughCount {0};
 
+// RUDDER_DEBUG_STALL_TAP_MS: the tap thread itself sleeps on each key press,
+// so the OS times the tap out -- for proving that is honoured.
+const int tapStallMs = []
+{
+    auto* text = std::getenv("RUDDER_DEBUG_STALL_TAP_MS");
+    return text != nullptr ? std::atoi(text) : 0;
+}();
+
 // Main thread only.
 KeyCapture activeCapture;
 __weak NSWindow* capturePanel = nil;
@@ -553,7 +561,13 @@ CGEventRef captureCallback(CGEventTapProxy, CGEventType type, CGEventRef event, 
     for (std::size_t i = 0; i < count; ++i)
         keys[i] = unpack(passThroughKeys[i]);
 
-    switch (decideCapture(kind, state, key, std::span {keys.data(), count}))
+    auto verdict = decideCapture(kind, state, key, std::span {keys.data(), count});
+
+    if (tapStallMs > 0 && verdict == CaptureVerdict::swallow
+        && kind == CaptureEvent::keyDown)
+        usleep((useconds_t) tapStallMs * 1000);
+
+    switch (verdict)
     {
         case CaptureVerdict::pass:
             return event;
@@ -1677,6 +1691,111 @@ void announceStarted()
                       object:nil
                     userInfo:nil
           deliverImmediately:YES];
+}
+
+// --- Debug: key flow probe ---------------------------------------------------
+
+namespace
+{
+std::atomic<std::uint64_t> probeSeen[256];
+std::uint64_t probeStart = 0;
+
+constexpr std::int64_t probeTag = 0x5275646400;
+
+CGEventRef probeCallback(CGEventTapProxy, CGEventType type, CGEventRef event, void*)
+{
+    if (type != kCGEventKeyDown)
+        return event;
+
+    auto index = CGEventGetIntegerValueField(event, kCGEventSourceUserData) - probeTag;
+
+    if (index >= 0 && index < 256 && probeSeen[index] == 0)
+        probeSeen[index] = uptimeNanos();
+
+    return event;
+}
+} // namespace
+
+void probeKeyFlow(std::uint16_t keyCode,
+                  int count,
+                  double interval,
+                  std::function<void(const std::string&)> report)
+{
+    count = std::min(count, 256);
+
+    [NSThread detachNewThreadWithBlock:^{
+      // A listen-only tap at the tail: it sees a key only if every tap ahead
+      // of it -- Rudder's capture included -- let it through.
+      auto tap = CGEventTapCreate(kCGSessionEventTap,
+                                  kCGTailAppendEventTap,
+                                  kCGEventTapOptionListenOnly,
+                                  CGEventMaskBit(kCGEventKeyDown),
+                                  probeCallback,
+                                  nullptr);
+
+      if (tap == nullptr)
+      {
+          report("probe: no listen tap (trusted: " + std::to_string(AXIsProcessTrusted())
+                 + ")");
+          return;
+      }
+
+      auto source = CFMachPortCreateRunLoopSource(nullptr, tap, 0);
+      auto* thread = [[NSThread alloc] initWithBlock:^{
+        CFRunLoopAddSource(CFRunLoopGetCurrent(), source, kCFRunLoopCommonModes);
+        CFRunLoopRun();
+      }];
+      [thread start];
+      usleep(200000);
+
+      auto* eventSource = CGEventSourceCreate(kCGEventSourceStatePrivate);
+      probeStart = uptimeNanos();
+      auto sent = std::vector<std::uint64_t>((std::size_t) count);
+
+      for (auto i = 0; i < count; ++i)
+      {
+          sent[(std::size_t) i] = uptimeNanos();
+
+          auto down = CGEventCreateKeyboardEvent(eventSource, keyCode, true);
+          auto up = CGEventCreateKeyboardEvent(eventSource, keyCode, false);
+          CGEventSetIntegerValueField(down, kCGEventSourceUserData, probeTag + i);
+          CGEventSetIntegerValueField(up, kCGEventSourceUserData, probeTag + i);
+          CGEventPost(kCGHIDEventTap, down);
+          CGEventPost(kCGHIDEventTap, up);
+          CFRelease(down);
+          CFRelease(up);
+
+          usleep((useconds_t) (interval * 1e6));
+      }
+
+      usleep(300000);
+      CFRelease(eventSource);
+
+      auto text = std::string {"probe: key flow, t = ms since the first post\n"};
+
+      for (auto i = 0; i < count; ++i)
+      {
+          auto seen = probeSeen[i].load();
+          char line[128];
+          std::snprintf(line,
+                        sizeof(line),
+                        "  #%02d sent %6.0f  %s %6.0f\n",
+                        i,
+                        (sent[(std::size_t) i] - probeStart) / 1e6,
+                        seen != 0 ? "passed at" : "swallowed",
+                        seen != 0 ? (seen - probeStart) / 1e6 : 0.0);
+          text += line;
+      }
+
+      text += "  capture tap enabled now: ";
+      auto capture = captureTap.load();
+      text += capture != nullptr && CGEventTapIsEnabled(capture) ? "yes" : "no";
+      report(text);
+
+      CGEventTapEnable(tap, false);
+      CFRelease(source);
+      CFRelease(tap);
+    }];
 }
 
 } // namespace rudder::platform

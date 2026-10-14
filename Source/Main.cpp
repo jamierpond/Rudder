@@ -28,6 +28,7 @@
 #include <map>
 #include <optional>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -114,6 +115,7 @@ struct RudderApp
             platform::openAccessibilitySettings();
 
         platform::announceStarted();
+        probeIfAsked();
     }
 
     ~RudderApp() { platform::observeWorkspace({}); }
@@ -512,6 +514,20 @@ struct RudderApp
     {
         if (capturing && event.type == KeyEventType::Down)
             logEvent(("captured key " + std::to_string(event.keyCode)).c_str());
+
+        // RUDDER_DEBUG_STALL_MS: hold the main thread on every key press, to
+        // prove a stuck Rudder can't take the keyboard with it.
+        static const auto stallMs = []
+        {
+            auto* text = std::getenv("RUDDER_DEBUG_STALL_MS");
+            return text != nullptr ? std::atoi(text) : 0;
+        }();
+
+        if (stallMs > 0 && event.type == KeyEventType::Down)
+        {
+            logEvent(("debug stall " + std::to_string(stallMs) + " ms").c_str());
+            std::this_thread::sleep_for(std::chrono::milliseconds {stallMs});
+        }
 
         if (!capturing && (isChord(event, bindings.summon) || isChord(event, bindings.back)))
             return;
@@ -1324,6 +1340,59 @@ struct RudderApp
         std::snprintf(text, sizeof(text), "%.1f ms", seconds * 1000.0);
         return text;
     }
+
+    // RUDDER_DEBUG_CAPTURE_PROBE=<n>: summon the panel, post n presses of F20
+    // (unbound, types nothing) through the real event taps 100 ms apart,
+    // print which got past Rudder's capture and when, then dismiss and quit.
+    // With RUDDER_DEBUG_STALL_MS or RUDDER_DEBUG_STALL_TAP_MS it shows a stuck
+    // Rudder handing the keyboard back.
+    void probeIfAsked()
+    {
+        auto* text = std::getenv("RUDDER_DEBUG_CAPTURE_PROBE");
+
+        if (text == nullptr)
+            return;
+
+        probeTimer.emplace(
+            [this, count = std::atoi(text)]
+            {
+                ++probeTicks;
+
+                if (probeTicks == 2)
+                    reveal(false);
+                else if (probeTicks == 3)
+                {
+                    std::fprintf(stderr,
+                                 "probe: panel %s, capturing keys %s\n",
+                                 panelVisible ? "up" : "down",
+                                 capturingKeys ? "yes" : "no");
+
+                    platform::probeKeyFlow(
+                        90,
+                        count,
+                        0.1,
+                        [this](const std::string& report)
+                        {
+                            std::fprintf(stderr, "%s\n", report.c_str());
+                            Threads::callAsync([this] { probeDone = true; });
+                        });
+                }
+                else if (probeDone)
+                {
+                    std::fprintf(stderr,
+                                 "probe: done; panel %s, capturing keys %s\n",
+                                 panelVisible ? "up" : "down",
+                                 capturingKeys ? "yes" : "no");
+                    cancel();
+                    Apps::quit();
+                }
+            },
+            1);
+    }
+
+    std::optional<Threads::Timer> probeTimer;
+    int probeTicks = 0;
+    bool probeDone = false;
 
     // RUDDER_SNAPSHOT=<path.png>: save what the panel drew on its first frame
     // -- the real panel's pixels, for a machine where screencapture has no

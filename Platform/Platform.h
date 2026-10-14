@@ -197,4 +197,12 @@ bool isSystemShortcut(std::uint16_t keyCode, const eacp::Graphics::ModifierKeys&
 // Tells provider apps a (re)started Rudder is listening, so they reconnect:
 // the distributed notification "rudder.started".
 void announceStarted();
+// Debug (RUDDER_DEBUG_CAPTURE_PROBE): from a background thread, posts
+// `count` presses of `keyCode`, `interval` seconds apart, and reports which got
+// past every event tap (a listen-only tap at the tail saw them) and when.
+// `report` runs on that thread.
+void probeKeyFlow(std::uint16_t keyCode,
+                  int count,
+                  double interval,
+                  std::function<void(const std::string&)> report);
 } // namespace rudder::platform
