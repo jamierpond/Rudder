@@ -248,3 +248,77 @@ auto tUnopenedPlacesNotPreviewed = test("Ranking/a place that isn't open is neve
     check(!ranked.front().running);
     check(previewActionFor(ranked.front(), true, "com.apple.Safari") == PreviewAction::none);
 };
+
+namespace
+{
+// CowTerm as it really pushes: one pane per tab with its cwd (shells say
+// nothing else), Claude Code reporting its version as the command, and the
+// project places that no pane covers.
+std::vector<RudderItem> cowTermAndWim()
+{
+    auto cowTerm = app("com.eacp.cowterm", "CowTerm");
+    cowTerm.contexts = {
+        {"pane:1", "~/projects/old-stuff/tamber-web-analytics-macos-shortcut", "", ""},
+        {"pane:2", "~/projects/old-stuff/tamber-web-sonic-atlas-breakout-simplify-ci-more", "", ""},
+        {"pane:3", "~/projects/GameExperiments", "", ""},
+        {"pane:4", "2.1.299 · Fix window matching — ~/projects/Rudder", "", ""},
+        {"pane:5", "2.1.299 · Rudder fuzzy match bug — ~/projects/Wim", "", ""},
+        {"pane:6", "~/projects/CowTerm", "", ""}};
+
+    auto place = RudderContext {"place:/Users/j/projects/swift2mm", "swift2mm", "", ""};
+    place.open = false;
+    cowTerm.contexts.push_back(place);
+
+    auto wimApp = app("audio.pond.wim", "Wim");
+
+    for (auto i = 0; i < 11; ++i)
+        wimApp.contexts.push_back({"tab-" + std::to_string(i),
+                                   "Tab " + std::to_string(i),
+                                   "",
+                                   "https://example.com/" + std::to_string(i)});
+
+    return {wimApp, cowTerm, app("com.googlecode.iterm2", "iTerm2")};
+}
+
+int rankOf(const std::vector<RudderItem>& ranked, const std::string& contextId)
+{
+    for (std::size_t i = 0; i < ranked.size(); ++i)
+        if (ranked[i].contextId == contextId)
+            return (int) i;
+
+    return -1;
+}
+} // namespace
+
+auto tAppThenProject = test("Ranking/app name then project finds that pane first") = []
+{
+    for (auto query: {"cowtermwim", "cowterm wim", "cowtwim", "termwim"})
+    {
+        auto ranked = rankItems(cowTermAndWim(), query);
+
+        check(rankOf(ranked, "pane:5") == 0);
+    }
+};
+
+auto tProjectAloneFindsPane = test("Ranking/a project name finds its pane near the top")
+    = []
+{
+    auto ranked = rankItems(cowTermAndWim(), "wim");
+
+    // The Wim app itself first, then the pane in ~/projects/Wim -- ahead of
+    // the Wim tabs that only match on their app's name.
+    check(!ranked.empty() && ranked.front().id == "audio.pond.wim");
+    check(rankOf(ranked, "pane:5") == 1);
+
+    // "w" of CowTerm + "im" of GameExperiments still matches, just lower.
+    check(rankOf(ranked, "pane:3") > rankOf(ranked, "pane:5"));
+};
+
+auto tAppNameAloneListsContextsBelowApp
+    = test("Ranking/an app's name lists its contexts below the app") = []
+{
+    auto ranked = rankItems(cowTermAndWim(), "cowterm");
+
+    check(!ranked.empty() && ranked.front().id == "com.eacp.cowterm");
+    check(ranked.size() == 8);
+};

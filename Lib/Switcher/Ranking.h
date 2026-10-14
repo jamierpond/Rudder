@@ -25,7 +25,9 @@ std::vector<RudderItem> mergeInstalled(std::vector<RudderItem> running,
 // The list for the current query. Empty query: favourites (in list order, as
 // `all` has them first) and the running apps -- the switcher, not a launcher
 // of hundreds. Otherwise fuzzy-rank the app titles
-// together with every app's contexts (matched on "app title url"), each
+// together with every app's contexts (the start of the query may name the
+// app, the rest matches the context's title and url; a context matched by its
+// app's name alone ranks below the app), each
 // context flattened into a row of its own (kind "context" or "window") so a
 // tab, a session or a window is one Enter away. Only real
 // hits are kept; on equal scores running apps beat closed ones, and ties

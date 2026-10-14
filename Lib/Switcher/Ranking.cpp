@@ -2,6 +2,7 @@
 #include "FuzzyMatch.h"
 
 #include <algorithm>
+#include <optional>
 #include <unordered_set>
 #include <utility>
 
@@ -36,6 +37,51 @@ std::string favouriteText(const RudderItem& item)
         text += " " + keyword;
 
     return text + " " + item.subtitle;
+}
+
+// A context matched by its app's name alone ("wim" against every Wim tab)
+// sits below the app row and below contexts whose own text matched.
+constexpr auto appNameOnlyPenalty = 8;
+
+// How well `query` finds a context: some leading part of the query on the
+// app's name and the rest on the context's own title and url, best split
+// wins. Scoring the halves separately keeps app-name letters from stealing
+// the query: matched greedily against "CowTerm ~/projects/Wim", "wim" took
+// the w of CowTerm and scored like any pane with a w, i and m in it, and a
+// project typed after the app name ("cowtermwim") ranked by where those
+// letters first turned up rather than by the directory that spells them.
+std::optional<int> contextScore(const std::string& query,
+                                const RudderItem& app,
+                                const RudderContext& context)
+{
+    const auto own = context.title + " " + context.url;
+    auto best = wim::fuzzyScore(query, own);
+
+    for (std::size_t split = 1; split <= query.size(); ++split)
+    {
+        auto onApp = wim::fuzzyScore(query.substr(0, split), app.title);
+
+        if (!onApp)
+            break;
+
+        const auto rest = query.substr(split);
+
+        if (rest.find_first_not_of(' ') == std::string::npos)
+        {
+            auto score = *onApp - appNameOnlyPenalty;
+
+            if (!best || score > *best)
+                best = score;
+
+            continue;
+        }
+
+        if (auto onContext = wim::fuzzyScore(rest, own))
+            if (!best || *onApp + *onContext > *best)
+                best = *onApp + *onContext;
+    }
+
+    return best;
 }
 } // namespace
 
@@ -101,8 +147,7 @@ std::vector<RudderItem> rankItems(const std::vector<RudderItem>& all,
         // A context matches on its app's name, its title and its url, so
         // "wim github" finds the GitHub tab in Wim.
         for (auto& context: app.contexts)
-            if (auto score = wim::fuzzyScore(
-                    query, app.title + " " + context.title + " " + context.url))
+            if (auto score = contextScore(query, app, context))
                 scored.push_back({*score, contextRow(app, context)});
     }
 
