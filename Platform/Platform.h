@@ -66,6 +66,33 @@ void restorePreviewOrigin();
 // preview pane.
 std::vector<std::string> windowTitles(const RunningApp& app);
 
+// One of an app's windows, as a row the user can pick: titled standard
+// windows only (helpers and untitled panels are skipped), minimised ones
+// included. `id` is stable while the window lives.
+struct AppWindow
+{
+    std::string id;
+    std::string title;
+    bool minimized = false;
+};
+
+// What is known of an app's windows right now, from the cache; empty until
+// the first enumeration.
+std::vector<AppWindow> cachedWindows(const RunningApp& app);
+
+// Enumerates every app's windows through AX off the main thread, then keeps
+// them current with AX observers (window created / destroyed / retitled /
+// minimised) until stopWatchingWindows. `onChanged` runs on the main thread
+// with the app whose windows changed. For the life of an open panel only, so
+// nothing is registered while Rudder idles.
+void watchWindows(const std::vector<RunningApp>& apps,
+                  std::function<void(const std::string& appId)> onChanged);
+void stopWatchingWindows();
+
+// Brings that exact window forward and makes its app frontmost, optionally
+// un-minimising it first. False if the window is gone.
+bool focusWindow(const RunningApp& app, const std::string& windowId, bool unminimize);
+
 // Whether Rudder may drive other apps' windows. `prompt` shows the system
 // dialog that sends the user to System Settings.
 bool accessibilityTrusted(bool prompt);

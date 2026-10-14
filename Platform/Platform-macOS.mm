@@ -475,6 +475,264 @@ void restorePreviewOrigin()
         AXUIElementPerformAction(previewOrigin, kAXRaiseAction);
 }
 
+namespace
+{
+struct CachedWindow
+{
+    AXUIElementRef element = nullptr;
+    AppWindow window;
+};
+
+// Windows per pid. Main thread only; the background enumeration builds a
+// fresh list and hands it over.
+std::map<pid_t, std::vector<CachedWindow>>& windowCache()
+{
+    static auto cache = std::map<pid_t, std::vector<CachedWindow>> {};
+    return cache;
+}
+
+void releaseWindows(std::vector<CachedWindow>& windows)
+{
+    for (auto& cached: windows)
+        if (cached.element != nullptr)
+            CFRelease(cached.element);
+
+    windows.clear();
+}
+
+std::string copyStringAttribute(AXUIElementRef element, CFStringRef attribute)
+{
+    CFTypeRef value = nullptr;
+
+    if (AXUIElementCopyAttributeValue(element, attribute, &value) != kAXErrorSuccess
+        || value == nullptr)
+        return {};
+
+    auto text = CFGetTypeID(value) == CFStringGetTypeID()
+                    ? toString((__bridge NSString*) value)
+                    : std::string {};
+    CFRelease(value);
+    return text;
+}
+
+bool copyBoolAttribute(AXUIElementRef element, CFStringRef attribute)
+{
+    CFTypeRef value = nullptr;
+
+    if (AXUIElementCopyAttributeValue(element, attribute, &value) != kAXErrorSuccess
+        || value == nullptr)
+        return false;
+
+    auto result = CFGetTypeID(value) == CFBooleanGetTypeID()
+                  && CFBooleanGetValue((CFBooleanRef) value);
+    CFRelease(value);
+    return result;
+}
+
+// Any thread. Retained elements, front to back.
+std::vector<CachedWindow> enumerateWindows(pid_t pid)
+{
+    auto windows = std::vector<CachedWindow> {};
+    auto appElement = AXUIElementCreateApplication(pid);
+    AXUIElementSetMessagingTimeout(appElement, axTimeoutSeconds);
+
+    CFTypeRef list = nullptr;
+
+    if (AXUIElementCopyAttributeValue(appElement, kAXWindowsAttribute, &list)
+            == kAXErrorSuccess
+        && list != nullptr)
+    {
+        auto array = (CFArrayRef) list;
+
+        for (CFIndex i = 0; i < CFArrayGetCount(array); ++i)
+        {
+            auto element = (AXUIElementRef) CFArrayGetValueAtIndex(array, i);
+            auto title = copyStringAttribute(element, kAXTitleAttribute);
+            auto subrole = copyStringAttribute(element, kAXSubroleAttribute);
+
+            if (title.empty() || subrole != toString((__bridge NSString*) kAXStandardWindowSubrole))
+                continue;
+
+            auto id = [NSString stringWithFormat:@"%lx", (unsigned long) CFHash(element)];
+            CFRetain(element);
+            windows.push_back(
+                {element,
+                 {toString(id), title, copyBoolAttribute(element, kAXMinimizedAttribute)}});
+        }
+
+        CFRelease(list);
+    }
+
+    CFRelease(appElement);
+    return windows;
+}
+
+std::function<void(const std::string&)> windowsChanged;
+std::map<pid_t, AXObserverRef> windowObservers;
+std::map<pid_t, std::string> watchedIds;
+dispatch_queue_t windowQueue = nullptr;
+int watchGeneration = 0;
+
+void observeWindows(pid_t pid);
+
+void storeWindows(pid_t pid, std::vector<CachedWindow> windows)
+{
+    auto& cache = windowCache();
+    releaseWindows(cache[pid]);
+    cache[pid] = std::move(windows);
+}
+
+void refreshWindowsLater(pid_t pid)
+{
+    auto generation = watchGeneration;
+
+    dispatch_async(windowQueue,
+                   ^{
+                     auto windows = std::make_shared<std::vector<CachedWindow>>(
+                         enumerateWindows(pid));
+
+                     dispatch_async(dispatch_get_main_queue(),
+                                    ^{
+                                      if (generation != watchGeneration)
+                                      {
+                                          releaseWindows(*windows);
+                                          return;
+                                      }
+
+                                      storeWindows(pid, std::move(*windows));
+                                      observeWindows(pid);
+
+                                      if (windowsChanged && watchedIds.contains(pid))
+                                          windowsChanged(watchedIds[pid]);
+                                    });
+                   });
+}
+
+void windowNotification(AXObserverRef, AXUIElementRef, CFStringRef, void* context)
+{
+    refreshWindowsLater((pid_t) (intptr_t) context);
+}
+
+// (Re)registers the observer for one app: window created on the app,
+// destroyed / retitled / minimised on each window it has now.
+void observeWindows(pid_t pid)
+{
+    if (auto found = windowObservers.find(pid); found != windowObservers.end())
+    {
+        CFRunLoopRemoveSource(CFRunLoopGetMain(),
+                              AXObserverGetRunLoopSource(found->second),
+                              kCFRunLoopDefaultMode);
+        CFRelease(found->second);
+        windowObservers.erase(found);
+    }
+
+    AXObserverRef observer = nullptr;
+
+    if (AXObserverCreate(pid, windowNotification, &observer) != kAXErrorSuccess)
+        return;
+
+    auto context = (void*) (intptr_t) pid;
+    auto appElement = AXUIElementCreateApplication(pid);
+    AXObserverAddNotification(observer, appElement, kAXWindowCreatedNotification, context);
+    CFRelease(appElement);
+
+    for (auto& cached: windowCache()[pid])
+        for (auto name: {kAXUIElementDestroyedNotification,
+                         kAXTitleChangedNotification,
+                         kAXWindowMiniaturizedNotification,
+                         kAXWindowDeminiaturizedNotification})
+            AXObserverAddNotification(observer, cached.element, name, context);
+
+    CFRunLoopAddSource(
+        CFRunLoopGetMain(), AXObserverGetRunLoopSource(observer), kCFRunLoopDefaultMode);
+    windowObservers[pid] = observer;
+}
+} // namespace
+
+std::vector<AppWindow> cachedWindows(const RunningApp& app)
+{
+    auto windows = std::vector<AppWindow> {};
+
+    if (auto found = windowCache().find(app.pid); found != windowCache().end())
+        for (auto& cached: found->second)
+            windows.push_back(cached.window);
+
+    return windows;
+}
+
+void watchWindows(const std::vector<RunningApp>& apps,
+                  std::function<void(const std::string& appId)> onChanged)
+{
+    stopWatchingWindows();
+
+    if (!AXIsProcessTrusted())
+        return;
+
+    if (windowQueue == nullptr)
+        windowQueue = dispatch_queue_create("rudder.windows", DISPATCH_QUEUE_SERIAL);
+
+    windowsChanged = std::move(onChanged);
+
+    for (auto& app: apps)
+    {
+        watchedIds[app.pid] = app.id;
+        refreshWindowsLater(app.pid);
+    }
+}
+
+void stopWatchingWindows()
+{
+    ++watchGeneration;
+    windowsChanged = nullptr;
+    watchedIds.clear();
+
+    for (auto& [pid, observer]: windowObservers)
+    {
+        CFRunLoopRemoveSource(
+            CFRunLoopGetMain(), AXObserverGetRunLoopSource(observer), kCFRunLoopDefaultMode);
+        CFRelease(observer);
+    }
+
+    windowObservers.clear();
+}
+
+bool focusWindow(const RunningApp& app, const std::string& windowId, bool unminimize)
+{
+    if (!AXIsProcessTrusted())
+        return false;
+
+    auto found = windowCache().find(app.pid);
+
+    if (found == windowCache().end())
+        return false;
+
+    for (auto& cached: found->second)
+    {
+        if (cached.window.id != windowId)
+            continue;
+
+        if (unminimize && cached.window.minimized)
+            AXUIElementSetAttributeValue(cached.element, kAXMinimizedAttribute, kCFBooleanFalse);
+
+        auto appElement = AXUIElementCreateApplication(app.pid);
+        AXUIElementSetMessagingTimeout(appElement, axTimeoutSeconds);
+        AXUIElementSetAttributeValue(appElement, kAXFrontmostAttribute, kCFBooleanTrue);
+        CFRelease(appElement);
+
+        AXUIElementSetAttributeValue(cached.element, kAXMainAttribute, kCFBooleanTrue);
+        auto error = AXUIElementPerformAction(cached.element, kAXRaiseAction);
+
+        if (error != kAXErrorSuccess)
+            NSLog(@"Rudder: raising window '%s' failed: AXError %d",
+                  cached.window.title.c_str(),
+                  (int) error);
+
+        return error == kAXErrorSuccess;
+    }
+
+    return false;
+}
+
 std::vector<std::string> windowTitles(const RunningApp& app)
 {
     auto titles = std::vector<std::string> {};
@@ -613,6 +871,8 @@ void observeWorkspace(WorkspaceEvents events)
                           if (app != nil && !isSelf(app))
                           {
                               forgetFrontWindow(app.processIdentifier);
+                              releaseWindows(windowCache()[app.processIdentifier]);
+                              windowCache().erase(app.processIdentifier);
                               shared->onTerminated(describe(app));
                           }
                         }];

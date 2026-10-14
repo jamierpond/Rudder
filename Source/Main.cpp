@@ -534,6 +534,8 @@ struct RudderApp
         panel.focus();
         syncAccessibilityGate(true);
         startKeyCapture();
+        platform::watchWindows(running,
+                               [this](const std::string& appId) { onWindowsChanged(appId); });
         logEvent("reveal: shown");
     }
 
@@ -547,6 +549,7 @@ struct RudderApp
         setCapturing(false);
         syncAccessibilityGate(false);
         stopKeyCapture();
+        platform::stopWatchingWindows();
         previewedId.clear();
 
         // Deferred on macOS: hiding a key panel while the app is active
@@ -638,7 +641,7 @@ struct RudderApp
             item.id = app.id;
             item.title = app.name;
             item.appId = app.id;
-            item.contexts = providers.contextsFor(app.id);
+            item.contexts = contextsFor(app);
             item.subtitle = app.id == frontAppId ? "Current" : "";
             allItems.push_back(std::move(item));
         }
@@ -661,6 +664,7 @@ struct RudderApp
         selected = initialSelection(filtered, query, frontAppId);
         pendingPreview.reset();
         previewedId.clear();
+        previewedAppId.clear();
         previewWindows.clear();
         previewRaised = false;
         publishResults();
@@ -700,10 +704,11 @@ struct RudderApp
 
         auto& item = filtered[(std::size_t) selected];
 
-        if (item.appId == previewedId)
+        if (item.id == previewedId)
             return;
 
-        previewedId = item.appId;
+        previewedId = item.id;
+        previewedAppId = item.appId;
         previewWindows.clear();
         previewRaised = false;
 
@@ -721,7 +726,7 @@ struct RudderApp
     // The one place a preview touches another app.
     void previewNow(const RudderItem& item)
     {
-        if (!panelVisible || previewedId != item.appId)
+        if (!panelVisible || previewedId != item.id)
             return;
 
         auto app = findRunningNow(item.appId);
@@ -736,7 +741,9 @@ struct RudderApp
         // way the window gets above everything -- and typing still lands in
         // the panel. Without it (no grant), nothing is raised: the pane shows
         // the selection instead.
-        if (capturingKeys)
+        if (capturingKeys && item.kind == "window")
+            previewRaised = platform::focusWindow(*app, item.contextId, false);
+        else if (capturingKeys)
         {
             previewRaised = platform::previewApp(*app);
 
@@ -744,11 +751,58 @@ struct RudderApp
                 platform::restorePreviewOrigin();
         }
 
-        logEvent(("preview " + app->name + " " + millis(uptime() - start)
+        logEvent(("preview " + app->name + (item.kind == "window" ? " / " + item.title : std::string {}) + " " + millis(uptime() - start)
                   + (previewRaised ? "" : " (not raised)"))
                      .c_str());
 
         previewWindows = platform::windowTitles(*app);
+        publishResults();
+    }
+
+    // What an app row carries as children: a provider's contexts, then the
+    // app's own windows as Rudder last saw them.
+    std::vector<RudderContext> contextsFor(const platform::RunningApp& app)
+    {
+        auto contexts = providers.contextsFor(app.id);
+
+        for (auto& window: platform::cachedWindows(app))
+        {
+            auto context = RudderContext {};
+            context.id = window.id;
+            context.title = window.title;
+            context.subtitle = window.minimized ? "Minimised" : "";
+            context.kind = "window";
+            contexts.push_back(std::move(context));
+        }
+
+        return contexts;
+    }
+
+    // An app's windows changed while the panel is up (the first enumeration
+    // landing, or an AX observer): refresh its rows, keeping the selection on
+    // the same row where it still exists.
+    void onWindowsChanged(const std::string& appId)
+    {
+        auto app = findRunning(appId);
+
+        if (!panelVisible || !app)
+            return;
+
+        for (auto& item: allItems)
+            if (item.appId == appId && item.kind == "app" && item.running)
+                item.contexts = contextsFor(*app);
+
+        if (query.empty())
+            return;
+
+        auto selectedId = filtered.empty() ? std::string {}
+                                           : filtered[(std::size_t) selected].id;
+        filtered = rankItems(allItems, query);
+
+        auto again = std::find_if(filtered.begin(),
+                                  filtered.end(),
+                                  [&](const RudderItem& item) { return item.id == selectedId; });
+        selected = again != filtered.end() ? (int) (again - filtered.begin()) : 0;
         publishResults();
     }
 
@@ -800,8 +854,11 @@ struct RudderApp
         update(filtered);
         selected = std::clamp(selected, 0, std::max((int) filtered.size() - 1, 0));
 
-        if (previewedId == appId)
+        if (previewedAppId == appId)
+        {
             previewedId.clear();
+            previewedAppId.clear();
+        }
 
         std::erase_if(running,
                       [&](const platform::RunningApp& app) { return app.id == appId; });
@@ -852,7 +909,11 @@ struct RudderApp
         logEvent(("open -> " + app->name).c_str());
         quick_window::rememberAppForHandoff(app->pid);
         hidePanel();
-        platform::activateApp(*app);
+
+        // A window row: that exact window, un-minimised if need be.
+        if (item.kind != "window" || !platform::focusWindow(*app, item.contextId, true))
+            platform::activateApp(*app);
+
         recordActivation(app->id);
     }
 
@@ -865,7 +926,7 @@ struct RudderApp
         logEvent("cancel");
 
         // A preview activated another app; hand the screen back as it was.
-        auto previewed = !previewedId.empty() && previewedId != frontAppId;
+        auto previewed = !previewedAppId.empty() && previewedAppId != frontAppId;
         hidePanel();
 
         if (previewed && !origin.id.empty())
@@ -952,6 +1013,7 @@ struct RudderApp
     std::string frontAppId;
     std::string query;
     std::string previewedId;
+    std::string previewedAppId;
     std::vector<std::string> previewWindows;
     bool previewRaised = false;
     std::vector<platform::RunningApp> running;
