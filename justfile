@@ -25,6 +25,6 @@ relaunch:
 clean:
     node Scripts/clean.mjs
 
-[doc('Build + run the unit tests')]
+[doc('Build + run the unit tests in build-test/ (leaves the app in build/ alone)')]
 test:
-    node Scripts/compile.mjs && ./build/Tests/RudderTests
+    node Scripts/test.mjs
