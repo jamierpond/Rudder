@@ -26,7 +26,9 @@ struct RudderContext
 // flattened into its own row while searching: `appId` names the owner and
 // `contextId` is what goes back to it as `activate {contextId}`. Apps keep
 // their contexts as children in `contexts`, empty until providers exist.
-// Icons are not carried: the panel looks them up by appId.
+// Installed apps that aren't running are rows too (running false, `path` set
+// to the bundle, which Enter launches). Icons are not carried: the panel
+// looks them up by appId.
 struct RudderItem
 {
     std::string kind = "app";
@@ -36,7 +38,9 @@ struct RudderItem
     std::string appId;
     std::string contextId;
     std::vector<RudderContext> contexts;
+    bool running = true;
+    std::string path;
 
-    MIRO_REFLECT(kind, id, title, subtitle, appId, contextId, contexts)
+    MIRO_REFLECT(kind, id, title, subtitle, appId, contextId, contexts, running, path)
 };
 } // namespace rudder

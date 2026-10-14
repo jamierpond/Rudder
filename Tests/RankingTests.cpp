@@ -110,3 +110,89 @@ auto tSelectionSkipsFront = test("Ranking/no query starts on the previous app") 
     check(initialSelection(apps, "wim", "com.apple.Safari") == 0);
     check(initialSelection({apps[0]}, "", "com.apple.Safari") == 0);
 };
+
+namespace
+{
+RudderItem closed(const std::string& id, const std::string& title)
+{
+    auto item = app(id, title);
+    item.running = false;
+    item.path = "/Applications/" + title + ".app";
+    return item;
+}
+} // namespace
+
+auto tMergeOnce = test("Ranking/installed apps merge in once, after running ones") = []
+{
+    auto merged = mergeInstalled(
+        someApps(),
+        {closed("com.apple.Safari", "Safari"), closed("com.apple.Music", "Music")});
+
+    check(titles(merged)
+          == std::vector<std::string> {"Safari", "Wim", "iTerm2", "Finder", "Music"});
+    check(merged.front().running);
+    check(!merged.back().running);
+    check(merged.back().path == "/Applications/Music.app");
+};
+
+auto tBrowsingHidesClosed = test("Ranking/no query lists running apps only") = []
+{
+    auto merged = mergeInstalled(someApps(), {closed("com.apple.Music", "Music")});
+
+    check(titles(rankItems(merged, "")) == titles(someApps()));
+};
+
+auto tQueryFindsClosed = test("Ranking/a query finds apps that aren't running") = []
+{
+    auto merged = mergeInstalled(someApps(), {closed("com.apple.Music", "Music")});
+    auto ranked = rankItems(merged, "music");
+
+    check(ranked.size() == 1);
+    check(!ranked.front().running);
+};
+
+auto tRunningWinsTies = test("Ranking/running beats closed on an equal match") = []
+{
+    // The closed one comes first in the list, so only the tie-break can lift
+    // the running one above it.
+    auto apps = std::vector<RudderItem> {closed("a", "Notes"), app("b", "Notes")};
+    auto ranked = rankItems(apps, "notes");
+
+    check(ranked.size() == 2);
+    check(ranked.front().running);
+};
+
+auto tBetterMatchWinsOverRunning = test("Ranking/a better match beats running") = []
+{
+    // Mid-word in the running app, a word start in the closed one.
+    auto apps = std::vector<RudderItem> {app("a", "Affinity"), closed("b", "Finder")};
+    auto ranked = rankItems(apps, "fin");
+
+    check(ranked.front().title == "Finder");
+};
+
+auto tPreviewNeverLaunches = test("Ranking/selecting a closed app doesn't launch it")
+    = []
+{
+    auto music = closed("com.apple.Music", "Music");
+
+    check(previewActionFor(music, false, "com.apple.Safari") == PreviewAction::none);
+
+    // Even if something claims it is running, a closed row is not previewed.
+    check(previewActionFor(music, true, "com.apple.Safari") == PreviewAction::none);
+};
+
+auto tPreviewQuitApp = test("Ranking/an app that quit since listing isn't previewed")
+    = []
+{
+    check(previewActionFor(app("com.pond.wim", "Wim"), false, "com.apple.Safari")
+          == PreviewAction::none);
+};
+
+auto tPreviewRunning = test("Ranking/a running app previews; the origin restores") = []
+{
+    check(previewActionFor(app("com.pond.wim", "Wim"), true, "com.apple.Safari")
+          == PreviewAction::bringForward);
+    check(previewActionFor(app("com.apple.Safari", "Safari"), true, "com.apple.Safari")
+          == PreviewAction::restoreOrigin);
+};

@@ -16,12 +16,35 @@ using LastUsedFn = std::function<std::int64_t(const std::string& appId)>;
 std::vector<RudderItem> orderByRecency(std::vector<RudderItem> apps,
                                        const LastUsedFn& lastUsed);
 
-// The list for the current query. Empty query: `all` unchanged. Otherwise
-// fuzzy-rank the app titles together with every app's contexts, each context
-// flattened into a row of its own (kind "context") so a tab or session is
-// one Enter away. Only real hits are kept; ties keep the recency order.
+// Running apps first, then every installed app that isn't running (matched by
+// bundle id, so an app appears once). Both halves keep their order, so call
+// with each already by recency.
+std::vector<RudderItem> mergeInstalled(std::vector<RudderItem> running,
+                                       const std::vector<RudderItem>& installed);
+
+// The list for the current query. Empty query: the running apps only -- the
+// switcher, not a launcher of hundreds. Otherwise fuzzy-rank the app titles
+// together with every app's contexts, each context flattened into a row of
+// its own (kind "context") so a tab or session is one Enter away. Only real
+// hits are kept; on equal scores running apps beat closed ones, and ties
+// after that keep the recency order.
 std::vector<RudderItem> rankItems(const std::vector<RudderItem>& all,
                                   const std::string& query);
+
+// What the live preview does for a selection. Only ever brings forward an
+// app that is running at the moment of the call; anything else -- a closed
+// app, an app that quit since the list was built -- is left alone. The
+// preview never launches, opens or activates something that isn't running.
+enum class PreviewAction
+{
+    none,
+    bringForward,
+    restoreOrigin
+};
+
+PreviewAction previewActionFor(const RudderItem& item,
+                               bool runningNow,
+                               const std::string& originAppId);
 
 // Where the selection starts. With no query the top row is the app the panel
 // was summoned over, so cmd-tab style it starts on the next one -- Enter

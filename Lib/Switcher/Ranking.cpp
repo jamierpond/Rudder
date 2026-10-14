@@ -2,6 +2,7 @@
 #include "FuzzyMatch.h"
 
 #include <algorithm>
+#include <unordered_set>
 #include <utility>
 
 namespace rudder
@@ -33,11 +34,37 @@ std::vector<RudderItem> orderByRecency(std::vector<RudderItem> apps,
     return apps;
 }
 
+std::vector<RudderItem> mergeInstalled(std::vector<RudderItem> running,
+                                       const std::vector<RudderItem>& installed)
+{
+    auto seen = std::unordered_set<std::string> {};
+
+    for (auto& item: running)
+        seen.insert(item.appId);
+
+    for (auto& item: installed)
+        if (seen.insert(item.appId).second)
+        {
+            running.push_back(item);
+            running.back().running = false;
+        }
+
+    return running;
+}
+
 std::vector<RudderItem> rankItems(const std::vector<RudderItem>& all,
                                   const std::string& query)
 {
     if (query.empty())
-        return all;
+    {
+        auto running = std::vector<RudderItem> {};
+
+        for (auto& item: all)
+            if (item.running)
+                running.push_back(item);
+
+        return running;
+    }
 
     auto scored = std::vector<std::pair<int, RudderItem>> {};
 
@@ -55,7 +82,13 @@ std::vector<RudderItem> rankItems(const std::vector<RudderItem>& all,
 
     std::stable_sort(scored.begin(),
                      scored.end(),
-                     [](const auto& a, const auto& b) { return a.first > b.first; });
+                     [](const auto& a, const auto& b)
+                     {
+                         if (a.first != b.first)
+                             return a.first > b.first;
+
+                         return a.second.running && !b.second.running;
+                     });
 
     auto ranked = std::vector<RudderItem> {};
 
@@ -63,6 +96,17 @@ std::vector<RudderItem> rankItems(const std::vector<RudderItem>& all,
         ranked.push_back(std::move(item));
 
     return ranked;
+}
+
+PreviewAction previewActionFor(const RudderItem& item,
+                               bool runningNow,
+                               const std::string& originAppId)
+{
+    if (!item.running || !runningNow)
+        return PreviewAction::none;
+
+    return item.appId == originAppId ? PreviewAction::restoreOrigin
+                                     : PreviewAction::bringForward;
 }
 
 int initialSelection(const std::vector<RudderItem>& items,
