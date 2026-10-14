@@ -44,3 +44,26 @@ the grant first.
 - `RUDDER_LOG=1` traces the show/hide handshake, previews, the back stack and
   latency (hotkey → first frame, key → frame) on stderr.
 - `Rudder --snapshot <dir>` renders the panel and the unlock overlay to PNGs.
+
+## Publishing contexts from an app
+
+Apps can list their own places (tabs, sessions) in Rudder. Rudder listens on
+`~/Library/Application Support/Rudder/rudder.sock` for newline-delimited JSON
+(see `Client/RudderProtocol.h`) and posts the distributed notification
+`rudder.started` when it starts. The `RudderClient` library does the client
+side; pull in just that with CPM:
+
+```cmake
+CPMAddPackage(NAME Rudder GIT_REPOSITORY <rudder repo> GIT_TAG main
+              OPTIONS "RUDDER_CLIENT_ONLY ON")
+target_link_libraries(MyApp PRIVATE RudderClient)
+```
+
+```cpp
+auto rudder = rudder::RudderClient {{"MyApp", "com.example.myapp"}};
+rudder.onActivate = [](const std::string& id) { /* bring that place forward */ };
+rudder.pushContexts({{"1", "Title", "subtitle", "https://..."}});
+```
+
+It reconnects when Rudder restarts and is silent when Rudder isn't running.
+Wim is the first provider.
