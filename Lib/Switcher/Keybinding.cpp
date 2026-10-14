@@ -1,5 +1,7 @@
 #include "Keybinding.h"
 
+#include <eacp/Core/Platform/Platform.h>
+
 #include <algorithm>
 #include <iterator>
 #include <cctype>
@@ -105,7 +107,7 @@ std::optional<Chord> parseChord(const std::string& text)
             chord.option = true;
         else if (part == "shift")
             chord.shift = true;
-        else if (part == "command" || part == "cmd")
+        else if (part == "command" || part == "cmd" || part == "win")
             chord.command = true;
         else
             return std::nullopt;
@@ -142,6 +144,26 @@ std::string serialiseChord(const Chord& chord)
 
 std::string displayChord(const Chord& chord)
 {
+    auto* key = findKey(chord.key);
+    auto label = std::string {key != nullptr ? key->label : chord.key};
+
+    // Windows menus spell chords out, and its command key is the Windows key.
+    if constexpr (eacp::Platform::isWindows())
+    {
+        auto text = std::string {};
+
+        if (chord.control)
+            text += "Ctrl+";
+        if (chord.option)
+            text += "Alt+";
+        if (chord.shift)
+            text += "Shift+";
+        if (chord.command)
+            text += "Win+";
+
+        return text + label;
+    }
+
     auto text = std::string {};
 
     if (chord.control)
@@ -153,8 +175,7 @@ std::string displayChord(const Chord& chord)
     if (chord.command)
         text += "⌘";
 
-    auto* key = findKey(chord.key);
-    return text + (key != nullptr ? key->label : chord.key);
+    return text + label;
 }
 
 std::optional<std::uint16_t> keyCodeFor(const std::string& key)

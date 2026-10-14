@@ -47,10 +47,19 @@ auto tRejects = test("Keybinding/bad chords are rejected") = []
     check(parseChord("f5").has_value());
 };
 
-auto tDisplay = test("Keybinding/display uses the menu glyphs") = []
+auto tDisplay = test("Keybinding/display uses the platform's menu labels") = []
 {
-    check(displayChord(*parseChord("option+space")) == "⌥Space");
-    check(displayChord(*parseChord("control+shift+k")) == "⌃⇧K");
+    if constexpr (eacp::Platform::isWindows())
+    {
+        check(displayChord(*parseChord("option+space")) == "Alt+Space");
+        check(displayChord(*parseChord("control+shift+k")) == "Ctrl+Shift+K");
+        check(displayChord(*parseChord("win+d")) == "Win+D");
+    }
+    else
+    {
+        check(displayChord(*parseChord("option+space")) == "⌥Space");
+        check(displayChord(*parseChord("control+shift+k")) == "⌃⇧K");
+    }
 };
 
 auto tKeyCodes = test("Keybinding/key names map to macOS key codes and back") = []

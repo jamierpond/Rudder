@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Miro/Reflect.h>
+#include <eacp/Core/Platform/Platform.h>
 
 #include <cstdint>
 #include <optional>
@@ -23,13 +24,14 @@ struct Chord
 };
 
 // Case-insensitive; modifiers in any order, with the usual aliases (alt/opt,
-// cmd, ctrl). Nullopt for an unknown key, or a bare key that would swallow
+// cmd/win, ctrl). "command" is the Windows key on Windows. Nullopt for an unknown key, or a bare key that would swallow
 // ordinary typing system-wide -- only function keys may go unmodified.
 std::optional<Chord> parseChord(const std::string& text);
 
 std::string serialiseChord(const Chord& chord);
 
-// The menu-style label: "⌥Space", "⌃⇧K".
+// The menu-style label: "⌥Space", "⌃⇧K" -- "Alt+Space", "Ctrl+Shift+K" on
+// Windows.
 std::string displayChord(const Chord& chord);
 
 // The macOS virtual key code for a canonical key name -- the space
@@ -50,12 +52,14 @@ bool matchesChord(const Chord& chord,
 
 // The stored bindings, one document in the settings collection. summon and
 // back are global hotkeys; quit and favourite only act inside the open panel.
+// Win+D is the shell's show-desktop, which never reaches the panel, so
+// Windows favourites with Ctrl+D.
 struct Keybindings
 {
     std::string summon = "option+space";
     std::string back = "option+`";
     std::string quit = "control+q";
-    std::string favourite = "command+d";
+    std::string favourite = eacp::Platform::isWindows() ? "control+d" : "command+d";
 
     MIRO_REFLECT(summon, back, quit, favourite)
 };
