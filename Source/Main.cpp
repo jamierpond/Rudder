@@ -161,6 +161,8 @@ struct RudderApp
             auto chosen = filtered[(std::size_t) index];
             Threads::callAsync([this, chosen] { openItem(chosen); });
         };
+        panel.onQuitSelected = [this] { Threads::callAsync([this] { quitSelected(); }); };
+
         panel.onCancel = [this]
         {
             logEvent("panel: escape");
@@ -337,6 +339,9 @@ struct RudderApp
 
         events.onTerminated = [this](const platform::RunningApp& app)
         {
+            if (panelVisible)
+                markQuit(app.id);
+
             backStack.forget(app.id);
             platform::forgetIcon(app.id);
             providers.disconnect(app.id);
@@ -643,6 +648,7 @@ struct RudderApp
             return;
 
         query = text;
+        logEvent(("query '" + query + "'").c_str());
         filtered = rankItems(allItems, query);
         selected = initialSelection(filtered, query, frontAppId);
         previewSelection();
@@ -719,6 +725,62 @@ struct RudderApp
                      .c_str());
 
         previewWindows = platform::windowTitles(*app);
+        publishResults();
+    }
+
+    // ⌘Q: quit the selection, cmd-tab style. The panel stays up; the row
+    // turns "not running" when the app is actually gone (markQuit), so an app
+    // that refuses -- an unsaved-changes dialog -- simply stays running.
+    void quitSelected()
+    {
+        if (!panelVisible || filtered.empty())
+            return;
+
+        auto& item = filtered[(std::size_t) selected];
+
+        if (auto app = findRunningNow(item.appId))
+        {
+            logEvent(("quit -> " + app->name).c_str());
+            platform::quitApp(*app);
+        }
+    }
+
+    // An app quit while the panel is up: its rows become closed apps in place
+    // (or go, if it isn't installed anywhere Rudder lists), keeping the query
+    // and the selection.
+    void markQuit(const std::string& appId)
+    {
+        auto path = installedPaths.find(appId);
+
+        auto update = [&](std::vector<RudderItem>& items)
+        {
+            if (path == installedPaths.end())
+            {
+                std::erase_if(items,
+                              [&](const RudderItem& item) { return item.appId == appId; });
+                return;
+            }
+
+            for (auto& item: items)
+            {
+                if (item.appId != appId)
+                    continue;
+
+                item.running = false;
+                item.subtitle = "Not running";
+                item.path = path->second;
+            }
+        };
+
+        update(allItems);
+        update(filtered);
+        selected = std::clamp(selected, 0, std::max((int) filtered.size() - 1, 0));
+
+        if (previewedId == appId)
+            previewedId.clear();
+
+        std::erase_if(running,
+                      [&](const platform::RunningApp& app) { return app.id == appId; });
         publishResults();
     }
 

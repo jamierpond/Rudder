@@ -1,6 +1,7 @@
 #include "PanelView.h"
 #include "Icon.h"
 #include "Keybinding.h"
+#include "LineEdit.h"
 
 #include <algorithm>
 #include <utility>
@@ -492,7 +493,7 @@ void PanelView::setSettings(const SettingsModel& model)
     settings.accessibility.setText(model.accessibilityTrusted ? "Allowed" : "Allow…");
 
     root.switcher.footer.setText(model.summonLabel + " switch   ·   " + model.backLabel
-                                 + " back");
+                                 + " back   ·   ⌘Q quit app");
     root.switcher.preview.grant.setVisible(!trusted);
 
     if (!settingsOpen())
@@ -541,6 +542,57 @@ void PanelView::render(GPU::Frame& frame)
     onFrame();
 }
 
+bool PanelView::editQuery(const Graphics::KeyEvent& event)
+{
+    using namespace Graphics;
+
+    auto& query = root.switcher.query;
+    auto& mods = event.modifiers;
+
+    if (mods.command || mods.shift)
+        return false;
+
+    auto current = Line {query.getText(), query.getCaretPosition()};
+    auto edited = std::optional<Line> {};
+
+    if (mods.control && !mods.alt)
+    {
+        switch (event.keyCode)
+        {
+            case KeyCode::W: edited = line::deleteWhitespaceWord(current); break;
+            case KeyCode::U: edited = line::deleteToStart(current); break;
+            case KeyCode::K: edited = line::deleteToEnd(current); break;
+            case KeyCode::A: edited = line::start(current); break;
+            case KeyCode::E: edited = line::end(current); break;
+            case KeyCode::B: edited = line::left(current); break;
+            case KeyCode::F: edited = line::right(current); break;
+            case KeyCode::H: edited = line::backspace(current); break;
+            case KeyCode::D: edited = line::deleteForward(current); break;
+            default: break;
+        }
+    }
+    else if (mods.alt && !mods.control)
+    {
+        switch (event.keyCode)
+        {
+            case KeyCode::B: edited = line::wordLeft(current); break;
+            case KeyCode::F: edited = line::wordRight(current); break;
+            case KeyCode::Delete: edited = line::deleteWord(current); break;
+            default: break;
+        }
+    }
+
+    if (!edited)
+        return false;
+
+    // An edit re-filters and re-previews exactly as typing does.
+    if (edited->text != current.text)
+        query.setText(edited->text, true);
+
+    query.setCaretPosition(edited->cursor);
+    return true;
+}
+
 void PanelView::keyDown(const Graphics::KeyEvent& event)
 {
     using namespace Graphics;
@@ -574,7 +626,11 @@ void PanelView::keyDown(const Graphics::KeyEvent& event)
         return;
     }
 
-    if (key == KeyCode::DownArrow || (ctrl && key == KeyCode::N))
+    if (event.modifiers.command && key == KeyCode::Q)
+        onQuitSelected();
+    else if (editQuery(event))
+        return;
+    else if (key == KeyCode::DownArrow || (ctrl && key == KeyCode::N))
         onMove(1);
     else if (key == KeyCode::UpArrow || (ctrl && key == KeyCode::P))
         onMove(-1);

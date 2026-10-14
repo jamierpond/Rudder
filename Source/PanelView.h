@@ -212,6 +212,9 @@ public:
     std::function<void(int)> onChoose = [](int) {};
     std::function<void()> onCancel = [] {};
 
+    // ⌘Q: quit the selected app (never Rudder).
+    std::function<void()> onQuitSelected = [] {};
+
     // Settings: recording starts (old hotkeys must stop firing), a chord was
     // recorded (canonical text, or empty when cancelled).
     std::function<void()> onCaptureStart = [] {};
@@ -224,6 +227,9 @@ public:
     std::function<void()> onCloseSettings = [] {};
 
 private:
+    // fzf's emacs keys on the query field. True when the key was one.
+    bool editQuery(const eacp::Graphics::KeyEvent& event);
+
     void startCapture(const std::string& action);
     void recordChord(const eacp::Graphics::KeyEvent& event);
     void showPage(bool showSettings);

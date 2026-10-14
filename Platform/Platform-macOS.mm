@@ -814,6 +814,12 @@ const eacp::Graphics::Image& bundleIcon(const std::string& id, const std::string
     return image;
 }
 
+bool quitApp(const RunningApp& app)
+{
+    auto* running = lookUp(app);
+    return running != nil && !isSelf(running) && [running terminate];
+}
+
 bool launchApp(const std::string& path)
 {
     auto* url = [NSURL fileURLWithPath:[NSString stringWithUTF8String:path.c_str()]];

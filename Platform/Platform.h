@@ -115,6 +115,10 @@ void watchInstalledApps(std::function<void(std::vector<InstalledApp>)> onChange)
 // only asks for the rows it draws, so hundreds of apps cost nothing up front.
 const eacp::Graphics::Image& bundleIcon(const std::string& id, const std::string& path);
 
+// Asks the app to quit, as its own Quit menu item would: it may refuse (an
+// unsaved-changes dialog) and stay running. Never a force quit.
+bool quitApp(const RunningApp& app);
+
 // Launches (and activates) the app at `path`.
 bool launchApp(const std::string& path);
 
