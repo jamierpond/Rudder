@@ -1712,6 +1712,11 @@ void announceStarted()
           deliverImmediately:YES];
 }
 
+double uptime()
+{
+    return (double) clock_gettime_nsec_np(CLOCK_UPTIME_RAW) / 1e9;
+}
+
 // --- Debug: key flow probe ---------------------------------------------------
 
 namespace

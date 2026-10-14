@@ -913,9 +913,7 @@ struct RudderApp
     // reported in the footer and the last good list stays.
     static eacp::FilePath favouritesPath()
     {
-        auto* home = std::getenv("HOME");
-        return eacp::FilePath {std::string {home != nullptr ? home : ""}} / ".config"
-               / "rudder.json";
+        return eacp::FilePath::homeDirectory() / ".config" / "rudder.json";
     }
 
     void loadFavourites()
@@ -1428,10 +1426,7 @@ struct RudderApp
                            settingsError});
     }
 
-    static double uptime()
-    {
-        return (double) clock_gettime_nsec_np(CLOCK_UPTIME_RAW) / 1e9;
-    }
+    static double uptime() { return platform::uptime(); }
 
     static std::string millis(double seconds)
     {

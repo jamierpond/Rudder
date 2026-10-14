@@ -8,9 +8,8 @@
 #include <string>
 #include <vector>
 
-// Everything Rudder asks of the OS, behind one small seam so a Windows
-// implementation can slot in beside Platform-macOS.mm. All calls are main
-// thread only.
+// Everything Rudder asks of the OS, behind one small seam: Platform-macOS.mm
+// and Platform-Windows.cpp implement it. All calls are main thread only.
 namespace rudder::platform
 {
 // A running, user-facing app (macOS: activation policy regular). `id` is its
@@ -200,8 +199,13 @@ bool launchApp(const std::string& path);
 bool isSystemShortcut(std::uint16_t keyCode, const eacp::Graphics::ModifierKeys& modifiers);
 
 // Tells provider apps a (re)started Rudder is listening, so they reconnect:
-// the distributed notification "rudder.started".
+// "rudder.started" (RudderProtocol.h).
 void announceStarted();
+
+// Seconds on the clock the OS stamps key events with (KeyEvent::timestamp),
+// for RUDDER_LOG's latency traces.
+double uptime();
+
 // Debug (RUDDER_DEBUG_CAPTURE_PROBE): from a background thread, posts
 // `count` presses of `keyCode`, `interval` seconds apart, and reports which got
 // past every event tap (a listen-only tap at the tail saw them) and when.

@@ -1,6 +1,7 @@
 #include "Icon.h"
 
 #include <ResEmbed/ResEmbed.h>
+#include <eacp/Core/Platform/Platform.h>
 
 namespace rudder
 {
@@ -15,11 +16,10 @@ eacp::Graphics::Image decodeResource(const std::string& name)
 
 eacp::Graphics::Image loadTrayIcon()
 {
-#if defined(_WIN32)
-    return decodeResource("TrayWindows.png");
-#else
-    return decodeResource("Tray.png");
-#endif
+    if constexpr (eacp::Platform::isWindows())
+        return decodeResource("TrayWindows.png");
+    else
+        return decodeResource("Tray.png");
 }
 
 eacp::Graphics::Image loadAppIcon()
