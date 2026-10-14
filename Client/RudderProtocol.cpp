@@ -78,6 +78,14 @@ std::optional<Message> readContexts(const Object& object)
             || !readString(fields, "url", context.url))
             return std::nullopt;
 
+        if (auto* open = Miro::Json::find(fields, "open"))
+        {
+            if (!open->isBool())
+                return std::nullopt;
+
+            context.open = open->asBool();
+        }
+
         contexts.contexts.push_back(std::move(context));
     }
 

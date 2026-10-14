@@ -28,7 +28,8 @@ auto tHelloRoundTrips = test("Protocol/hello encodes to one line and back") = []
 auto tContextsRoundTrip = test("Protocol/contexts keep every field") = []
 {
     auto sent = Contexts {{{"3", "GitHub", "https://github.com", "https://github.com"},
-                           {"4", "Hacker \"News\"\n", "", ""}}};
+                           {"4", "Hacker \"News\"\n", "", ""},
+                           {"place:/Users/j/projects/tamber-web", "tamber-web", "", "", false}}};
     auto line = encode(sent);
     auto message = decode(line.substr(0, line.size() - 1));
     auto* received = message ? std::get_if<Contexts>(&*message) : nullptr;
@@ -56,7 +57,10 @@ auto tOptionalFields = test("Protocol/subtitle and url may be left out") = []
     check(contexts != nullptr && contexts->contexts.size() == 1);
 
     if (contexts != nullptr && !contexts->contexts.empty())
+    {
         check(contexts->contexts.front().url.empty());
+        check(contexts->contexts.front().open);
+    }
 };
 
 auto tGarbageIgnored = test("Protocol/garbage decodes to nothing") = []
@@ -69,6 +73,7 @@ auto tGarbageIgnored = test("Protocol/garbage decodes to nothing") = []
     check(!decode(R"({"app":"Wim"})").has_value());
     check(!decode(R"({"type":"contexts","contexts":"nope"})").has_value());
     check(!decode(R"({"type":"hello","pid":"not a number"})").has_value());
+    check(!decode(R"({"type":"contexts","contexts":[{"id":"1","open":"no"}]})").has_value());
 };
 
 auto tLinesSplit = test("Protocol/lines split across chunks reassemble") = []
@@ -96,4 +101,13 @@ auto tLongLinesDropped = test("Protocol/an overlong line is dropped whole") = []
 
     check(lines.size() == 1);
     check(lines.front() == "next");
+};
+
+auto tClosedPlaces = test("Protocol/open: false marks a place that isn't open yet") = []
+{
+    auto message = decode(R"({"type":"contexts","contexts":[{"id":"place:/p","title":"p","open":false}]})");
+    auto* contexts = message ? std::get_if<Contexts>(&*message) : nullptr;
+
+    check(contexts != nullptr && contexts->contexts.size() == 1
+          && !contexts->contexts.front().open);
 };

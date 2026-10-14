@@ -16,6 +16,7 @@
 //
 //   app -> Rudder   {"type":"hello","app":"Wim","bundleId":"com.pond.wim","pid":42}
 //   app -> Rudder   {"type":"contexts","contexts":[{"id":"3","title":"…","url":"…"}]}
+//                   (each context may also carry "subtitle" and "open": false)
 //   Rudder -> app   {"type":"activate","contextId":"3"}
 //
 // hello comes first; each contexts push replaces the app's whole list; the
@@ -39,7 +40,12 @@ struct Context
     std::string subtitle;
     std::string url;
 
-    MIRO_REFLECT(id, title, subtitle, url)
+    // False for a place the app can open on activate (a project folder that
+    // becomes a new session) rather than one already open. Rudder only ever
+    // activates those on Enter, never to preview them.
+    bool open = true;
+
+    MIRO_REFLECT(id, title, subtitle, url, open)
 
     bool operator==(const Context&) const = default;
 };
