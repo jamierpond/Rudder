@@ -8,7 +8,9 @@
 // window along. Four macOS behaviours fight that: a background app's window is
 // never composited on a full-screen Space, activation raises the app's KEY and
 // MAIN windows, keystrokes go to the ACTIVE app, and ordering a key window out
-// promotes the next one. Call in the order declared below; all no-ops off Apple.
+// promotes the next one. On Windows the fight is the foreground lock, and a
+// hidden foreground window handing the keyboard to whatever is next in z-order.
+// Call in the order declared below.
 namespace rudder::quick_window
 {
 // BEFORE the panel takes key: that is the app a dismiss hands focus back to.
@@ -34,8 +36,10 @@ void activateForPanel();
 void hideYieldingActivation(eacp::Graphics::Window& window,
                             std::function<void()> hide);
 
-// Swallows the reopen activateForPanel's escalation comes back as, which would
-// otherwise open the big window over the panel.
+// Opening Rudder again while it runs arrives as onReopen. On macOS this also
+// swallows the reopen activateForPanel's escalation comes back as, which would
+// otherwise open the big window over the panel; on Windows a second Rudder.exe
+// hands the reopen to the running one and exits.
 void installReopenHandler(std::function<void()> onReopen);
 
 // Off by default — a panel meant to stay put should not become draggable.
