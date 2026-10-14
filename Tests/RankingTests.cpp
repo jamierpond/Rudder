@@ -229,3 +229,22 @@ auto tContextsMatchUrl = test("Ranking/contexts match on their url too") = []
 
     check(!ranked.empty() && ranked.front().contextId == "tab-1");
 };
+
+auto tUnopenedPlacesNotPreviewed = test("Ranking/a place that isn't open is never previewed")
+    = []
+{
+    auto apps = someApps();
+    auto place = RudderContext {"place:/p/tamber-web", "tamber-web", "", ""};
+    place.open = false;
+    apps[2].contexts = {place};
+
+    auto ranked = rankItems(apps, "tamber");
+
+    check(!ranked.empty());
+
+    if (ranked.empty())
+        return;
+
+    check(!ranked.front().running);
+    check(previewActionFor(ranked.front(), true, "com.apple.Safari") == PreviewAction::none);
+};

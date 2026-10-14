@@ -22,7 +22,10 @@ struct RudderContext
     // which Rudder finds itself (through accessibility) and focuses directly.
     std::string kind = "context";
 
-    MIRO_REFLECT(id, title, subtitle, url, kind)
+    // A provider's place that isn't open yet (protocol open: false).
+    bool open = true;
+
+    MIRO_REFLECT(id, title, subtitle, url, kind, open)
 };
 
 // One row in the panel. kind "app" is a running app (id = appId = its bundle

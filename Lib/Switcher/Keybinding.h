@@ -49,13 +49,14 @@ bool matchesChord(const Chord& chord,
                   bool command);
 
 // The stored bindings, one document in the settings collection. summon and
-// back are global hotkeys; quit only acts inside the open panel.
+// back are global hotkeys; quit and favourite only act inside the open panel.
 struct Keybindings
 {
     std::string summon = "option+space";
     std::string back = "option+`";
     std::string quit = "control+q";
+    std::string favourite = "command+d";
 
-    MIRO_REFLECT(summon, back, quit)
+    MIRO_REFLECT(summon, back, quit, favourite)
 };
 } // namespace rudder

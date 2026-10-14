@@ -20,6 +20,10 @@ RudderItem contextRow(const RudderItem& app, const RudderContext& context)
     row.appId = app.id;
     row.contextId = context.id;
     row.url = context.url;
+
+    // A place that isn't open yet reads like a closed app and, like one, is
+    // never previewed: activating it may open something.
+    row.running = context.open;
     return row;
 }
 
