@@ -62,6 +62,11 @@ bool activateRememberedApp()
 
 std::function<void()> reopenHandler;
 
+// Rudder addition: set by a hide, cleared by the next activateForPanel. The
+// escalation below is deferred 0.3 s, and a switcher is often dismissed
+// inside that -- escalating then would activate Rudder with no panel up.
+bool hiddenSinceActivation = false;
+
 // While set, around a panel-driven LaunchServices self-open, reopen events are
 // OURS and swallowing them keeps the big window down.
 double suppressReopenUntil = 0;
@@ -189,6 +194,8 @@ void takeKeyForTyping(eacp::Graphics::Window& window)
 
 void activateForPanel()
 {
+    hiddenSinceActivation = false;
+
     if (NSApp.isActive)
     {
         logEvent("activateForPanel: already active");
@@ -211,6 +218,12 @@ void activateForPanel()
           if (NSApp.isActive)
           {
               logEvent("activateForPanel: cooperative won");
+              return;
+          }
+
+          if (hiddenSinceActivation)
+          {
+              logEvent("activateForPanel: panel hidden meanwhile, not escalating");
               return;
           }
 
@@ -238,6 +251,8 @@ void activateForPanel()
 void hideYieldingActivation(eacp::Graphics::Window& window,
                             std::function<void()> hide)
 {
+    hiddenSinceActivation = true;
+
     auto* native = nativeWindowOf(window);
     if (native == nil || !native.isKeyWindow || !NSApp.isActive)
     {
