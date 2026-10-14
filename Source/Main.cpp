@@ -18,6 +18,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <ctime>
+#include <map>
 #include <optional>
 #include <string>
 #include <utility>
@@ -75,6 +76,7 @@ struct RudderApp
             });
 
         bindPanel();
+        watchInstalledApps();
         loadKeybindings();
         registerHotKeys();
         observeWorkspace();
@@ -116,6 +118,9 @@ struct RudderApp
             if (auto app = findRunning(appId))
                 return platform::appIcon(*app);
 
+            if (auto found = installedPaths.find(appId); found != installedPaths.end())
+                return platform::bundleIcon(appId, found->second);
+
             return noIcon;
         };
 
@@ -125,10 +130,10 @@ struct RudderApp
         // each key event (by its OS timestamp) to the frame that shows it.
         panel.onFrame = [this]
         {
-            if (!pendingPreview.empty())
+            if (pendingPreview)
             {
-                auto id = std::exchange(pendingPreview, {});
-                Threads::callAsync([this, id] { previewNow(id); });
+                auto item = *std::exchange(pendingPreview, std::nullopt);
+                Threads::callAsync([this, item] { previewNow(item); });
             }
 
             auto now = uptime();
@@ -164,10 +169,15 @@ struct RudderApp
 
         // While a chord is recorded the old ones must not fire -- pressing
         // ⌥Space to rebind it would otherwise close the panel.
-        panel.onCaptureStart = [this] { setCapturing(true); };
+        panel.onCaptureStart = [this]
+        {
+            logEvent("chord capture: start");
+            setCapturing(true);
+        };
         panel.onCaptureEnd = [this](const std::string& action, const std::string& chord)
         {
             settingsError.clear();
+            logEvent(("chord capture: " + action + " = '" + chord + "'").c_str());
 
             if (!chord.empty())
                 setBinding(action, chord);
@@ -335,6 +345,33 @@ struct RudderApp
         platform::observeWorkspace(std::move(events));
     }
 
+    // Closed apps are searchable too. The list arrives from a background scan
+    // and again whenever an app folder changes; an open panel picks it up at
+    // its next summon.
+    void watchInstalledApps()
+    {
+        platform::watchInstalledApps(
+            [this](std::vector<platform::InstalledApp> apps)
+            {
+                installedItems.clear();
+                installedPaths.clear();
+
+                for (auto& app: apps)
+                {
+                    auto item = RudderItem {};
+                    item.id = item.appId = app.id;
+                    item.title = app.name;
+                    item.subtitle = "Not running";
+                    item.running = false;
+                    item.path = app.path;
+                    installedPaths[app.id] = app.path;
+                    installedItems.push_back(std::move(item));
+                }
+
+                logEvent(("installed apps: " + std::to_string(apps.size())).c_str());
+            });
+    }
+
     void recordActivation(const std::string& appId)
     {
         mru.touch(appId);
@@ -381,6 +418,9 @@ struct RudderApp
 
     bool onCapturedKey(const KeyEvent& event)
     {
+        if (capturing && event.type == KeyEventType::Down)
+            logEvent(("captured key " + std::to_string(event.keyCode)).c_str());
+
         if (!capturing && (isChord(event, bindings.summon) || isChord(event, bindings.back)))
             return false;
 
@@ -399,6 +439,16 @@ struct RudderApp
                && chord->option == event.modifiers.alt
                && chord->shift == event.modifiers.shift
                && chord->command == event.modifiers.command;
+    }
+
+    // From the OS at the moment of the call, never the summon's snapshot.
+    std::optional<platform::RunningApp> findRunningNow(const std::string& id)
+    {
+        for (auto& app: platform::runningApps())
+            if (app.id == id)
+                return app;
+
+        return std::nullopt;
     }
 
     std::optional<platform::RunningApp> findRunning(const std::string& id)
@@ -573,9 +623,14 @@ struct RudderApp
                                                               : mru.lastUsed(id);
                                   });
 
-        filtered = allItems;
+        auto closed = orderByRecency(installedItems,
+                                     [this](const std::string& id)
+                                     { return mru.lastUsed(id); });
+        allItems = mergeInstalled(std::move(allItems), closed);
+
+        filtered = rankItems(allItems, query);
         selected = initialSelection(filtered, query, frontAppId);
-        pendingPreview.clear();
+        pendingPreview.reset();
         previewedId.clear();
         previewWindows.clear();
         previewRaised = false;
@@ -622,20 +677,27 @@ struct RudderApp
         previewWindows.clear();
         previewRaised = false;
 
+        // A closed app has no window to show: whatever was previewed last
+        // stays where it is. Nothing is ever launched for a preview.
+        if (!item.running)
+            return;
+
         // After the next frame: the list shows the keystroke first, and the
         // activation (an AX round trip to the target) follows at once.
-        pendingPreview = item.appId;
+        pendingPreview = item;
         panel.repaint();
     }
 
-    void previewNow(const std::string& id)
+    // The one place a preview touches another app.
+    void previewNow(const RudderItem& item)
     {
-        if (!panelVisible || previewedId != id)
+        if (!panelVisible || previewedId != item.appId)
             return;
 
-        auto app = findRunning(id);
+        auto app = findRunningNow(item.appId);
+        auto action = previewActionFor(item, app.has_value(), frontAppId);
 
-        if (!app)
+        if (action == PreviewAction::none)
             return;
 
         auto start = uptime();
@@ -648,7 +710,7 @@ struct RudderApp
         {
             previewRaised = platform::previewApp(*app);
 
-            if (app->id == frontAppId)
+            if (action == PreviewAction::restoreOrigin)
                 platform::restorePreviewOrigin();
         }
 
@@ -680,7 +742,20 @@ struct RudderApp
         if (item.kind == "context")
             providers.activate(item.appId, item.contextId);
 
-        auto app = findRunning(item.appId);
+        auto app = findRunningNow(item.appId);
+
+        // Not running: Enter is the only thing that launches it. The launch
+        // activates it, so focus isn't handed back anywhere on the way out.
+        if (!app && !item.path.empty())
+        {
+            logEvent(("launch -> " + item.title).c_str());
+            quick_window::rememberAppForHandoff(0);
+            hidePanel();
+            platform::launchApp(item.path);
+            recordActivation(item.appId);
+            return;
+        }
+
 
         if (!app)
         {
@@ -792,6 +867,8 @@ struct RudderApp
     std::vector<std::string> previewWindows;
     bool previewRaised = false;
     std::vector<platform::RunningApp> running;
+    std::vector<RudderItem> installedItems;
+    std::map<std::string, std::string> installedPaths;
     std::vector<RudderItem> allItems;
     std::vector<RudderItem> filtered;
     int selected = 0;
@@ -799,7 +876,7 @@ struct RudderApp
     double hotkeyTime = 0.0;
     platform::RunningApp origin;
     bool capturingKeys = false;
-    std::string pendingPreview;
+    std::optional<RudderItem> pendingPreview;
     std::optional<Threads::Timer> accessibilityPoll;
 
     TrayIcon tray;

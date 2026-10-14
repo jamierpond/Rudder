@@ -103,12 +103,13 @@ void ResultsList::paint(UI::Graphics& g)
             g.fillRoundedRect(row, 7.f);
         }
 
+        // A closed app reads quieter: half-faded icon and title.
         if (auto icon = iconRef(item.appId))
-            g.drawImage(icon, {row.x + 8.f, y + 6.f, 28.f, 28.f});
+            g.drawImage(icon, {row.x + 8.f, y + 6.f, 28.f, 28.f}, item.running ? 1.f : 0.55f);
 
         auto textArea = Rect {row.x + 46.f, y, row.w - 54.f, rowHeight};
 
-        g.setColour(text);
+        g.setColour(item.running ? text : Color(1.f, 1.f, 1.f, 0.7f));
         g.setFontSize(14.f);
 
         if (item.subtitle.empty())

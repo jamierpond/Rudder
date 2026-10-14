@@ -3,9 +3,12 @@
 
 #import <AppKit/AppKit.h>
 #import <ApplicationServices/ApplicationServices.h>
+#import <CoreServices/CoreServices.h>
 
 #include <algorithm>
 #include <map>
+#include <memory>
+#include <set>
 #include <utility>
 
 // Offers the dragged file for copy or link -- what Finder and System
@@ -202,6 +205,8 @@ RunningApp frontmostApp()
     return describe(front);
 }
 
+eacp::Graphics::Image renderIcon(NSImage* icon);
+
 const eacp::Graphics::Image& appIcon(const RunningApp& app)
 {
     auto& cache = iconCache();
@@ -210,7 +215,13 @@ const eacp::Graphics::Image& appIcon(const RunningApp& app)
         return found->second;
 
     auto& image = cache[app.id];
-    auto* icon = lookUp(app).icon;
+    image = renderIcon(lookUp(app).icon);
+    return image;
+}
+
+eacp::Graphics::Image renderIcon(NSImage* icon)
+{
+    auto image = eacp::Graphics::Image {};
 
     if (icon == nil)
         return image;
@@ -254,8 +265,7 @@ const eacp::Graphics::Image& appIcon(const RunningApp& app)
             pixels[i + c] = (std::uint8_t) std::min(255, (int) pixels[i + c] * 255 / alpha);
     }
 
-    image = eacp::Graphics::Image(size, size, std::move(pixels));
-    return image;
+    return eacp::Graphics::Image(size, size, std::move(pixels));
 }
 
 void forgetIcon(const std::string& appId)
@@ -624,6 +634,195 @@ eacp::Graphics::Point panelOrigin(float width, float height)
     // its top.
     auto primaryHeight = NSScreen.screens.firstObject.frame.size.height;
     return {(float) x, (float) (primaryHeight - bottom - height)};
+}
+
+namespace
+{
+std::vector<std::string> appFolders()
+{
+    auto folders = std::vector<std::string> {"/Applications",
+                                             "/Applications/Utilities",
+                                             "/System/Applications",
+                                             "/System/Applications/Utilities"};
+
+    folders.push_back(toString(NSHomeDirectory()) + "/Applications");
+    return folders;
+}
+
+// Every .app directly in the folders, and one folder down for the vendor
+// folders some installers make ("/Applications/Adobe Foo/Foo.app"). First
+// bundle id wins.
+std::vector<InstalledApp> scanInstalledApps()
+{
+    auto* files = NSFileManager.defaultManager;
+    auto apps = std::vector<InstalledApp> {};
+    auto seen = std::set<std::string> {};
+
+    auto add = [&](NSString* path)
+    {
+        auto* bundle = [NSBundle bundleWithPath:path];
+        auto id = toString(bundle.bundleIdentifier);
+
+        if (id.empty() || !seen.insert(id).second)
+            return;
+
+        auto* name = [files displayNameAtPath:path];
+
+        if ([name.pathExtension isEqualToString:@"app"])
+            name = name.stringByDeletingPathExtension;
+
+        apps.push_back({id, toString(name), toString(path)});
+    };
+
+    for (auto& folder: appFolders())
+    {
+        auto* root = [NSString stringWithUTF8String:folder.c_str()];
+
+        for (NSString* entry in [files contentsOfDirectoryAtPath:root error:nil])
+        {
+            auto* path = [root stringByAppendingPathComponent:entry];
+
+            if ([entry.pathExtension isEqualToString:@"app"])
+            {
+                add(path);
+                continue;
+            }
+
+            auto isFolder = BOOL {NO};
+
+            if ([entry hasPrefix:@"."] || ![files fileExistsAtPath:path isDirectory:&isFolder]
+                || !isFolder || [path isEqualToString:@"/Applications/Utilities"])
+                continue;
+
+            for (NSString* inner in [files contentsOfDirectoryAtPath:path error:nil])
+                if ([inner.pathExtension isEqualToString:@"app"])
+                    add([path stringByAppendingPathComponent:inner]);
+        }
+    }
+
+    return apps;
+}
+
+std::function<void(std::vector<InstalledApp>)> installedChanged;
+FSEventStreamRef installedStream = nullptr;
+dispatch_queue_t scanQueue = nullptr;
+
+void rescanInstalledApps()
+{
+    dispatch_async(scanQueue,
+                   ^{
+                     auto apps = scanInstalledApps();
+                     auto shared = std::make_shared<std::vector<InstalledApp>>(std::move(apps));
+
+                     dispatch_async(dispatch_get_main_queue(),
+                                    ^{
+                                      if (installedChanged)
+                                          installedChanged(std::move(*shared));
+                                    });
+                   });
+}
+
+// Apps updating themselves write deep inside their bundles all day; only a
+// change to a folder itself (an app added, removed or renamed) is a rescan.
+bool isFolderLevelChange(const std::string& changed)
+{
+    auto path = changed;
+
+    while (path.size() > 1 && path.back() == '/')
+        path.pop_back();
+
+    for (auto& folder: appFolders())
+    {
+        if (path == folder)
+            return true;
+
+        // A vendor folder one level down.
+        if (path.starts_with(folder + "/") && path.find('/', folder.size() + 1) == std::string::npos
+            && !path.ends_with(".app"))
+            return true;
+    }
+
+    return false;
+}
+
+void installedEvents(ConstFSEventStreamRef,
+                     void*,
+                     size_t count,
+                     void* paths,
+                     const FSEventStreamEventFlags*,
+                     const FSEventStreamEventId*)
+{
+    auto** list = (char**) paths;
+
+    for (size_t i = 0; i < count; ++i)
+    {
+        if (isFolderLevelChange(list[i]))
+        {
+            rescanInstalledApps();
+            return;
+        }
+    }
+}
+
+std::map<std::string, eacp::Graphics::Image>& bundleIconCache()
+{
+    static auto cache = std::map<std::string, eacp::Graphics::Image> {};
+    return cache;
+}
+} // namespace
+
+void watchInstalledApps(std::function<void(std::vector<InstalledApp>)> onChange)
+{
+    installedChanged = std::move(onChange);
+
+    if (scanQueue == nullptr)
+        scanQueue = dispatch_queue_create("rudder.installed-apps", DISPATCH_QUEUE_SERIAL);
+
+    if (installedStream == nullptr)
+    {
+        auto* folders = [NSMutableArray array];
+
+        for (auto& folder: appFolders())
+            [folders addObject:[NSString stringWithUTF8String:folder.c_str()]];
+
+        // A two-second latency coalesces an install's burst of writes into one
+        // rescan.
+        installedStream = FSEventStreamCreate(nullptr,
+                                              installedEvents,
+                                              nullptr,
+                                              (__bridge CFArrayRef) folders,
+                                              kFSEventStreamEventIdSinceNow,
+                                              2.0,
+                                              kFSEventStreamCreateFlagNone);
+        FSEventStreamSetDispatchQueue(installedStream, scanQueue);
+        FSEventStreamStart(installedStream);
+    }
+
+    rescanInstalledApps();
+}
+
+const eacp::Graphics::Image& bundleIcon(const std::string& id, const std::string& path)
+{
+    auto& cache = bundleIconCache();
+
+    if (auto found = cache.find(id); found != cache.end())
+        return found->second;
+
+    auto& image = cache[id];
+    image = renderIcon(
+        [NSWorkspace.sharedWorkspace iconForFile:[NSString stringWithUTF8String:path.c_str()]]);
+    return image;
+}
+
+bool launchApp(const std::string& path)
+{
+    auto* url = [NSURL fileURLWithPath:[NSString stringWithUTF8String:path.c_str()]];
+    auto* configuration = [NSWorkspaceOpenConfiguration configuration];
+    configuration.activates = YES;
+    [NSWorkspace.sharedWorkspace openApplicationAtURL:url
+                                        configuration:configuration
+                                    completionHandler:nil];
+    return url != nil;
 }
 
 void announceStarted()

@@ -96,6 +96,28 @@ void observeWorkspace(WorkspaceEvents events);
 // display under the mouse.
 eacp::Graphics::Point panelOrigin(float width, float height);
 
+// An app bundle in one of the app folders, running or not.
+struct InstalledApp
+{
+    std::string id;
+    std::string name;
+    std::string path;
+};
+
+// Scans /Applications, /System/Applications (and their Utilities) and
+// ~/Applications off the main thread, then hands the whole list to `onChange`
+// on the main thread -- once now, and again whenever one of those folders
+// gains or loses an app. FSEvents on the folders, so nothing runs while
+// nothing changes. One watcher per process.
+void watchInstalledApps(std::function<void(std::vector<InstalledApp>)> onChange);
+
+// An installed app's icon, rendered on first ask and cached by id: the panel
+// only asks for the rows it draws, so hundreds of apps cost nothing up front.
+const eacp::Graphics::Image& bundleIcon(const std::string& id, const std::string& path);
+
+// Launches (and activates) the app at `path`.
+bool launchApp(const std::string& path);
+
 // Tells provider apps a (re)started Rudder is listening, so they reconnect:
 // the distributed notification "rudder.started".
 void announceStarted();
