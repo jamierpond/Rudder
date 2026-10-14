@@ -12,7 +12,7 @@ namespace
 RudderItem contextRow(const RudderItem& app, const RudderContext& context)
 {
     auto row = RudderItem {};
-    row.kind = "context";
+    row.kind = context.kind.empty() ? "context" : context.kind;
     row.id = app.id + "/" + context.id;
     row.title = context.title;
     row.subtitle = context.subtitle.empty() ? app.title
@@ -73,10 +73,10 @@ std::vector<RudderItem> rankItems(const std::vector<RudderItem>& all,
         if (auto score = wim::fuzzyScore(query, app.title))
             scored.push_back({*score, app});
 
-        // A context matches on its own title or its app's name, so "wim
+        // A context matches on its app's name and its own title, so "wim
         // github" finds the GitHub tab in Wim.
         for (auto& context: app.contexts)
-            if (auto score = wim::fuzzyScore(query, context.title + " " + app.title))
+            if (auto score = wim::fuzzyScore(query, app.title + " " + context.title))
                 scored.push_back({*score, contextRow(app, context)});
     }
 

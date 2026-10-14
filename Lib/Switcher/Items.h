@@ -18,12 +18,16 @@ struct RudderContext
     std::string subtitle;
     std::string url;
 
-    MIRO_REFLECT(id, title, subtitle, url)
+    // "context" for a provider's; "window" for one of the app's own windows,
+    // which Rudder finds itself (through accessibility) and focuses directly.
+    std::string kind = "context";
+
+    MIRO_REFLECT(id, title, subtitle, url, kind)
 };
 
 // One row in the panel. kind "app" is a running app (id = appId = its bundle
-// id where there is one). kind "context" is one of an app's contexts
-// flattened into its own row while searching: `appId` names the owner and
+// id where there is one). kind "context" or "window" is one of an app's
+// contexts flattened into its own row while searching: `appId` names the owner and
 // `contextId` is what goes back to it as `activate {contextId}`. Apps keep
 // their contexts as children in `contexts`, empty until providers exist.
 // Installed apps that aren't running are rows too (running false, `path` set

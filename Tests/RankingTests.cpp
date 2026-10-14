@@ -83,9 +83,13 @@ auto tContextsFlatten = test("Ranking/contexts match as rows of their own") = []
     apps[1].contexts = {{"tab-1", "GitHub", "", "https://github.com"},
                         {"tab-2", "Hacker News", "", ""}};
 
-    auto ranked = rankItems(apps, "github");
+    auto ranked = rankItems(apps, "wim github");
 
     check(!ranked.empty());
+
+    if (ranked.empty())
+        return;
+
     check(ranked.front().kind == "context");
     check(ranked.front().appId == "com.pond.wim");
     check(ranked.front().contextId == "tab-1");
@@ -195,4 +199,23 @@ auto tPreviewRunning = test("Ranking/a running app previews; the origin restores
           == PreviewAction::bringForward);
     check(previewActionFor(app("com.apple.Safari", "Safari"), true, "com.apple.Safari")
           == PreviewAction::restoreOrigin);
+};
+
+auto tWindowsMatchWithApp = test("Ranking/windows match on app name and title") = []
+{
+    auto apps = someApps();
+    auto window = RudderContext {"w1", "Rudder — README.md", "", ""};
+    window.kind = "window";
+    apps[2].contexts = {window};
+
+    auto ranked = rankItems(apps, "iterm readme");
+
+    check(!ranked.empty());
+
+    if (ranked.empty())
+        return;
+
+    check(ranked.front().kind == "window");
+    check(ranked.front().appId == "com.googlecode.iterm2");
+    check(ranked.front().contextId == "w1");
 };
