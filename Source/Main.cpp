@@ -10,6 +10,7 @@
 #include "Providers.h"
 #include "QuickWindow.h"
 #include "Ranking.h"
+#include "Web.h"
 
 #include <eacp/Core/App/LoginItem.h>
 #include <eacp/UI/UI.h>
@@ -132,6 +133,14 @@ struct RudderApp
             if (auto found = installedPaths.find(appId); found != installedPaths.end())
                 return platform::bundleIcon(appId, found->second);
 
+            // The web row, asked for by its id: the browser it opens in.
+            if (appId.starts_with("web:"))
+            {
+                auto handler =
+                    platform::handlerFor("https://example.com", favourites.browser);
+                return handler.empty() ? noIcon : platform::bundleIcon(appId, handler);
+            }
+
             // A url or path favourite, asked for by its row id: the icon of
             // what it opens in, or of the file itself.
             for (auto& item: allItems)
@@ -142,7 +151,8 @@ struct RudderApp
                 if (!item.path.empty())
                     return platform::bundleIcon(appId, item.path);
 
-                auto handler = platform::handlerFor(item.url, item.openWith);
+                auto handler = platform::handlerFor(
+                    item.url, browserFor(item.openWith, favourites.browser));
 
                 if (!handler.empty())
                     return platform::bundleIcon(appId, handler);
@@ -760,7 +770,7 @@ struct RudderApp
         auto starred = favouriteItems(favourites);
         allItems.insert(allItems.begin(), starred.begin(), starred.end());
 
-        filtered = rankItems(allItems, query);
+        filtered = rankWithWeb(allItems, query, webSettings());
         selected = initialSelection(filtered, query, frontAppId);
         pendingPreview.reset();
         previewedId.clear();
@@ -777,7 +787,7 @@ struct RudderApp
 
         query = text;
         logEvent(("query '" + query + "'").c_str());
-        filtered = rankItems(allItems, query);
+        filtered = rankWithWeb(allItems, query, webSettings());
         selected = initialSelection(filtered, query, frontAppId);
         previewSelection();
         publishResults();
@@ -813,8 +823,9 @@ struct RudderApp
         previewRaised = false;
 
         // A closed app has no window to show: whatever was previewed last
-        // stays where it is. Nothing is ever launched for a preview.
-        if (!item.running)
+        // stays where it is. Nothing is ever launched for a preview, and no
+        // page opened: a web row waits for Enter.
+        if (!item.running || item.kind == "web")
             return;
 
         // A favourite previews only what is already open: the tab showing its
@@ -986,7 +997,7 @@ struct RudderApp
         auto starred = favouriteItems(favourites);
         allItems.insert(allItems.begin(), starred.begin(), starred.end());
 
-        filtered = rankItems(allItems, query);
+        filtered = rankWithWeb(allItems, query, webSettings());
         selected = std::clamp(selected, 0, std::max((int) filtered.size() - 1, 0));
         publishResults();
     }
@@ -1029,8 +1040,13 @@ struct RudderApp
 
     void openFavourite(const RudderItem& favourite)
     {
-        // An open tab with the url (or the running app) is reused, not
-        // duplicated.
+        if (!favourite.url.empty())
+        {
+            openLink(favourite.url, favourite.openWith, favourite.title);
+            return;
+        }
+
+        // The running app is reused, not launched again.
         if (auto open = openTargetFor(favourite))
         {
             openItem(*open);
@@ -1052,15 +1068,8 @@ struct RudderApp
             return;
         }
 
-        // Checked before the panel goes, so the footer can say why nothing
-        // opened.
-        if (!favourite.url.empty() && !favourite.openWith.empty()
-            && !platform::hasApp(favourite.openWith))
-        {
-            logEvent(("open favourite: no app " + favourite.openWith).c_str());
-            panel.setFooterError("No app with bundle id " + favourite.openWith);
+        if (favourite.path.empty())
             return;
-        }
 
         logEvent(("open favourite -> " + favourite.title).c_str());
         quick_window::rememberAppForHandoff(0);
@@ -1069,11 +1078,41 @@ struct RudderApp
         // Whichever app opens it is meant to come forward, a previewed one
         // included.
         lateRaise.reset();
+        platform::openPath(favourite.path);
+    }
 
-        if (!favourite.url.empty())
-            platform::openUrl(favourite.url, favourite.openWith);
-        else if (!favourite.path.empty())
-            platform::openPath(favourite.path);
+    WebSettings webSettings() const { return {favourites.browser, favourites.searchUrl}; }
+
+    // Every link Rudder opens goes through here: a url favourite, the web
+    // row. A provider tab already showing the url is reused; otherwise it
+    // opens in `openWith`, else the configured browser, else the default.
+    void openLink(const std::string& url, const std::string& openWith, const std::string& label)
+    {
+        if (auto open = contextForUrl(allItems, url))
+        {
+            openItem(*open);
+            return;
+        }
+
+        auto app = browserFor(openWith, favourites.browser);
+
+        // Checked before the panel goes, so the footer can say why nothing
+        // opened -- never quietly the default browser instead.
+        if (!app.empty() && !platform::hasApp(app))
+        {
+            logEvent(("open link: no app " + app).c_str());
+            panel.setFooterError("No app with bundle id " + app);
+            return;
+        }
+
+        logEvent(("open link -> " + label).c_str());
+        quick_window::rememberAppForHandoff(0);
+        hidePanel();
+
+        // Whichever app opens it is meant to come forward, a previewed one
+        // included.
+        lateRaise.reset();
+        platform::openUrl(url, app);
     }
 
     // --- Contexts ---------------------------------------------------------------
@@ -1199,7 +1238,7 @@ struct RudderApp
 
         auto selectedId = filtered.empty() ? std::string {}
                                            : filtered[(std::size_t) selected].id;
-        filtered = rankItems(allItems, query);
+        filtered = rankWithWeb(allItems, query, webSettings());
 
         auto again = std::find_if(filtered.begin(),
                                   filtered.end(),
@@ -1285,6 +1324,12 @@ struct RudderApp
         if (item.kind == "favourite")
         {
             openFavourite(item);
+            return;
+        }
+
+        if (item.kind == "web")
+        {
+            openLink(item.url, {}, item.title);
             return;
         }
 

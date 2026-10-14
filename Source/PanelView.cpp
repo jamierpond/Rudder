@@ -105,11 +105,19 @@ void ResultsList::paint(UI::Graphics& g)
         }
 
         // A closed app reads quieter: half-faded icon and title. Favourites
-        // without an app of their own (a url, a path) have icons by row id.
-        auto iconKey = item.kind == "favourite" && item.appId.empty() ? item.id : item.appId;
+        // without an app of their own (a url, a path) and the web row have
+        // icons by row id.
+        auto byId = item.kind == "web" || (item.kind == "favourite" && item.appId.empty());
+        auto iconKey = byId ? item.id : item.appId;
 
         if (auto icon = iconRef(iconKey))
             g.drawImage(icon, {row.x + 8.f, y + 6.f, 28.f, 28.f}, item.running ? 1.f : 0.55f);
+        else if (item.kind == "web")
+        {
+            g.setColour(dimText);
+            g.setFontSize(20.f);
+            g.drawText("🌐", {row.x + 8.f, y, 28.f, rowHeight}, UI::Justification::Centred);
+        }
 
         auto textArea = Rect {row.x + 46.f, y, row.w - 74.f, rowHeight};
 
