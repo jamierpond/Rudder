@@ -28,6 +28,11 @@ struct SettingsModel
 {
     std::string summonLabel;
     std::string backLabel;
+    std::string quitLabel;
+
+    // Canonical chord text: the panel matches quit itself.
+    std::string quit;
+
     bool accessibilityTrusted = false;
     std::string error;
 };
@@ -119,6 +124,8 @@ public:
     eacp::UI::Button summonChord;
     eacp::UI::Label backCaption {"Go back to the previous app"};
     eacp::UI::Button backChord;
+    eacp::UI::Label quitCaption {"Quit the selected app (in the panel)"};
+    eacp::UI::Button quitChord;
     eacp::UI::Label error;
     eacp::UI::Label accessibilityCaption {"Live preview (Accessibility)"};
     eacp::UI::Button accessibility {"Allow…"};
@@ -212,7 +219,7 @@ public:
     std::function<void(int)> onChoose = [](int) {};
     std::function<void()> onCancel = [] {};
 
-    // ⌘Q: quit the selected app (never Rudder).
+    // The quit binding (⌘Q by default): quit the selected app, never Rudder.
     std::function<void()> onQuitSelected = [] {};
 
     // Settings: recording starts (old hotkeys must stop firing), a chord was

@@ -260,7 +260,7 @@ SettingsPage::SettingsPage()
     error.setColour(Color(0.88f, 0.39f, 0.36f, 1.f));
     error.setFontSize(12.f);
 
-    for (auto* caption: {&summonCaption, &backCaption, &accessibilityCaption})
+    for (auto* caption: {&summonCaption, &backCaption, &quitCaption, &accessibilityCaption})
         caption->setColour(text);
 
     addChildren({title,
@@ -268,6 +268,8 @@ SettingsPage::SettingsPage()
                  summonChord,
                  backCaption,
                  backChord,
+                 quitCaption,
+                 quitChord,
                  error,
                  accessibilityCaption,
                  accessibility,
@@ -290,6 +292,7 @@ void SettingsPage::resized()
 
     row(summonCaption, summonChord);
     row(backCaption, backChord);
+    row(quitCaption, quitChord);
     error.setBounds(area.removeFromTop(24.f));
     row(accessibilityCaption, accessibility);
 
@@ -430,6 +433,7 @@ PanelView::PanelView()
     auto& settings = root.settings;
     settings.summonChord.onClick = [this] { startCapture("summon"); };
     settings.backChord.onClick = [this] { startCapture("back"); };
+    settings.quitChord.onClick = [this] { startCapture("quit"); };
     settings.accessibility.onClick = [this] { onRequestAccessibility(); };
     settings.done.onClick = [this] { onCloseSettings(); };
 
@@ -489,11 +493,12 @@ void PanelView::setSettings(const SettingsModel& model)
     settings.summonChord.setText(capturing == "summon" ? "Press keys…"
                                                        : model.summonLabel);
     settings.backChord.setText(capturing == "back" ? "Press keys…" : model.backLabel);
+    settings.quitChord.setText(capturing == "quit" ? "Press keys…" : model.quitLabel);
     settings.error.setText(model.error);
     settings.accessibility.setText(model.accessibilityTrusted ? "Allowed" : "Allow…");
 
     root.switcher.footer.setText(model.summonLabel + " switch   ·   " + model.backLabel
-                                 + " back   ·   ⌘Q quit app");
+                                 + " back   ·   " + model.quitLabel + " quit app");
     root.switcher.preview.grant.setVisible(!trusted);
 
     if (!settingsOpen())
@@ -626,7 +631,10 @@ void PanelView::keyDown(const Graphics::KeyEvent& event)
         return;
     }
 
-    if (event.modifiers.command && key == KeyCode::Q)
+    auto quit = parseChord(settingsModel.quit);
+    auto& mods = event.modifiers;
+
+    if (quit && matchesChord(*quit, key, mods.control, mods.alt, mods.shift, mods.command))
         onQuitSelected();
     else if (editQuery(event))
         return;

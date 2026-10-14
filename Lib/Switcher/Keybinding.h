@@ -40,12 +40,22 @@ std::optional<std::uint16_t> keyCodeFor(const std::string& key);
 // a virtual key code, or nullopt for a key a chord can't use.
 std::optional<std::string> keyNameFor(std::uint16_t keyCode);
 
-// The stored bindings, one document in the settings collection.
+// Whether a key press is `chord`: the same key and exactly its modifiers.
+bool matchesChord(const Chord& chord,
+                  std::uint16_t keyCode,
+                  bool control,
+                  bool option,
+                  bool shift,
+                  bool command);
+
+// The stored bindings, one document in the settings collection. summon and
+// back are global hotkeys; quit only acts inside the open panel.
 struct Keybindings
 {
     std::string summon = "option+space";
     std::string back = "option+`";
+    std::string quit = "command+q";
 
-    MIRO_REFLECT(summon, back)
+    MIRO_REFLECT(summon, back, quit)
 };
 } // namespace rudder

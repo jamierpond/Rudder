@@ -164,6 +164,18 @@ std::optional<std::uint16_t> keyCodeFor(const std::string& key)
 
     return std::nullopt;
 }
+bool matchesChord(const Chord& chord,
+                  std::uint16_t keyCode,
+                  bool control,
+                  bool option,
+                  bool shift,
+                  bool command)
+{
+    return keyCodeFor(chord.key) == keyCode && chord.control == control
+           && chord.option == option && chord.shift == shift
+           && chord.command == command;
+}
+
 std::optional<std::string> keyNameFor(std::uint16_t keyCode)
 {
     for (auto& key: keys)

@@ -4,6 +4,8 @@
 
 #include <NanoTest/NanoTest.h>
 
+#include <fstream>
+
 using namespace nano;
 using namespace rudder;
 
@@ -79,4 +81,34 @@ auto tStored = test("Keybinding/bindings persist in emberstore") = []
     check(stored.has_value());
     check(stored->summon == "control+space");
     check(stored->back == "option+tab");
+};
+
+auto tMatches = test("Keybinding/a press matches only its exact chord") = []
+{
+    auto quit = *parseChord(Keybindings {}.quit);
+
+    check(matchesChord(quit, 0x0C, false, false, false, true));
+    check(!matchesChord(quit, 0x0C, false, false, true, true));
+    check(!matchesChord(quit, 0x0C, false, false, false, false));
+    check(!matchesChord(quit, 0x0D, false, false, false, true));
+};
+
+auto tOldDocumentsGetQuit = test("Keybinding/a document from before quit gets the default")
+    = []
+{
+    auto dir = std::filesystem::temp_directory_path() / "RudderTests" / "keybindings-old";
+    std::filesystem::remove_all(dir);
+    std::filesystem::create_directories(dir);
+
+    {
+        auto file = std::ofstream {dir / "settings.json"};
+        file << R"({"keybindings": {"summon": "control+space", "back": "option+tab"}})";
+    }
+
+    auto db = emberstore::Database {dir.string()};
+    auto stored = db.collection<Keybindings>("settings").get("keybindings");
+
+    check(stored.has_value());
+    check(stored->summon == "control+space");
+    check(stored->quit == "command+q");
 };

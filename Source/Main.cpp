@@ -290,22 +290,35 @@ struct RudderApp
         }
 
         auto canonical = serialiseChord(*chord);
-        auto& other = action == "summon" ? bindings.back : bindings.summon;
 
-        if (platform::isSystemShortcut(*keyCodeFor(chord->key), modifiersOf(*chord)))
+        for (auto& [name, bound]: {std::pair {"summon", &bindings.summon},
+                                   std::pair {"back", &bindings.back},
+                                   std::pair {"quit", &bindings.quit}})
+        {
+            if (action != name && *bound == canonical)
+            {
+                settingsError = "That chord is already bound to " + std::string {name} + ".";
+                return;
+            }
+        }
+
+        // Quit only acts inside the panel, where Rudder has the keyboard; the
+        // two global hotkeys must not be ones macOS keeps for itself.
+        if (action != "quit"
+            && platform::isSystemShortcut(*keyCodeFor(chord->key), modifiersOf(*chord)))
         {
             settingsError = "macOS already uses " + displayChord(*chord)
                             + " (Keyboard Shortcuts in System Settings).";
             return;
         }
 
-        if (canonical == other)
-        {
-            settingsError = "That chord is already bound to the other action.";
-            return;
-        }
+        if (action == "summon")
+            bindings.summon = canonical;
+        else if (action == "back")
+            bindings.back = canonical;
+        else if (action == "quit")
+            bindings.quit = canonical;
 
-        (action == "summon" ? bindings.summon : bindings.back) = canonical;
         settingsStore.doc(keybindingsDoc).set(bindings);
     }
 
@@ -451,11 +464,10 @@ struct RudderApp
     {
         auto chord = parseChord(text);
 
-        return chord && keyCodeFor(chord->key) == event.keyCode
-               && chord->control == event.modifiers.control
-               && chord->option == event.modifiers.alt
-               && chord->shift == event.modifiers.shift
-               && chord->command == event.modifiers.command;
+        auto& mods = event.modifiers;
+        return chord
+               && matchesChord(
+                   *chord, event.keyCode, mods.control, mods.alt, mods.shift, mods.command);
     }
 
     // From the OS at the moment of the call, never the summon's snapshot.
@@ -878,6 +890,8 @@ struct RudderApp
 
         panel.setSettings({label(bindings.summon),
                            label(bindings.back),
+                           label(bindings.quit),
+                           bindings.quit,
                            platform::accessibilityTrusted(false),
                            settingsError});
     }
@@ -996,7 +1010,7 @@ int snapshot(const std::string& directory)
 
             panel.setBounds({0.f, 0.f, 640.f, 420.f});
             panel.resized();
-            panel.setSettings({"⌥Space", "⌥`", true, {}});
+            panel.setSettings({"⌥Space", "⌥`", "⌘Q", "command+q", true, {}});
 
             auto selected = items.size() > 1 ? 1 : 0;
             auto windows = selected < (int) apps.size()
