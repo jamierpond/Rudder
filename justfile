@@ -20,3 +20,7 @@ run:
 [doc('Delete the build directory')]
 clean:
     node Scripts/clean.mjs
+
+[doc('Build + run the unit tests')]
+test:
+    node Scripts/compile.mjs && ./build/Tests/RudderTests
