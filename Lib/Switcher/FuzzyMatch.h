@@ -4,7 +4,7 @@
 #include <optional>
 #include <string>
 
-namespace wim
+namespace grazer
 {
 // fzf-style case-insensitive subsequence match. Consecutive matches and
 // word-boundary hits score higher; skipped text costs a little. Spaces in the
@@ -57,4 +57,4 @@ inline std::optional<int> fuzzyScore(const std::string& query,
 
     return score;
 }
-} // namespace wim
+} // namespace grazer

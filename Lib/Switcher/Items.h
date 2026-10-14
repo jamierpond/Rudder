@@ -7,7 +7,7 @@
 
 namespace rudder
 {
-// A deep-linkable place inside an app: a Wim tab, a CowTerm session. Mirrors
+// A deep-linkable place inside an app: a Grazer tab, a CowTerm session. Mirrors
 // what a provider pushes over the (future) context socket -- `contexts
 // [{id, title, subtitle?, url?}]` -- so that layer can decode straight into
 // it. `id` is the provider's own, unique within its app.

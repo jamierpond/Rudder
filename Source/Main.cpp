@@ -803,7 +803,7 @@ struct RudderApp
         publishResults();
     }
 
-    // Wim's palette preview, for windows: whenever the results change -- a
+    // Grazer's palette preview, for windows: whenever the results change -- a
     // keystroke or an arrow -- the selection comes to the front behind the
     // panel at once. Skipped when the selection didn't change. The app the
     // panel was summoned over previews as the screen was: its origin window.
@@ -1117,7 +1117,7 @@ struct RudderApp
 
     // --- Contexts ---------------------------------------------------------------
 
-    // Provider apps (Wim's tabs, ...) connect over the contexts socket. The
+    // Provider apps (Grazer's tabs, ...) connect over the contexts socket. The
     // server is up before rudder.started goes out, so the apps that hear it
     // can connect straight away.
     void serveContexts()
@@ -1513,7 +1513,7 @@ struct RudderApp
     emberstore::Database atomic {durable.directory(), emberstore::Durability::Atomic};
     emberstore::Collection<Keybindings> settingsStore {
         durable.collection<Keybindings>("settings")};
-    wim::MruStore mru {atomic};
+    grazer::MruStore mru {atomic};
     emberstore::Document<FavouriteList> favouritesDocument {favouritesPath()};
     FavouriteList favourites;
     // rudder.json's parse error, if any: the footer's standing message.

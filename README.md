@@ -59,7 +59,7 @@ whenever it changes on disk:
 
 Each needs a `title` and one of `url`, `app` (bundle id) or `path`; `openWith`
 (bundle id) picks the app a url opens in. A url that's already open in a
-provider's tab (Wim) switches to that tab instead of opening another.
+provider's tab (Grazer) switches to that tab instead of opening another.
 
 ## Icons
 
@@ -96,4 +96,4 @@ rudder.pushContexts({{"1", "Title", "subtitle", "https://..."}});
 ```
 
 It reconnects when Rudder restarts and is silent when Rudder isn't running.
-Wim is the first provider.
+Grazer is the first provider.

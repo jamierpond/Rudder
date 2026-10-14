@@ -9,7 +9,7 @@
 namespace rudder
 {
 // Rudder's way onto the web: a typed address opens, anything else searches.
-// Built on the omnibox functions ported from Wim (Url.h); the extra
+// Built on the omnibox functions ported from Grazer (Url.h); the extra
 // strictness here is Rudder's, since a switcher query is far more often an
 // app or a file name than a browser's is.
 
@@ -28,7 +28,7 @@ struct WebSettings
 // Whether a query is an address to go to rather than words to search for:
 // a scheme ("https://x", "file:///tmp"), localhost[:port][/path], an IPv4
 // address[:port][/path], or a spaceless host whose last label is a real
-// top-level domain (github.com, news.ycombinator.com/item?id=1). Wim takes
+// top-level domain (github.com, news.ycombinator.com/item?id=1). Grazer takes
 // any dotted token; Rudder also wants the TLD, so "node.js" is a search.
 // A few country codes that read as file extensions (sh, py, md, rs, ...)
 // only count with a path, a port or a third label: "main.py" is a search,

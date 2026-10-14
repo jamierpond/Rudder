@@ -39,27 +39,27 @@ std::string favouriteText(const RudderItem& item)
     return text + " " + item.subtitle;
 }
 
-// A context matched by its app's name alone ("wim" against every Wim tab)
-// sits below the app row and below contexts whose own text matched.
+// A context matched by its app's name alone ("grazer" against every Grazer
+// tab) sits below the app row and below contexts whose own text matched.
 constexpr auto appNameOnlyPenalty = 8;
 
 // How well `query` finds a context: some leading part of the query on the
 // app's name and the rest on the context's own title and url, best split
 // wins. Scoring the halves separately keeps app-name letters from stealing
-// the query: matched greedily against "CowTerm ~/projects/Wim", "wim" took
-// the w of CowTerm and scored like any pane with a w, i and m in it, and a
-// project typed after the app name ("cowtermwim") ranked by where those
+// the query: matched greedily against "CowTerm ~/projects/Wim" (Grazer's old
+// name), "wim" took the w of CowTerm and scored like any pane with a w, i and m
+// in it, and a project typed after the app name ("cowtermwim") ranked by where those
 // letters first turned up rather than by the directory that spells them.
 std::optional<int> contextScore(const std::string& query,
                                 const RudderItem& app,
                                 const RudderContext& context)
 {
     const auto own = context.title + " " + context.url;
-    auto best = wim::fuzzyScore(query, own);
+    auto best = grazer::fuzzyScore(query, own);
 
     for (std::size_t split = 1; split <= query.size(); ++split)
     {
-        auto onApp = wim::fuzzyScore(query.substr(0, split), app.title);
+        auto onApp = grazer::fuzzyScore(query.substr(0, split), app.title);
 
         if (!onApp)
             break;
@@ -76,7 +76,7 @@ std::optional<int> contextScore(const std::string& query,
             continue;
         }
 
-        if (auto onContext = wim::fuzzyScore(rest, own))
+        if (auto onContext = grazer::fuzzyScore(rest, own))
             if (!best || *onApp + *onContext > *best)
                 best = *onApp + *onContext;
     }
@@ -146,17 +146,17 @@ std::vector<ScoredItem> scoreItems(const std::vector<RudderItem>& all,
         if (app.kind == "favourite")
         {
             // Favourites are what the user asked to find first.
-            if (auto score = wim::fuzzyScore(query, favouriteText(app)))
+            if (auto score = grazer::fuzzyScore(query, favouriteText(app)))
                 scored.push_back({*score + favouriteBoost, app});
 
             continue;
         }
 
-        if (auto score = wim::fuzzyScore(query, app.title))
+        if (auto score = grazer::fuzzyScore(query, app.title))
             scored.push_back({*score, app});
 
         // A context matches on its app's name, its title and its url, so
-        // "wim github" finds the GitHub tab in Wim.
+        // "grazer github" finds the GitHub tab in Grazer.
         for (auto& context: app.contexts)
             if (auto score = contextScore(query, app, context))
                 scored.push_back({*score, contextRow(app, context)});

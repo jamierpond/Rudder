@@ -11,10 +11,10 @@
 #include <vector>
 
 // The contexts protocol between Rudder and the apps that publish "contexts"
-// (Wim tabs, CowTerm sessions): newline-delimited JSON over a local socket,
+// (Grazer tabs, CowTerm sessions): newline-delimited JSON over a local socket,
 // one object per line with a "type" field.
 //
-//   app -> Rudder   {"type":"hello","app":"Wim","bundleId":"com.pond.wim","pid":42}
+//   app -> Rudder   {"type":"hello","app":"Grazer","bundleId":"audio.pond.grazer","pid":42}
 //   app -> Rudder   {"type":"contexts","contexts":[{"id":"3","title":"…","url":"…"}]}
 //                   (each context may also carry "subtitle" and "open": false)
 //   Rudder -> app   {"type":"activate","contextId":"3","raise":true}

@@ -5,7 +5,7 @@
 #include <utility>
 #include <vector>
 
-namespace wim
+namespace grazer
 {
 MruStore::MruStore(const emberstore::Database& db)
     : stamps(db.collection<Stamp>("mru"))
@@ -51,4 +51,4 @@ std::int64_t MruStore::nowMs()
                system_clock::now().time_since_epoch())
         .count();
 }
-} // namespace wim
+} // namespace grazer

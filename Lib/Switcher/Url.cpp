@@ -3,7 +3,7 @@
 #include <cctype>
 #include <cstdio>
 
-namespace wim
+namespace grazer
 {
 std::string navigationURL(const std::string& text)
 {
@@ -83,4 +83,4 @@ std::string normalizeURL(std::string url)
 
     return url;
 }
-} // namespace wim
+} // namespace grazer

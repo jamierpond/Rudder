@@ -6,7 +6,7 @@
 #include <cstdint>
 #include <string>
 
-namespace wim
+namespace grazer
 {
 struct Stamp
 {
@@ -36,4 +36,4 @@ struct MruStore
 
     emberstore::Collection<Stamp> stamps;
 };
-} // namespace wim
+} // namespace grazer

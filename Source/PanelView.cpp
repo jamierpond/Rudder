@@ -14,7 +14,7 @@ using eacp::Graphics::Rect;
 
 namespace
 {
-// The panel's palette: Wim's palette colours, so the two read as one family.
+// The panel's palette: Grazer's palette colours, so the two read as one family.
 const auto panelBackground = Color(0.094f, 0.094f, 0.11f, 1.f);
 const auto divider = Color(1.f, 1.f, 1.f, 0.08f);
 const auto text = Color(0.95f, 0.95f, 0.96f, 1.f);

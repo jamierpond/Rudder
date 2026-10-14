@@ -4,7 +4,7 @@ set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "")
 
 project(Rudder VERSION 0.1.0 LANGUAGES C CXX)
 
-# An app that publishes contexts (Wim, CowTerm) pulls Rudder in with CPM for
+# An app that publishes contexts (Grazer, CowTerm) pulls Rudder in with CPM for
 # the client library alone: no app, no tests, no extra dependencies -- it
 # brings eacp (and with it Miro) itself.
 option(RUDDER_CLIENT_ONLY "Build only the RudderClient library" OFF)

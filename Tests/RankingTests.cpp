@@ -21,7 +21,7 @@ RudderItem app(const std::string& id, const std::string& title)
 std::vector<RudderItem> someApps()
 {
     return {app("com.apple.Safari", "Safari"),
-            app("com.pond.wim", "Wim"),
+            app("audio.pond.grazer", "Grazer"),
             app("com.googlecode.iterm2", "iTerm2"),
             app("com.apple.finder", "Finder")};
 }
@@ -49,10 +49,11 @@ std::vector<std::string> titles(const std::vector<RudderItem>& items)
 auto tRecencyOrders = test("Ranking/most recently used apps come first") = []
 {
     auto ordered = orderByRecency(
-        someApps(), lastUsedFrom({{"com.pond.wim", 30}, {"com.apple.finder", 20}}));
+        someApps(),
+        lastUsedFrom({{"audio.pond.grazer", 30}, {"com.apple.finder", 20}}));
 
     check(titles(ordered)
-          == std::vector<std::string> {"Wim", "Finder", "Safari", "iTerm2"});
+          == std::vector<std::string> {"Grazer", "Finder", "Safari", "iTerm2"});
 };
 
 auto tEmptyQueryKeepsAll = test("Ranking/an empty query keeps the list as is") = []
@@ -83,7 +84,7 @@ auto tContextsFlatten = test("Ranking/contexts match as rows of their own") = []
     apps[1].contexts = {{"tab-1", "GitHub", "", "https://github.com"},
                         {"tab-2", "Hacker News", "", ""}};
 
-    auto ranked = rankItems(apps, "wim github");
+    auto ranked = rankItems(apps, "grazer github");
 
     check(!ranked.empty());
 
@@ -91,9 +92,9 @@ auto tContextsFlatten = test("Ranking/contexts match as rows of their own") = []
         return;
 
     check(ranked.front().kind == "context");
-    check(ranked.front().appId == "com.pond.wim");
+    check(ranked.front().appId == "audio.pond.grazer");
     check(ranked.front().contextId == "tab-1");
-    check(ranked.front().subtitle == "Wim");
+    check(ranked.front().subtitle == "Grazer");
 };
 
 auto tContextsHiddenWhenBrowsing = test("Ranking/contexts stay children with no query")
@@ -111,7 +112,7 @@ auto tSelectionSkipsFront = test("Ranking/no query starts on the previous app") 
 
     check(initialSelection(apps, "", "com.apple.Safari") == 1);
     check(initialSelection(apps, "", "com.other") == 0);
-    check(initialSelection(apps, "wim", "com.apple.Safari") == 0);
+    check(initialSelection(apps, "grazer", "com.apple.Safari") == 0);
     check(initialSelection({apps[0]}, "", "com.apple.Safari") == 0);
 };
 
@@ -133,7 +134,8 @@ auto tMergeOnce = test("Ranking/installed apps merge in once, after running ones
         {closed("com.apple.Safari", "Safari"), closed("com.apple.Music", "Music")});
 
     check(titles(merged)
-          == std::vector<std::string> {"Safari", "Wim", "iTerm2", "Finder", "Music"});
+          == std::vector<std::string> {
+              "Safari", "Grazer", "iTerm2", "Finder", "Music"});
     check(merged.front().running);
     check(!merged.back().running);
     check(merged.back().path == "/Applications/Music.app");
@@ -186,16 +188,19 @@ auto tPreviewNeverLaunches = test("Ranking/selecting a closed app doesn't launch
     check(previewActionFor(music, true, "com.apple.Safari") == PreviewAction::none);
 };
 
-auto tPreviewQuitApp = test("Ranking/an app that quit since listing isn't previewed")
-    = []
+auto tPreviewQuitApp =
+    test("Ranking/an app that quit since listing isn't previewed") = []
 {
-    check(previewActionFor(app("com.pond.wim", "Wim"), false, "com.apple.Safari")
+    check(previewActionFor(
+              app("audio.pond.grazer", "Grazer"), false, "com.apple.Safari")
           == PreviewAction::none);
 };
 
-auto tPreviewRunning = test("Ranking/a running app previews; the origin restores") = []
+auto tPreviewRunning =
+    test("Ranking/a running app previews; the origin restores") = []
 {
-    check(previewActionFor(app("com.pond.wim", "Wim"), true, "com.apple.Safari")
+    check(previewActionFor(
+              app("audio.pond.grazer", "Grazer"), true, "com.apple.Safari")
           == PreviewAction::bringForward);
     check(previewActionFor(app("com.apple.Safari", "Safari"), true, "com.apple.Safari")
           == PreviewAction::restoreOrigin);
@@ -253,7 +258,8 @@ namespace
 {
 // CowTerm as it really pushes: one pane per tab with its cwd (shells say
 // nothing else), Claude Code reporting its version as the command, and the
-// project places that no pane covers.
+// project places that no pane covers. Captured while Grazer was still called
+// Wim; the tests below hinge on the letters w, i, m, so it keeps the old name.
 std::vector<RudderItem> cowTermAndWim()
 {
     auto cowTerm = app("com.eacp.cowterm", "CowTerm");

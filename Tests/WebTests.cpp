@@ -116,10 +116,12 @@ auto tRowTitles = test("Web/the row says what Enter does") = []
     check(webRow("foo", {}).kind == "web");
 };
 
-auto tBrowserOrder = test("Web/a link opens with openWith, then browser, then the default") = []
+auto tBrowserOrder =
+    test("Web/a link opens with openWith, then browser, then the default") = []
 {
-    check(browserFor("org.mozilla.firefox", "audio.pond.wim") == "org.mozilla.firefox");
-    check(browserFor("", "audio.pond.wim") == "audio.pond.wim");
+    check(browserFor("org.mozilla.firefox", "audio.pond.grazer")
+          == "org.mozilla.firefox");
+    check(browserFor("", "audio.pond.grazer") == "audio.pond.grazer");
     check(browserFor("", "").empty());
 };
 
@@ -129,7 +131,7 @@ auto tWeakThreshold = test("Web/scattered letters are weak, a prefix isn't") = [
 
     // Real scores from the fuzzy matcher.
     auto score = [](const std::string& query, const std::string& title)
-    { return *wim::fuzzyScore(query, title); };
+    { return *grazer::fuzzyScore(query, title); };
 
     check(weakMatch("gh", {score("gh", "TestFlight")}));
     check(weakMatch("sfr", {score("sfr", "Safari")}));
@@ -195,10 +197,11 @@ auto tFavouriteWins = test("Web/an address a favourite has picks the favourite")
 
 auto tOpenTabWins = test("Web/an address an open tab shows picks the tab") = []
 {
-    auto wim = app("audio.pond.wim", "Wim");
-    wim.contexts.push_back({"7", "Hacker News", "", "https://news.ycombinator.com/"});
+    auto grazer = app("audio.pond.grazer", "Grazer");
+    grazer.contexts.push_back(
+        {"7", "Hacker News", "", "https://news.ycombinator.com/"});
     auto all = someApps();
-    all.push_back(wim);
+    all.push_back(grazer);
 
     auto ranked = rankWithWeb(all, "news.ycombinator.com", {});
 
@@ -226,10 +229,10 @@ auto tConfigDefaults = test("Web/browser and searchUrl default when missing") = 
 auto tConfigReads = test("Web/browser and searchUrl are read from the file") = []
 {
     auto result = parseFavourites(
-        R"({"browser": "audio.pond.wim", "searchUrl": "https://kagi.com/search?q=%s"})");
+        R"({"browser": "audio.pond.grazer", "searchUrl": "https://kagi.com/search?q=%s"})");
 
     check(result.list.has_value());
-    check(result.list->browser == "audio.pond.wim");
+    check(result.list->browser == "audio.pond.grazer");
     check(result.list->searchUrl == "https://kagi.com/search?q=%s");
 };
 

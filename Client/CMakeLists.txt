@@ -1,5 +1,5 @@
 # The provider side of Rudder's contexts protocol, for apps that publish
-# contexts (Wim, CowTerm): message encode/decode and a client that connects,
+# contexts (Grazer, CowTerm): message encode/decode and a client that connects,
 # says hello, pushes contexts and hears activate. App-agnostic, no UI. Pull it
 # in with CPM and RUDDER_CLIENT_ONLY=ON to get this target and nothing else.
 if (NOT TARGET Miro)

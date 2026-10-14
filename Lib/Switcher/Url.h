@@ -2,7 +2,7 @@
 
 #include <string>
 
-namespace wim
+namespace grazer
 {
 // What the omnibox does with typed text: anything URL-shaped loads directly
 // (scheme added if missing), everything else becomes a web search.
@@ -24,4 +24,4 @@ std::string searchURLFor(const std::string& query);
 // slashes stripped. Used to match tabs against places, history and MRU
 // stamps.
 std::string normalizeURL(std::string url);
-} // namespace wim
+} // namespace grazer

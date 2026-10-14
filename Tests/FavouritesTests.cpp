@@ -34,7 +34,7 @@ auto tParses = test("Favourites/a well-formed file parses") = []
             {"title": "tamber-web PRs",
              "url": "https://github.com/tamber-inc/tamber-web/pulls",
              "keywords": ["prs", "pulls"]},
-            {"title": "Wim", "app": "com.pond.wim"},
+            {"title": "Grazer", "app": "audio.pond.grazer"},
             /* block comment */
             {"title": "Projects", "path": "~/projects", "openWith": "com.apple.finder"}
         ]
@@ -48,7 +48,7 @@ auto tParses = test("Favourites/a well-formed file parses") = []
 
     check(result.list->favourites[0].url == "https://github.com/tamber-inc/tamber-web/pulls");
     check(result.list->favourites[0].keywords.size() == 2);
-    check(result.list->favourites[1].app == "com.pond.wim");
+    check(result.list->favourites[1].app == "audio.pond.grazer");
 };
 
 auto tEmptyDefaults = test("Favourites/an empty document is no favourites") = []
@@ -89,7 +89,7 @@ auto tBrowsingShowsFavouritesFirst = test("Favourites/no query: favourites on to
 {
     auto all = favouriteItems(prs());
     auto apps = std::vector<RudderItem> {app("com.apple.Safari", "Safari"),
-                                         app("com.pond.wim", "Wim")};
+                                         app("audio.pond.grazer", "Grazer")};
     all.insert(all.end(), apps.begin(), apps.end());
 
     auto ranked = rankItems(all, "");
@@ -130,20 +130,24 @@ auto tNormalise = test("Favourites/urls compare without fragment or trailing sla
 
 auto tReusesOpenTab = test("Favourites/an open tab with the url is found") = []
 {
-    auto wim = app("com.pond.wim", "Wim");
-    wim.contexts = {{"7", "Pull requests", "", "https://github.com/tamber-inc/tamber-web/pulls/"}};
+    auto grazer = app("audio.pond.grazer", "Grazer");
+    grazer.contexts = {{"7",
+                        "Pull requests",
+                        "",
+                        "https://github.com/tamber-inc/tamber-web/pulls/"}};
 
-    auto found = contextForUrl({wim}, "https://github.com/tamber-inc/tamber-web/pulls#x");
+    auto found =
+        contextForUrl({grazer}, "https://github.com/tamber-inc/tamber-web/pulls#x");
 
     check(found.has_value());
 
     if (found)
     {
-        check(found->appId == "com.pond.wim");
+        check(found->appId == "audio.pond.grazer");
         check(found->contextId == "7");
     }
 
-    check(!contextForUrl({wim}, "https://github.com/other").has_value());
+    check(!contextForUrl({grazer}, "https://github.com/other").has_value());
 };
 
 auto tToggle = test("Favourites/toggling adds once and removes by target") = []
@@ -153,7 +157,7 @@ auto tToggle = test("Favourites/toggling adds once and removes by target") = []
     tab.kind = "context";
     tab.title = "PRs";
     tab.url = "https://github.com/pulls";
-    tab.appId = "com.pond.wim";
+    tab.appId = "audio.pond.grazer";
 
     auto favourite = favouriteFor(tab);
 

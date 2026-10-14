@@ -3,7 +3,7 @@
 #include <NanoTest/NanoTest.h>
 
 using namespace nano;
-using namespace wim;
+using namespace grazer;
 
 auto tSchemeMeansURL = test("Url/an explicit scheme is always a URL") = []
 {

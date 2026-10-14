@@ -5,7 +5,7 @@
 #include <NanoTest/NanoTest.h>
 
 using namespace nano;
-using namespace wim;
+using namespace grazer;
 using namespace rudder;
 
 auto tUnknownURLIsZero = test("Mru/an untouched URL reports zero") = []

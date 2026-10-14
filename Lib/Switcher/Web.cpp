@@ -205,7 +205,7 @@ bool looksLikeAddress(std::string_view query)
 {
     auto text = std::string {trimmed(query)};
 
-    if (!wim::looksLikeURL(text))
+    if (!grazer::looksLikeURL(text))
         return false;
 
     if (text.find("://") != std::string::npos)
@@ -246,13 +246,13 @@ std::string addressUrl(std::string_view address)
     if (isLocal(hostOf(text)))
         return "http://" + text;
 
-    return wim::withScheme(text);
+    return grazer::withScheme(text);
 }
 
 std::string searchUrlFor(std::string_view query, std::string_view searchUrl)
 {
     auto url = std::string {searchUrl.empty() ? defaultSearchUrl : searchUrl};
-    auto encoded = wim::urlEncode(std::string {trimmed(query)});
+    auto encoded = grazer::urlEncode(std::string {trimmed(query)});
 
     for (auto at = url.find("%s"); at != std::string::npos; at = url.find("%s", at))
     {

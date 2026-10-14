@@ -53,14 +53,14 @@ auto tDeletes = test("LineEdit/ctrl+h and ctrl+d delete a character") = []
 
 auto tCtrlW = test("LineEdit/ctrl+w deletes back to whitespace") = []
 {
-    check(show(line::deleteWhitespaceWord(at("wim github.com|"))) == "wim |");
-    check(show(line::deleteWhitespaceWord(at("wim github  |"))) == "wim |");
-    check(show(line::deleteWhitespaceWord(at("wim| github"))) == "| github");
+    check(show(line::deleteWhitespaceWord(at("grazer github.com|"))) == "grazer |");
+    check(show(line::deleteWhitespaceWord(at("grazer github  |"))) == "grazer |");
+    check(show(line::deleteWhitespaceWord(at("grazer| github"))) == "| github");
 };
 
 auto tAltBackspace = test("LineEdit/alt+backspace deletes one word") = []
 {
-    check(show(line::deleteWord(at("wim github.com|"))) == "wim github.|");
+    check(show(line::deleteWord(at("grazer github.com|"))) == "grazer github.|");
     check(show(line::deleteWord(at("foo bar |"))) == "foo |");
 };
 

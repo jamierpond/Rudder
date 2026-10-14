@@ -7,7 +7,7 @@ using namespace rudder::protocol;
 
 auto tHelloRoundTrips = test("Protocol/hello encodes to one line and back") = []
 {
-    auto line = encode(Hello {"Wim", "com.pond.wim", 42});
+    auto line = encode(Hello {"Grazer", "audio.pond.grazer", 42});
 
     check(line.back() == '\n');
     check(line.find('\n') == line.size() - 1);
@@ -20,8 +20,8 @@ auto tHelloRoundTrips = test("Protocol/hello encodes to one line and back") = []
     if (hello == nullptr)
         return;
 
-    check(hello->app == "Wim");
-    check(hello->bundleId == "com.pond.wim");
+    check(hello->app == "Grazer");
+    check(hello->bundleId == "audio.pond.grazer");
     check(hello->pid == 42);
 };
 
@@ -91,7 +91,7 @@ auto tGarbageIgnored = test("Protocol/garbage decodes to nothing") = []
     check(!decode("[1,2,3]").has_value());
     check(!decode(R"({"type":"explode"})").has_value());
     check(!decode(R"({"type":42})").has_value());
-    check(!decode(R"({"app":"Wim"})").has_value());
+    check(!decode(R"({"app":"Grazer"})").has_value());
     check(!decode(R"({"type":"contexts","contexts":"nope"})").has_value());
     check(!decode(R"({"type":"hello","pid":"not a number"})").has_value());
     check(!decode(R"({"type":"contexts","contexts":[{"id":"1","open":"no"}]})").has_value());
