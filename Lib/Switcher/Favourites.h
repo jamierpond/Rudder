@@ -33,7 +33,14 @@ struct FavouriteList
 {
     std::vector<Favourite> favourites;
 
-    MIRO_REFLECT(favourites)
+    // The app (bundle id) every link opens in when it names none of its own;
+    // empty is the system's default browser.
+    std::string browser;
+
+    // Where a web search goes, %s standing for the query; empty is Google.
+    std::string searchUrl;
+
+    MIRO_REFLECT(favourites, browser, searchUrl)
 };
 
 struct FavouritesResult

@@ -173,6 +173,24 @@ FavouritesResult parseFavourites(std::string_view text)
         return {std::nullopt, "rudder.json: the top level must be an object"};
 
     auto config = FavouriteList {};
+
+    for (auto [field, out]: {std::pair {"browser", &config.browser},
+                             std::pair {"searchUrl", &config.searchUrl}})
+    {
+        if (auto* value = Miro::Json::find(json.asObject(), field))
+        {
+            if (!value->isString())
+                return {std::nullopt,
+                        std::string {"rudder.json: \""} + field + "\" must be a string"};
+
+            *out = value->asString();
+        }
+    }
+
+    if (!config.searchUrl.empty() && config.searchUrl.find("%s") == std::string::npos)
+        return {std::nullopt,
+                "rudder.json: \"searchUrl\" needs a %s where the query goes"};
+
     auto* favourites = Miro::Json::find(json.asObject(), "favourites");
 
     if (favourites == nullptr)
