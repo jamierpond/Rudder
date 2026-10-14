@@ -64,6 +64,27 @@ endif ()
 target_include_directories(RudderPlatform PUBLIC Platform)
 target_link_libraries(RudderPlatform PUBLIC eacp-graphics)
 
+# The panel is an eacp UI component tree in one GPUView: no web view, so no
+# second process to keep warm.
+add_executable(Rudder
+        Source/Main.cpp
+        Source/PanelView.cpp)
+
+target_link_libraries(Rudder PRIVATE eacp-ui RudderSwitcher RudderPlatform)
+
+set(BUNDLE_ID "com.pond.rudder")
+
+# LSUIElement: an agent app. It launches with no Dock icon and no flash before
+# setDockIconVisible(false) confirms it.
+set_target_properties(Rudder PROPERTIES
+        MACOSX_BUNDLE TRUE
+        MACOSX_BUNDLE_BUNDLE_NAME "Rudder"
+        MACOSX_BUNDLE_GUI_IDENTIFIER ${BUNDLE_ID}
+        XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER ${BUNDLE_ID}
+        MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/Source/Info.plist.in")
+
+eacp_set_gui_subsystem(Rudder)
+
 if (NOT TARGET NanoTest)
     CPMAddPackage(
             NAME NanoTest
