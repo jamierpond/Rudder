@@ -68,7 +68,7 @@ void announceStarted()
 } // namespace
 
 auto tClientAndServerTalk =
-    test("Transport/a client says hello, pushes contexts and hears activate") = []
+    test("Transport/a client says hello, pushes contexts and hears activate and close") = []
 {
     auto heard = Heard {};
     auto server = serve(heard);
@@ -81,11 +81,13 @@ auto tClientAndServerTalk =
         return;
     }
 
-    auto client = RudderClient {{"Tests", "com.pond.rudder.tests", 0}};
+    auto client = RudderClient {{"Tests", "com.pond.rudder.tests", 0, true}};
     auto activated = std::string {};
     auto previewed = std::string {};
+    auto closed = std::string {};
     client.onActivate = [&](const std::string& id) { activated = id; };
     client.onPreview = [&](const std::string& id) { previewed = id; };
+    client.onClose = [&](const std::string& id) { closed = id; };
 
     auto pushed = std::vector<protocol::Context> {
         {"1", "one", "", ""}, {"2", "two", "sub", "https://x.y"}};
@@ -102,14 +104,18 @@ auto tClientAndServerTalk =
     check(hello.app == "Tests");
     check(hello.bundleId == "com.pond.rudder.tests");
     check(hello.pid == (std::int64_t) GetCurrentProcessId());
+    check(hello.canClose);
     check(heard.contexts[id] == pushed);
 
-    server->sendActivate(id, "2", true);
+    server->send(id, protocol::Activate {"2", true});
     check(pumpUntil([&] { return activated == "2"; }));
 
-    server->sendActivate(id, "1", false);
+    server->send(id, protocol::Activate {"1", false});
     check(pumpUntil([&] { return previewed == "1"; }));
     check(activated == "2");
+
+    server->send(id, protocol::Close {"1"});
+    check(pumpUntil([&] { return closed == "1"; }));
 
     // Rudder quits and starts again: the app reconnects by itself and sends
     // the latest list without being asked.

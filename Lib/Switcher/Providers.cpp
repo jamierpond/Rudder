@@ -5,9 +5,11 @@
 
 namespace rudder
 {
-void ContextProviders::connect(const ProviderHello& hello, SendActivate send)
+void ContextProviders::connect(const ProviderHello& hello,
+                               SendActivate send,
+                               SendClose sendClose)
 {
-    providers[hello.bundleId] = {hello, std::move(send), {}};
+    providers[hello.bundleId] = {hello, std::move(send), std::move(sendClose), {}};
     onChanged();
 }
 
@@ -71,6 +73,26 @@ bool ContextProviders::activate(const std::string& appId,
         return false;
 
     found->second.send(contextId, raise);
+    return true;
+}
+
+bool ContextProviders::close(const std::string& appId, const std::string& contextId) const
+{
+    auto found = providers.find(appId);
+
+    if (found == providers.end() || !found->second.sendClose)
+        return false;
+
+    auto& contexts = found->second.contexts;
+    auto open = std::any_of(contexts.begin(),
+                            contexts.end(),
+                            [&](const RudderContext& context)
+                            { return context.id == contextId && context.open; });
+
+    if (!open)
+        return false;
+
+    found->second.sendClose(contextId);
     return true;
 }
 

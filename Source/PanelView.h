@@ -142,7 +142,7 @@ public:
     eacp::UI::Button summonChord;
     eacp::UI::Label backCaption {"Go back to the previous app"};
     eacp::UI::Button backChord;
-    eacp::UI::Label quitCaption {"Quit the selected app (in the panel)"};
+    eacp::UI::Label quitCaption {"Quit the selected app, or close the selected tab (in the panel)"};
     eacp::UI::Button quitChord;
     eacp::UI::Label favouriteCaption {"Favourite / unfavourite the selection"};
     eacp::UI::Button favouriteChord;
@@ -261,7 +261,8 @@ public:
     // A problem with ~/.config/rudder.json, shown in the footer until it's fixed.
     void setFooterError(const std::string& error);
 
-    // The quit binding (⌃Q by default): quit the selected app, never Rudder.
+    // The quit binding (⌃Q by default): quit the selected app (or close the
+    // selected context, for an app that can), never Rudder.
     // ⌘Q does nothing in the panel.
     std::function<void()> onQuitSelected = [] {};
 

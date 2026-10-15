@@ -118,15 +118,19 @@ struct RudderClient::Native
             if (!message)
                 continue;
 
+            if (state->owner == nullptr)
+                continue;
+
             if (auto* activate = std::get_if<protocol::Activate>(&*message))
             {
-                if (state->owner == nullptr)
-                    continue;
-
                 if (activate->raise)
                     state->owner->onActivate(activate->contextId);
                 else
                     state->owner->onPreview(activate->contextId);
+            }
+            else if (auto* close = std::get_if<protocol::Close>(&*message))
+            {
+                state->owner->onClose(close->contextId);
             }
         }
     }

@@ -66,6 +66,42 @@ auto tActivateSends = test("Providers/activate goes back over the connection") =
     check(!providers.activate("audio.pond.grazer", "tab-9"));
 };
 
+auto tCloseSends = test("Providers/close goes back to an app that closes contexts") = []
+{
+    auto providers = ContextProviders {};
+    auto closed = std::vector<std::string> {};
+
+    providers.connect(
+        grazer(), [](auto&, bool) {}, [&](const std::string& id) { closed.push_back(id); });
+
+    auto place = RudderContext {"place:/p", "p", "", ""};
+    place.open = false;
+    providers.setContexts("audio.pond.grazer", {{"tab-1", "GitHub", "", ""}, place});
+
+    check(providers.close("audio.pond.grazer", "tab-1"));
+
+    // Nothing to close: a context it never pushed, a place that isn't open.
+    check(!providers.close("audio.pond.grazer", "tab-9"));
+    check(!providers.close("audio.pond.grazer", "place:/p"));
+    check(closed == std::vector<std::string> {"tab-1"});
+
+    // Rudder keeps showing it until the app's push leaves it out.
+    check(providers.contextsFor("audio.pond.grazer").size() == 2);
+    providers.setContexts("audio.pond.grazer", {place});
+    check(providers.contextsFor("audio.pond.grazer").size() == 1);
+};
+
+auto tCloseNeedsTheApp = test("Providers/close is refused for an app that can't close") = []
+{
+    auto providers = ContextProviders {};
+    check(!providers.close("audio.pond.grazer", "tab-1"));
+
+    providers.connect(grazer(), [](auto&, bool) {});
+    providers.setContexts("audio.pond.grazer", {{"tab-1", "GitHub", "", ""}});
+
+    check(!providers.close("audio.pond.grazer", "tab-1"));
+};
+
 namespace
 {
 RudderItem contextRow(bool open = true)

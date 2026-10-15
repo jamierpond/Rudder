@@ -39,6 +39,11 @@ public:
     // user went next. Unset, a preview does nothing.
     std::function<void(const std::string& contextId)> onPreview = [](auto&) {};
 
+    // Rudder asks this app to close one of its contexts (the tab, the pane).
+    // Only sent when the hello said canClose. Close it the way the app's own
+    // close would, then push the list without it.
+    std::function<void(const std::string& contextId)> onClose = [](auto&) {};
+
 private:
     struct Native;
     std::unique_ptr<Native> native;

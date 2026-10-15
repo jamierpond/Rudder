@@ -635,7 +635,7 @@ void PanelView::updateFooter()
     footer.setColour(dimText);
     footer.setText(model.summonLabel + " switch   ·   " + model.backLabel + " back   ·   "
                    + model.favouriteLabel + " favourite   ·   " + model.renameLabel
-                   + " rename   ·   " + model.quitLabel + " quit app");
+                   + " rename   ·   " + model.quitLabel + " quit app or close tab");
 }
 
 void PanelView::startCapture(const std::string& action)

@@ -25,6 +25,35 @@ auto tHelloRoundTrips = test("Protocol/hello encodes to one line and back") = []
     check(hello->pid == 42);
 };
 
+auto tCanClose = test("Protocol/hello says whether the app closes contexts") = []
+{
+    auto line = encode(Hello {"CowTerm", "com.eacp.cowterm", 7, true});
+    auto message = decode(line);
+    auto* hello = message ? std::get_if<Hello>(&*message) : nullptr;
+
+    check(hello != nullptr && hello->canClose);
+
+    // An app built before close existed says nothing, and can't.
+    message = decode(R"({"type":"hello","bundleId":"audio.pond.grazer"})");
+    hello = message ? std::get_if<Hello>(&*message) : nullptr;
+
+    check(hello != nullptr && !hello->canClose);
+    check(!decode(R"({"type":"hello","bundleId":"a","canClose":"yes"})").has_value());
+};
+
+auto tCloseRoundTrips = test("Protocol/close carries the context id") = []
+{
+    auto line = encode(Close {"pane:9"});
+    check(line.find(R"("type":"close")") != std::string::npos);
+
+    auto message = decode(line);
+    auto* close = message ? std::get_if<Close>(&*message) : nullptr;
+
+    check(close != nullptr && close->contextId == "pane:9");
+    check(!decode(R"({"type":"close"})").has_value());
+    check(!decode(R"({"type":"close","contextId":""})").has_value());
+};
+
 auto tContextsRoundTrip = test("Protocol/contexts keep every field") = []
 {
     auto sent = Contexts {{{"3", "GitHub", "https://github.com", "https://github.com"},

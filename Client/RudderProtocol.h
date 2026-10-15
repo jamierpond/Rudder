@@ -14,17 +14,24 @@
 // (Grazer tabs, CowTerm sessions): newline-delimited JSON over a local socket,
 // one object per line with a "type" field.
 //
-//   app -> Rudder   {"type":"hello","app":"Grazer","bundleId":"audio.pond.grazer","pid":42}
+//   app -> Rudder   {"type":"hello","app":"Grazer","bundleId":"audio.pond.grazer","pid":42,
+//                    "canClose":true}
 //   app -> Rudder   {"type":"contexts","contexts":[{"id":"3","title":"…","url":"…"}]}
 //                   (each context may also carry "subtitle", "path", "branch",
 //                   "open": false and "focused": true)
 //   Rudder -> app   {"type":"activate","contextId":"3","raise":true}
+//   Rudder -> app   {"type":"close","contextId":"3"}
 //
 // activate with "raise": false is a preview: the app only switches to the
 // context (its tab, its pane) and must not activate itself or raise a window
 // -- Rudder brings the app forward itself, and drops it again when the
 // selection moves on. "raise" left out means true, so an app built before it
 // existed still sees a plain activate; Enter is always a raising one.
+//
+// close goes only to an app whose hello said "canClose": true, and only for
+// one of its open contexts: the app closes it (the tab, the pane) and pushes
+// its list without it. There is no separate "closed" reply -- a context
+// missing from a push is gone, however it was closed.
 //
 // hello comes first; each contexts push replaces the app's whole list; the
 // connection closing means the app quit. Rudder announces "rudder.started"
@@ -38,7 +45,10 @@ struct Hello
     std::string bundleId;
     std::int64_t pid = 0;
 
-    MIRO_REFLECT(app, bundleId, pid)
+    // The app carries out close.
+    bool canClose = false;
+
+    MIRO_REFLECT(app, bundleId, pid, canClose)
 };
 
 struct Context
@@ -87,7 +97,14 @@ struct Activate
     MIRO_REFLECT(contextId, raise)
 };
 
-using Message = std::variant<Hello, Contexts, Activate>;
+struct Close
+{
+    std::string contextId;
+
+    MIRO_REFLECT(contextId)
+};
+
+using Message = std::variant<Hello, Contexts, Activate, Close>;
 
 // One line, newline included.
 std::string encode(const Message& message);

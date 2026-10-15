@@ -84,8 +84,8 @@ struct ContextServer::Native
             else if (auto* contexts = std::get_if<protocol::Contexts>(&*message))
                 owner->onContexts(fd, std::move(contexts->contexts));
 
-            // Activate only ever goes the other way; an app sending one is
-            // ignored like any other line Rudder has no use for.
+            // Activate and close only ever go the other way; an app sending
+            // one is ignored like any other line Rudder has no use for.
 
             if (!connections.contains(fd))
                 return;
@@ -174,12 +174,12 @@ bool ContextServer::start()
     return true;
 }
 
-void ContextServer::sendActivate(int connection, const std::string& contextId, bool raise)
+void ContextServer::send(int connection, const protocol::Message& message)
 {
     if (!native->connections.contains(connection))
         return;
 
-    auto line = protocol::encode(protocol::Activate {contextId, raise});
+    auto line = protocol::encode(message);
     auto* data = line.data();
     auto left = line.size();
 

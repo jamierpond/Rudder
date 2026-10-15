@@ -115,9 +115,9 @@ struct ContextServer::Native
                     if (!message)
                         continue;
 
-                    // Activate only ever goes the other way; an app sending
-                    // one is ignored like any other line Rudder has no use
-                    // for.
+                    // Activate and close only ever go the other way; an app
+                    // sending one is ignored like any other line Rudder has
+                    // no use for.
                     if (auto* hello = std::get_if<protocol::Hello>(&*message))
                         onMain(shared,
                                [id, hello = *hello](ContextServer& server)
@@ -252,9 +252,7 @@ bool ContextServer::start()
     return true;
 }
 
-void ContextServer::sendActivate(int connection,
-                                 const std::string& contextId,
-                                 bool raise)
+void ContextServer::send(int connection, const protocol::Message& message)
 {
     auto found = native->find(connection);
 
@@ -263,7 +261,7 @@ void ContextServer::sendActivate(int connection,
 
     try
     {
-        found->channel.send(protocol::encode(protocol::Activate {contextId, raise}));
+        found->channel.send(protocol::encode(message));
     }
     catch (const eacp::IPC::Error&)
     {

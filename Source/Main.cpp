@@ -1289,9 +1289,17 @@ struct RudderApp
         // A newer connection from the same app takes over its contexts; the
         // older one closing later mustn't drop them.
         providerConnection[appId] = connection;
-        providers.connect({hello.app, appId, hello.pid},
-                          [this, connection](const std::string& contextId, bool raise)
-                          { contextServer.sendActivate(connection, contextId, raise); });
+        auto sendClose = ContextProviders::SendClose {};
+
+        if (hello.canClose)
+            sendClose = [this, connection](const std::string& contextId)
+            { contextServer.send(connection, protocol::Close {contextId}); };
+
+        providers.connect(
+            {hello.app, appId, hello.pid},
+            [this, connection](const std::string& contextId, bool raise)
+            { contextServer.send(connection, protocol::Activate {contextId, raise}); },
+            std::move(sendClose));
     }
 
     // The id of the app row a provider's contexts belong under: the running
@@ -1412,20 +1420,34 @@ struct RudderApp
         auto again = std::find_if(filtered.begin(),
                                   filtered.end(),
                                   [&](const RudderItem& item) { return item.id == selectedId; });
-        selected = again != filtered.end() ? (int) (again - filtered.begin())
-                                           : initialSelection(filtered, query, frontAppId);
+
+        // A row that went (a context just closed) leaves the selection where
+        // it was, on the row that took its place, so the next quit binding
+        // closes that one rather than whatever is on top.
+        selected = again != filtered.end()
+                       ? (int) (again - filtered.begin())
+                       : std::clamp(selected, 0, std::max((int) filtered.size() - 1, 0));
         publishResults();
     }
 
     // The quit binding (⌃Q by default): quit the selection, cmd-tab style. The panel stays up; the row
     // turns "not running" when the app is actually gone (markQuit), so an app
     // that refuses -- an unsaved-changes dialog -- simply stays running.
+    // On an open context of an app that closes contexts (canClose), it
+    // closes just that tab or pane instead; the row goes when the app's next
+    // push leaves it out.
     void quitSelected()
     {
         if (!panelVisible || filtered.empty())
             return;
 
         auto& item = filtered[(std::size_t) selected];
+
+        if (item.kind == "context" && providers.close(item.appId, item.contextId))
+        {
+            logEvent(("close -> " + item.appId + " " + item.contextId).c_str());
+            return;
+        }
 
         if (auto app = findRunningNow(item.appId))
         {

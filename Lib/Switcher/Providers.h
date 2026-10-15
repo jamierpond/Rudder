@@ -27,13 +27,15 @@ struct ProviderHello
 // (the bundle id -- the same id the panel's app rows carry). The socket layer
 // to come feeds this: hello -> connect, `contexts [...]` -> setContexts, the
 // connection closing -> disconnect. `send` is that connection's way back, for
-// `activate {contextId, raise}`.
+// `activate {contextId, raise}`; `sendClose` is for `close {contextId}`, and
+// left empty for an app that doesn't close contexts (no canClose in its hello).
 class ContextProviders
 {
 public:
     using SendActivate = std::function<void(const std::string& contextId, bool raise)>;
+    using SendClose = std::function<void(const std::string& contextId)>;
 
-    void connect(const ProviderHello& hello, SendActivate send);
+    void connect(const ProviderHello& hello, SendActivate send, SendClose sendClose = {});
     void setContexts(const std::string& appId, std::vector<RudderContext> contexts);
     void disconnect(const std::string& appId);
 
@@ -50,6 +52,12 @@ public:
                   const std::string& contextId,
                   bool raise = true) const;
 
+    // Asks the owning app to close one of its open contexts. False when it
+    // can't: no provider, one that doesn't close contexts, or a context it
+    // didn't push as open. The context goes when the app's next push leaves
+    // it out.
+    bool close(const std::string& appId, const std::string& contextId) const;
+
     // Fired after any change, so an open panel can re-rank.
     std::function<void()> onChanged = [] {};
 
@@ -58,6 +66,7 @@ private:
     {
         ProviderHello hello;
         SendActivate send;
+        SendClose sendClose;
         std::vector<RudderContext> contexts;
     };
 

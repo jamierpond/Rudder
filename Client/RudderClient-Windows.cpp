@@ -120,19 +120,25 @@ struct RudderClient::Native
             send(state, *state.latest);
     }
 
-    static void deliver(const std::shared_ptr<State>& state,
-                        protocol::Activate activate)
+    static void deliver(const std::shared_ptr<State>& state, protocol::Message message)
     {
         eacp::Threads::callAsync(
-            [state, activate]
+            [state, message = std::move(message)]
             {
                 if (state->stop || state->owner == nullptr)
                     return;
 
-                if (activate.raise)
-                    state->owner->onActivate(activate.contextId);
-                else
-                    state->owner->onPreview(activate.contextId);
+                if (auto* activate = std::get_if<protocol::Activate>(&message))
+                {
+                    if (activate->raise)
+                        state->owner->onActivate(activate->contextId);
+                    else
+                        state->owner->onPreview(activate->contextId);
+                }
+                else if (auto* close = std::get_if<protocol::Close>(&message))
+                {
+                    state->owner->onClose(close->contextId);
+                }
             });
     }
 
@@ -154,9 +160,7 @@ struct RudderClient::Native
 
                 for (auto& line: lines.append({buffer, (std::size_t) count}))
                     if (auto message = protocol::decode(line))
-                        if (auto* activate =
-                                std::get_if<protocol::Activate>(&*message))
-                            deliver(state, *activate);
+                        deliver(state, std::move(*message));
             }
         }
         catch (const eacp::IPC::Error&)

@@ -55,7 +55,7 @@ std::optional<Message> readHello(const Object& object)
     auto hello = Hello {};
 
     if (!readString(object, "app", hello.app) || !readString(object, "bundleId", hello.bundleId)
-        || hello.bundleId.empty())
+        || hello.bundleId.empty() || !readBool(object, "canClose", hello.canClose))
         return std::nullopt;
 
     if (auto* pid = Miro::Json::find(object, "pid"))
@@ -119,6 +119,16 @@ std::optional<Message> readActivate(const Object& object)
 
     return activate;
 }
+
+std::optional<Message> readClose(const Object& object)
+{
+    auto close = Close {};
+
+    if (!readString(object, "contextId", close.contextId) || close.contextId.empty())
+        return std::nullopt;
+
+    return close;
+}
 } // namespace
 
 std::string encode(const Message& message)
@@ -132,8 +142,10 @@ std::string encode(const Message& message)
                 return withType(payload, "hello");
             else if constexpr (std::is_same_v<T, Contexts>)
                 return withType(payload, "contexts");
-            else
+            else if constexpr (std::is_same_v<T, Activate>)
                 return withType(payload, "activate");
+            else
+                return withType(payload, "close");
         },
         message);
 
@@ -166,6 +178,9 @@ std::optional<Message> decode(std::string_view line)
 
     if (name == "activate")
         return readActivate(object);
+
+    if (name == "close")
+        return readClose(object);
 
     return std::nullopt;
 }

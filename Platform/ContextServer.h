@@ -27,7 +27,8 @@ public:
     // if it can't -- on Windows, when another Rudder already is.
     bool start();
 
-    void sendActivate(int connection, const std::string& contextId, bool raise);
+    // activate or close, to one connected app.
+    void send(int connection, const protocol::Message& message);
 
     std::function<void(int connection, const protocol::Hello&)> onHello =
         [](int, auto&) {};
