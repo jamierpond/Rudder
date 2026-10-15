@@ -64,4 +64,11 @@ void FocusTracker::forget(const std::string& appId)
 {
     spells.erase(appId);
 }
+
+void FocusTracker::forgetKey(const std::string& key)
+{
+    for (auto& [appId, spell]: spells)
+        if (spell.key == key)
+            spell = {};
+}
 } // namespace rudder

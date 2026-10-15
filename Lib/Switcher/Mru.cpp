@@ -26,6 +26,11 @@ std::int64_t MruStore::lastUsed(const std::string& normalizedUrl)
     return 0;
 }
 
+void MruStore::forget(const std::string& normalizedUrl)
+{
+    stamps.remove(normalizedUrl);
+}
+
 void MruStore::prune()
 {
     if (stamps.size() <= maxEntries)

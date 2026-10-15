@@ -24,6 +24,23 @@ using FrecencyFn = std::function<double(const std::string& key)>;
 // uses add up.
 std::string contextKey(const std::string& appId, const RudderContext& context);
 
+// The contextKeys of the contexts in `before` that `after` has no context
+// with the same id for: what an app's push dropped -- a tab or pane closed
+// (from Rudder or in the app), or expired. A key some context in `after`
+// still carries (another pane on the branch, its unopened place) isn't
+// gone, and neither is the old key of a context that only moved (a pane
+// that cd'd or checked out another branch keeps its id). Each key once.
+std::vector<std::string> goneContextKeys(const std::string& appId,
+                                         const std::vector<RudderContext>& before,
+                                         const std::vector<RudderContext>& after);
+
+// The contextKeys among `contexts` that are only the provider's id (no
+// branch, no path). Those ids mean nothing once the app's connection ends:
+// Grazer numbers its tabs from 0 again each launch, so tab "3" after a
+// restart is another page.
+std::vector<std::string> idOnlyContextKeys(const std::string& appId,
+                                           const std::vector<RudderContext>& contexts);
+
 // What a row's frecency (and recency) is stored under: its id, except a
 // favourite's, which is its index in rudder.json and moves when the list is
 // edited -- a favourite is keyed by what it opens instead -- and a context

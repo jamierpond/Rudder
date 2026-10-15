@@ -50,6 +50,10 @@ public:
     // The app quit or its provider went away.
     void forget(const std::string& appId);
 
+    // A context on `key` is gone: a spell on it ends, so neither activated()
+    // nor settle() hands the key back.
+    void forgetKey(const std::string& key);
+
 private:
     struct Spell
     {

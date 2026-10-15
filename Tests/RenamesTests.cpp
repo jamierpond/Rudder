@@ -38,3 +38,21 @@ auto tEmptyNameClears = test("Renames/an empty name clears the rename") = []
     check(renames.nameFor(key).empty());
     check(renames.names.size() == 0);
 };
+
+auto tForgetDropsName = test("Renames/forget drops the name for good") = []
+{
+    auto db = testing::freshDatabase("renames-forget");
+    auto key = std::string {"audio.pond.grazer/3"};
+
+    {
+        auto renames = RenameStore {db};
+        renames.set(key, "Release notes");
+        renames.set("audio.pond.grazer/4", "Inbox");
+        renames.forget(key);
+        check(renames.nameFor(key).empty());
+    }
+
+    auto again = RenameStore {db};
+    check(again.nameFor(key).empty());
+    check(again.nameFor("audio.pond.grazer/4") == "Inbox");
+};

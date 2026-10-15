@@ -28,6 +28,9 @@ struct FrecencyStore
     // Adds `weight`: 1 for a pick, less for a use Rudder only saw (focusWeight).
     void touch(const std::string& key, std::int64_t atMs = nowMs(), double weight = 1.0);
 
+    // Drops the key's score: its context is gone.
+    void forget(const std::string& key);
+
     // The key's score decayed to atMs; 0 for a key never picked.
     double frecency(const std::string& key, std::int64_t atMs = nowMs());
 

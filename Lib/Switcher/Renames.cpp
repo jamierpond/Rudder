@@ -15,6 +15,11 @@ std::string RenameStore::nameFor(const std::string& key)
     return {};
 }
 
+void RenameStore::forget(const std::string& key)
+{
+    names.remove(key);
+}
+
 void RenameStore::set(const std::string& key, const std::string& name)
 {
     const auto* spaces = " \t\r\n";

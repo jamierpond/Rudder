@@ -89,3 +89,21 @@ auto tWeightedTouch = test("Frecency/a weighted touch adds its fraction") = []
 
     check(near(store.frecency("com.eacp.cowterm/branch:main", 1000), 1.25));
 };
+
+auto tFrecencyForgetDrops = test("Frecency/forget drops a key's score, and a later pick starts afresh")
+    = []
+{
+    auto db = testing::freshDatabase("frecency-forget");
+    auto store = FrecencyStore {db};
+
+    store.touch("audio.pond.grazer/3", 1000);
+    store.touch("audio.pond.grazer/3", 1000);
+    store.touch("audio.pond.grazer/4", 1000);
+    store.forget("audio.pond.grazer/3");
+
+    check(store.frecency("audio.pond.grazer/3", 1000) == 0);
+    check(near(store.frecency("audio.pond.grazer/4", 1000), 1));
+
+    store.touch("audio.pond.grazer/3", 1000);
+    check(near(store.frecency("audio.pond.grazer/3", 1000), 1));
+};

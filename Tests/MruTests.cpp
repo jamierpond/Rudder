@@ -42,3 +42,16 @@ auto tPruneKeepsNewest = test("Mru/prune drops the oldest stamps") = []
     check(mru.lastUsed("site-" + std::to_string(MruStore::maxEntries + 9) + ".com")
           == (std::int64_t) MruStore::maxEntries + 10);
 };
+
+auto tMruForgetDrops = test("Mru/forget drops one stamp") = []
+{
+    auto db = testing::freshDatabase("mru-forget");
+    auto mru = MruStore {db};
+
+    mru.touch("audio.pond.grazer/3", 1000);
+    mru.touch("audio.pond.grazer/4", 1000);
+    mru.forget("audio.pond.grazer/3");
+
+    check(mru.lastUsed("audio.pond.grazer/3") == 0);
+    check(mru.lastUsed("audio.pond.grazer/4") == 1000);
+};

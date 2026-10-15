@@ -27,6 +27,9 @@ struct MruStore
 
     std::int64_t lastUsed(const std::string& normalizedUrl);
 
+    // Drops the stamp: what it was for is gone.
+    void forget(const std::string& normalizedUrl);
+
     // Drops the oldest stamps once the collection outgrows maxEntries.
     void prune();
 

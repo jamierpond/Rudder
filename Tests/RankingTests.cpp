@@ -822,3 +822,65 @@ auto tRenameMatches = test("Ranking/a rename matches as well as a branch, the ol
     check(rankOf(ranked, "pane:branch") < rankOf(ranked, "pane:title"));
     check(rowFor(rankItems({cowTerm}, "claude"), "pane:named").title == "keychain");
 };
+
+// --- Gone contexts ---------------------------------------------------------
+
+auto tClosedTabIsGone = test("Ranking/a tab missing from the next push is gone") = []
+{
+    auto grazer = "audio.pond.grazer";
+    auto before = std::vector<RudderContext> {{"3", "GitHub", "", "https://github.com"},
+                                              {"4", "Gmail", "", "https://mail.google.com"}};
+    auto after = std::vector<RudderContext> {{"4", "Gmail", "", "https://mail.google.com"}};
+
+    check(goneContextKeys(grazer, before, after)
+          == std::vector<std::string> {"audio.pond.grazer/3"});
+    check(goneContextKeys(grazer, before, before).empty());
+    check(goneContextKeys(grazer, {}, after).empty());
+};
+
+auto tKeyStillCarriedIsntGone
+    = test("Ranking/a closed pane whose branch another pane or place carries isn't gone") = []
+{
+    auto cowTerm = "com.eacp.cowterm";
+    auto place = pane("place:/p/web-fix", "web-fix", "fix-login", "/p/web-fix");
+    place.open = false;
+
+    auto before = std::vector<RudderContext> {pane("pane:1", "claude", "fix-login", "/p/web-fix"),
+                                              pane("pane:2", "zsh", "fix-login", "/p/web-fix"),
+                                              place,
+                                              pane("pane:3", "zsh", "notes", "/p/notes")};
+
+    // pane:1 closes; pane:2 is still on fix-login.
+    check(goneContextKeys(cowTerm, before, {before[1], before[2], before[3]}).empty());
+
+    // Both panes close; the place keeps the key.
+    check(goneContextKeys(cowTerm, before, {before[2], before[3]}).empty());
+
+    // Everything on fix-login goes: one key, once.
+    check(goneContextKeys(cowTerm, before, {before[3]})
+          == std::vector<std::string> {"com.eacp.cowterm/branch:fix-login"});
+};
+
+auto tMovedPaneIsntGone
+    = test("Ranking/a pane that changed branch or directory isn't gone") = []
+{
+    auto cowTerm = "com.eacp.cowterm";
+    auto before = std::vector<RudderContext> {pane("pane:1", "zsh", "fix-login", "/p/web"),
+                                              pane("pane:2", "zsh", "", "/p/notes")};
+    auto after = std::vector<RudderContext> {pane("pane:1", "zsh", "main", "/p/web"),
+                                             pane("pane:2", "zsh", "", "/p/other")};
+
+    check(goneContextKeys(cowTerm, before, after).empty());
+};
+
+auto tIdOnlyKeys = test("Ranking/only contexts with no branch or path are keyed by id alone") = []
+{
+    auto grazer = "audio.pond.grazer";
+    auto contexts = std::vector<RudderContext> {{"3", "GitHub", "", "https://github.com"},
+                                                pane("pane:1", "zsh", "fix-login", ""),
+                                                pane("pane:2", "zsh", "", "/p/notes"),
+                                                {"3", "GitHub again", "", ""}};
+
+    check(idOnlyContextKeys(grazer, contexts)
+          == std::vector<std::string> {"audio.pond.grazer/3"});
+};

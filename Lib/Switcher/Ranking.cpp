@@ -180,6 +180,43 @@ std::string contextKey(const std::string& appId, const RudderContext& context)
     return stableKey(appId, context.branch, context.path, context.id);
 }
 
+std::vector<std::string> goneContextKeys(const std::string& appId,
+                                         const std::vector<RudderContext>& before,
+                                         const std::vector<RudderContext>& after)
+{
+    auto ids = std::unordered_set<std::string> {};
+    auto kept = std::unordered_set<std::string> {};
+
+    for (auto& context: after)
+    {
+        ids.insert(context.id);
+        kept.insert(contextKey(appId, context));
+    }
+
+    auto gone = std::vector<std::string> {};
+
+    for (auto& context: before)
+        if (!ids.contains(context.id))
+            if (auto key = contextKey(appId, context); kept.insert(key).second)
+                gone.push_back(std::move(key));
+
+    return gone;
+}
+
+std::vector<std::string> idOnlyContextKeys(const std::string& appId,
+                                           const std::vector<RudderContext>& contexts)
+{
+    auto seen = std::unordered_set<std::string> {};
+    auto keys = std::vector<std::string> {};
+
+    for (auto& context: contexts)
+        if (context.branch.empty() && context.path.empty())
+            if (auto key = contextKey(appId, context); seen.insert(key).second)
+                keys.push_back(std::move(key));
+
+    return keys;
+}
+
 std::string frecencyKey(const RudderItem& item)
 {
     if (item.kind == "context" || item.kind == "window")

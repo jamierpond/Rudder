@@ -84,3 +84,20 @@ auto tForgetDrops = test("Focus/an app that quits is forgotten") = []
     check(!focus.activated(cowTerm, 1000));
     check(!focus.settle(cowTerm, 1000000));
 };
+
+auto tForgetKeyEndsSpell = test("Focus/a gone context's spell ends: no stamp, no credit") = []
+{
+    auto focus = FocusTracker {};
+    auto key = std::string {"com.eacp.cowterm/branch:fix-login"};
+
+    check(focus.pushed(cowTerm, focusedOn("fix-login"), true, 0) == std::optional {key});
+
+    focus.forgetKey(key);
+
+    check(!focus.activated(cowTerm, 1000));
+    check(!focus.settle(cowTerm, 1000 + FocusTracker::dwellMs));
+
+    // The next push that focuses something starts a spell again.
+    check(focus.pushed(cowTerm, focusedOn("rename"), true, 2000)
+          == std::optional<std::string> {"com.eacp.cowterm/branch:rename"});
+};

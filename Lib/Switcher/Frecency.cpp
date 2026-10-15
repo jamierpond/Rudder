@@ -19,6 +19,11 @@ void FrecencyStore::touch(const std::string& key, std::int64_t atMs, double weig
     entries.doc(key).set({frecency(key, atMs) + weight, atMs});
 }
 
+void FrecencyStore::forget(const std::string& key)
+{
+    entries.remove(key);
+}
+
 double FrecencyStore::frecency(const std::string& key, std::int64_t atMs)
 {
     if (auto entry = entries.get(key))

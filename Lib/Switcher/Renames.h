@@ -28,6 +28,11 @@ struct RenameStore
     // Sets the name, trimmed; an empty (or all-space) name clears it.
     void set(const std::string& key, const std::string& name);
 
+    // Drops the name: its context is gone, and a context that turns up later
+    // on the same key (a reused tab id, a new pane on the branch) starts
+    // with the provider's own title.
+    void forget(const std::string& key);
+
     emberstore::Collection<Rename> names;
 };
 } // namespace rudder

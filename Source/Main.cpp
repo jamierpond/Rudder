@@ -456,6 +456,7 @@ struct RudderApp
 
             backStack.forget(app.id);
             platform::forgetIcon(app.id);
+            forgetContexts(idOnlyContextKeys(app.id, providers.contextsFor(app.id)));
             providers.disconnect(app.id);
             focus.forget(app.id);
         };
@@ -1242,6 +1243,8 @@ struct RudderApp
                       + std::to_string(contexts.size()))
                          .c_str());
             trackFocus(app->second, contexts);
+            forgetContexts(
+                goneContextKeys(app->second, providers.contextsFor(app->second), contexts));
             providers.setContexts(app->second, std::move(contexts));
         };
 
@@ -1261,6 +1264,7 @@ struct RudderApp
 
             logEvent(("provider gone: " + bundleId).c_str());
             providerConnection.erase(bundleId);
+            forgetContexts(idOnlyContextKeys(bundleId, providers.contextsFor(bundleId)));
             providers.disconnect(bundleId);
             focus.forget(bundleId);
         };
@@ -1312,6 +1316,23 @@ struct RudderApp
                 return app.id;
 
         return hello.bundleId;
+    }
+
+    // Contexts that are gone -- closed from Rudder or in their app, expired,
+    // or only ever named by an id their app won't keep -- lose their
+    // frecency, their recency and their rename. Otherwise a context that
+    // turns up on the same key later (Grazer reuses tab ids after a restart)
+    // would inherit them.
+    void forgetContexts(const std::vector<std::string>& keys)
+    {
+        for (auto& key: keys)
+        {
+            logEvent(("forget " + key).c_str());
+            frecency.forget(key);
+            mru.forget(key);
+            renames.forget(key);
+            focus.forgetKey(key);
+        }
     }
 
     // A push may move the provider's focus: that's the user working there.
