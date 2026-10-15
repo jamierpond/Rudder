@@ -19,6 +19,10 @@ Drawn with eacp's GPU component tier (one `ComponentHost`), no web view.
 just build   # configure + build (macOS: Ninja, Windows: the default Visual Studio generator; deps via CPM)
 just run     # build, quit any running Rudder (macOS: and reset its dev Accessibility grant), open it
 just test    # unit tests
+just install # Release build into /Applications/Rudder.app (macOS) or
+             # %LOCALAPPDATA%\Programs\Rudder with a Start Menu shortcut
+             # (Windows), then start it so it starts at login from there
+just update-deps  # refetch eacp@main and the other branch-pinned deps
 ```
 
 Rudder is an agent app: no Dock icon or taskbar button, a menu-bar / tray icon

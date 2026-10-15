@@ -21,6 +21,14 @@ run:
 relaunch:
     node Scripts/run.mjs --relaunch
 
+[doc('Build Release + install (macOS: /Applications/Rudder.app; Windows: %LOCALAPPDATA%\Programs\Rudder) and start it')]
+install:
+    node Scripts/install.mjs
+
+[doc('Refetch branch-pinned deps (eacp@main, ...) in every configured build tree')]
+update-deps:
+    node Scripts/update-deps.mjs
+
 [doc('Delete the build directory')]
 clean:
     node Scripts/clean.mjs
