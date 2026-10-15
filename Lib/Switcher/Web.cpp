@@ -301,37 +301,44 @@ RudderItem webRow(std::string_view query, const WebSettings& settings)
 
 std::vector<RudderItem> rankWithWeb(const std::vector<RudderItem>& all,
                                     const std::string& query,
-                                    const WebSettings& settings)
+                                    const WebSettings& settings,
+                                    const FrecencyFn& frecency,
+                                    const Recency& recency)
 {
     if (trimmed(query).empty())
-        return rankItems(all, query);
+        return rankItems(all, query, frecency, recency);
 
-    auto scored = scoreItems(all, query);
+    auto scored = scoreItems(all, query, frecency);
     auto ranked = std::vector<RudderItem> {};
     auto scores = std::vector<int> {};
 
-    for (auto& [score, item]: scored)
+    for (auto& row: scored)
     {
-        scores.push_back(item.kind == "favourite" ? score - favouriteBoost : score);
-        ranked.push_back(std::move(item));
+        scores.push_back(row.match);
+        ranked.push_back(std::move(row.item));
     }
 
     if (looksLikeAddress(query))
     {
         // Typing an address that is already a favourite or an open tab picks
-        // that row: it reuses what's open rather than opening it again.
+        // that row: it reuses what's open rather than opening it again. With
+        // both, the one used more lately (earlier in `all`) wins.
         auto wanted = normaliseUrl(addressUrl(query));
         auto exact = std::optional<RudderItem> {};
 
         for (auto& item: all)
-            if (item.kind == "favourite" && !item.url.empty() && normaliseUrl(item.url) == wanted)
+        {
+            if (item.kind == "favourite")
             {
-                exact = item;
-                break;
+                if (!item.url.empty() && normaliseUrl(item.url) == wanted)
+                    exact = item;
             }
+            else
+                exact = contextForUrl({item}, wanted);
 
-        if (!exact)
-            exact = contextForUrl(all, wanted);
+            if (exact)
+                break;
+        }
 
         if (exact)
         {

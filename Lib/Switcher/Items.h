@@ -25,14 +25,19 @@ struct RudderContext
     // A provider's place that isn't open yet (protocol open: false).
     bool open = true;
 
-    // The directory it is about (a pane's cwd), matched on but not shown.
+    // The directory it is about (a pane's cwd), matched on (below the title)
+    // but not shown.
     std::string path;
 
     // The context its app is showing now; Esc switches back to it after a
     // preview moved the app elsewhere.
     bool focused = false;
 
-    MIRO_REFLECT(id, title, subtitle, url, kind, open, path, focused)
+    // The git branch checked out at `path` (protocol branch, optional). A
+    // context's most telling name, so matched first.
+    std::string branch;
+
+    MIRO_REFLECT(id, title, subtitle, url, kind, open, path, branch, focused)
 };
 
 // One row in the panel. kind "app" is a running app (id = appId = its bundle
@@ -62,6 +67,11 @@ struct RudderItem
     std::vector<std::string> keywords;
     std::string openWith;
 
+    // A context row's branch and directory, carried from its RudderContext so
+    // frecencyKey can name it the same way whichever pane or place it is.
+    std::string branch;
+    std::string contextPath;
+
     MIRO_REFLECT(kind,
                  id,
                  title,
@@ -73,6 +83,8 @@ struct RudderItem
                  path,
                  url,
                  keywords,
-                 openWith)
+                 openWith,
+                 branch,
+                 contextPath)
 };
 } // namespace rudder

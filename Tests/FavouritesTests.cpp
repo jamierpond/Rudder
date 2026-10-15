@@ -85,21 +85,50 @@ auto tErrorsNameTheEntry = test("Favourites/an error names the favourite") = []
     check(result.error.find("Broken") != std::string::npos);
 };
 
-auto tBrowsingShowsFavouritesFirst = test("Favourites/no query: favourites on top") = []
+auto tBrowsingByRecency = test("Favourites/no query: favourites take their place by recency") = []
 {
-    auto all = favouriteItems(prs());
-    auto apps = std::vector<RudderItem> {app("com.apple.Safari", "Safari"),
-                                         app("audio.pond.grazer", "Grazer")};
-    all.insert(all.end(), apps.begin(), apps.end());
+    auto all = std::vector<RudderItem> {app("com.apple.Safari", "Safari"),
+                                        app("audio.pond.grazer", "Grazer")};
+    auto starred = favouriteItems(prs());
+    all.insert(all.end(), starred.begin(), starred.end());
 
-    auto ranked = rankItems(all, "");
+    // Never used: below the running apps.
+    auto ranked = rankItems(orderByRecency(all, [](const std::string&) { return 0; }), "");
 
     check(ranked.size() == 3);
-    check(ranked.front().kind == "favourite");
+    check(ranked.back().kind == "favourite");
+    check(initialSelection(ranked, "", "com.apple.Safari") == 1);
+    check(initialSelection(ranked, "", "com.other") == 0);
 
-    // Cmd-tab still starts on the previous app, below the favourites.
-    check(initialSelection(ranked, "", "com.apple.Safari") == 2);
-    check(initialSelection(ranked, "", "com.other") == 1);
+    // Used more lately than Grazer: above it.
+    auto key = frecencyKey(starred.front());
+    auto used = orderByRecency(all,
+                               [&](const std::string& k) -> std::int64_t
+                               {
+                                   return k == "com.apple.Safari" ? 30
+                                          : k == key              ? 20
+                                          : k == "audio.pond.grazer" ? 10
+                                                                     : 0;
+                               });
+    ranked = rankItems(used, "");
+
+    check(ranked[0].title == "Safari");
+    check(ranked[1].kind == "favourite");
+    check(ranked[2].title == "Grazer");
+    check(initialSelection(ranked, "", "com.apple.Safari") == 1);
+};
+
+auto tFavouriteDoesntHideApp = test("Favourites/a favourite of an app doesn't hide the closed app") = []
+{
+    auto favourite = Favourite {};
+    favourite.title = "Grazer";
+    favourite.app = "audio.pond.grazer";
+    auto rows = favouriteItems({{favourite}});
+
+    auto merged = mergeInstalled(rows, {app("audio.pond.grazer", "Grazer")});
+
+    check(merged.size() == 2);
+    check(!merged.back().running);
 };
 
 auto tKeywordsMatch = test("Favourites/keywords find a favourite") = []
@@ -109,15 +138,21 @@ auto tKeywordsMatch = test("Favourites/keywords find a favourite") = []
     check(ranked.size() == 1);
 };
 
-auto tFavouritesWin = test("Favourites/a matching favourite outranks an app") = []
+auto tFavouritesRankByMatch
+    = test("Favourites/a favourite ranks by match and frecency, not a flat boost") = []
 {
     auto all = std::vector<RudderItem> {app("com.github.desktop", "PRs")};
     auto favourites = favouriteItems(prs());
     all.insert(all.end(), favourites.begin(), favourites.end());
 
+    // The app's name is the closer match...
     auto ranked = rankItems(all, "prs");
+    check(ranked.size() == 2 && ranked.front().kind == "app");
 
-    check(!ranked.empty() && ranked.front().kind == "favourite");
+    // ...but not by much, so a favourite picked a few times comes first.
+    auto key = frecencyKey(favourites.front());
+    ranked = rankItems(all, "prs", [&](const std::string& k) { return k == key ? 3.0 : 0.0; });
+    check(ranked.size() == 2 && ranked.front().kind == "favourite");
 };
 
 auto tNormalise = test("Favourites/urls compare without fragment or trailing slash")

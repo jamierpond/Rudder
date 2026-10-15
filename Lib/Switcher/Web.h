@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Items.h"
+#include "Ranking.h"
 
 #include <string>
 #include <string_view>
@@ -53,8 +54,8 @@ std::string browserFor(std::string_view openWith, std::string_view browser);
 // character.
 constexpr auto weakScorePerChar = 4;
 
-// Whether the best of `scores` -- raw match scores, favouriteBoost taken
-// off -- is weak for `query`. No scores at all is weak.
+// Whether the best of `scores` -- raw match scores, no frecency bonus -- is
+// weak for `query`. No scores at all is weak.
 bool weakMatch(std::string_view query, const std::vector<int>& scores);
 
 // The row Enter turns into a page: "Open github.com" or
@@ -67,5 +68,7 @@ RudderItem webRow(std::string_view query, const WebSettings& settings);
 // already shows puts that row first instead, with no web row.
 std::vector<RudderItem> rankWithWeb(const std::vector<RudderItem>& all,
                                     const std::string& query,
-                                    const WebSettings& settings);
+                                    const WebSettings& settings,
+                                    const FrecencyFn& frecency = {},
+                                    const Recency& recency = {});
 } // namespace rudder

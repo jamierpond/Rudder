@@ -209,6 +209,18 @@ auto tOpenTabWins = test("Web/an address an open tab shows picks the tab") = []
     check(ranked.front().contextId == "7");
 };
 
+auto tLatestOfFavouriteAndTab = test("Web/an address both a favourite and a tab show picks the one used last") = []
+{
+    auto grazer = app("audio.pond.grazer", "Grazer");
+    grazer.contexts.push_back({"7", "GitHub", "", "https://github.com/"});
+
+    auto tabFirst = std::vector<RudderItem> {grazer, favourite("GitHub", "https://github.com/")};
+    check(rankWithWeb(tabFirst, "github.com", {}).front().kind == "context");
+
+    auto favouriteFirst = std::vector<RudderItem> {favourite("GitHub", "https://github.com/"), grazer};
+    check(rankWithWeb(favouriteFirst, "github.com", {}).front().kind == "favourite");
+};
+
 auto tWebNeverPreviews = test("Web/the web row is never previewed") = []
 {
     auto row = webRow("github.com", {});

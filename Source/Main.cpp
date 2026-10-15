@@ -1,6 +1,7 @@
 #include "BackStack.h"
 #include "CaptureGate.h"
 #include "Favourites.h"
+#include "Frecency.h"
 #include "ContextServer.h"
 #include "Icon.h"
 #include "Keybinding.h"
@@ -196,7 +197,7 @@ struct RudderApp
                 return;
 
             auto chosen = filtered[(std::size_t) index];
-            Threads::callAsync([this, chosen] { openItem(chosen); });
+            Threads::callAsync([this, chosen] { pickItem(chosen); });
         };
         panel.onQuitSelected = [this] { Threads::callAsync([this] { quitSelected(); }); };
         panel.onToggleFavourite = [this]
@@ -769,24 +770,9 @@ struct RudderApp
             allItems.push_back(std::move(item));
         }
 
-        // The app the panel was summoned over is on top whatever its stamp
-        // says, so the previous app is always the second row.
-        allItems = orderByRecency(std::move(allItems),
-                                  [this](const std::string& id)
-                                  {
-                                      return id == frontAppId ? INT64_MAX
-                                                              : mru.lastUsed(id);
-                                  });
+        orderBaseList();
 
-        auto closed = orderByRecency(installedItems,
-                                     [this](const std::string& id)
-                                     { return mru.lastUsed(id); });
-        allItems = mergeInstalled(std::move(allItems), closed);
-
-        auto starred = favouriteItems(favourites);
-        allItems.insert(allItems.begin(), starred.begin(), starred.end());
-
-        filtered = rankWithWeb(allItems, query, webSettings());
+        filtered = rankWithWeb(allItems, query, webSettings(), frecencyLookup(), recencyLookup());
         selected = initialSelection(filtered, query, frontAppId);
         pendingPreview.reset();
         previewedId.clear();
@@ -796,6 +782,35 @@ struct RudderApp
         publishResults();
     }
 
+    // The base list: the running apps and the favourites together, most
+    // recently used first (favourites never used below running apps never
+    // used), then the installed apps that aren't running. Rebuilds the
+    // favourite rows from `favourites` and the closed ones from
+    // installedItems; keeps the running app rows as they are.
+    void orderBaseList()
+    {
+        std::erase_if(allItems,
+                      [](const RudderItem& item)
+                      { return item.kind == "favourite" || !item.running; });
+
+        auto starred = favouriteItems(favourites);
+        allItems.insert(allItems.end(), starred.begin(), starred.end());
+
+        // The app the panel was summoned over is on top whatever its stamp
+        // says, so the previous app is always the second row.
+        allItems = orderByRecency(std::move(allItems),
+                                  [this](const std::string& key)
+                                  {
+                                      return key == frontAppId ? INT64_MAX
+                                                               : mru.lastUsed(key);
+                                  });
+
+        auto closed = orderByRecency(installedItems,
+                                     [this](const std::string& key)
+                                     { return mru.lastUsed(key); });
+        allItems = mergeInstalled(std::move(allItems), closed);
+    }
+
     void setQuery(const std::string& text)
     {
         if (!panelVisible)
@@ -803,7 +818,7 @@ struct RudderApp
 
         query = text;
         logEvent(("query '" + query + "'").c_str());
-        filtered = rankWithWeb(allItems, query, webSettings());
+        filtered = rankWithWeb(allItems, query, webSettings(), frecencyLookup(), recencyLookup());
         selected = initialSelection(filtered, query, frontAppId);
         previewSelection();
         publishResults();
@@ -1006,13 +1021,8 @@ struct RudderApp
     // query.
     void rebuildFavouriteRows()
     {
-        std::erase_if(allItems,
-                      [](const RudderItem& item) { return item.kind == "favourite"; });
-
-        auto starred = favouriteItems(favourites);
-        allItems.insert(allItems.begin(), starred.begin(), starred.end());
-
-        filtered = rankWithWeb(allItems, query, webSettings());
+        orderBaseList();
+        filtered = rankWithWeb(allItems, query, webSettings(), frecencyLookup(), recencyLookup());
         selected = std::clamp(selected, 0, std::max((int) filtered.size() - 1, 0));
         publishResults();
     }
@@ -1166,6 +1176,7 @@ struct RudderApp
                     RudderContext {context.id, context.title, context.subtitle, context.url};
                 converted.open = context.open;
                 converted.path = context.path;
+                converted.branch = context.branch;
                 converted.focused = context.focused;
                 contexts.push_back(std::move(converted));
             }
@@ -1286,17 +1297,22 @@ struct RudderApp
             if (item.appId == appId && item.kind == "app" && item.running)
                 item.contexts = contextsFor(*app);
 
-        if (query.empty())
-            return;
+        rerankKeepingSelection();
+    }
 
+    // The list again (the empty query's too: it lists recent contexts), the
+    // selection staying on the same row where it still exists.
+    void rerankKeepingSelection()
+    {
         auto selectedId = filtered.empty() ? std::string {}
                                            : filtered[(std::size_t) selected].id;
-        filtered = rankWithWeb(allItems, query, webSettings());
+        filtered = rankWithWeb(allItems, query, webSettings(), frecencyLookup(), recencyLookup());
 
         auto again = std::find_if(filtered.begin(),
                                   filtered.end(),
                                   [&](const RudderItem& item) { return item.id == selectedId; });
-        selected = again != filtered.end() ? (int) (again - filtered.begin()) : 0;
+        selected = again != filtered.end() ? (int) (again - filtered.begin())
+                                           : initialSelection(filtered, query, frontAppId);
         publishResults();
     }
 
@@ -1366,7 +1382,45 @@ struct RudderApp
         if (!panelVisible || filtered.empty())
             return;
 
-        openItem(filtered[(std::size_t) selected]);
+        pickItem(filtered[(std::size_t) selected]);
+    }
+
+    // Each row's frecency, all decayed to the same moment.
+    FrecencyFn frecencyLookup()
+    {
+        return [this, now = FrecencyStore::nowMs()](const std::string& key)
+        { return frecency.frecency(key, now); };
+    }
+
+    // The empty query's recency: the app summoned over on top, then by stamp.
+    Recency recencyLookup()
+    {
+        return {[this](const std::string& key)
+                { return key == frontAppId ? INT64_MAX : mru.lastUsed(key); },
+                grazer::MruStore::nowMs(),
+                frontAppId};
+    }
+
+    // Enter or a click on a row: what frecency counts. Not a preview, and not
+    // the tab or app a favourite turns out to open (openItem from
+    // openFavourite), only the row picked. A web row is a fresh query each
+    // time, so it isn't counted.
+    void pickItem(const RudderItem& item)
+    {
+        if (!panelVisible)
+            return;
+
+        if (item.kind != "web")
+            frecency.touch(frecencyKey(item));
+
+        // Apps are stamped when they activate; a favourite and a context
+        // here too, under the same key, so they take their place in the
+        // recency order (a context's provider may report its focus only
+        // after the panel is gone and its app in front).
+        if (item.kind == "favourite" || item.kind == "context")
+            mru.touch(frecencyKey(item));
+
+        openItem(item);
     }
 
     void openItem(const RudderItem& item)
@@ -1570,6 +1624,7 @@ struct RudderApp
     emberstore::Collection<Keybindings> settingsStore {
         durable.collection<Keybindings>("settings")};
     grazer::MruStore mru {atomic};
+    FrecencyStore frecency {atomic};
     emberstore::Document<FavouriteList> favouritesDocument {favouritesPath()};
     FavouriteList favourites;
     // rudder.json's parse error, if any: the footer's standing message.
