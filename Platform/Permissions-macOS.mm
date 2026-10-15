@@ -32,6 +32,44 @@ bool openAccessibilitySettings()
     return url != nil && [NSWorkspace.sharedWorkspace openURL:url];
 }
 
+bool canResetPrivacyGrants()
+{
+    return true;
+}
+
+bool resetPrivacyGrants()
+{
+    // The services Scripts/lib.mjs resets for a dev launch (RUDDER.devResetsPrivacy).
+    static constexpr const char* services[] = {"Accessibility"};
+
+    NSString* bundleId = NSBundle.mainBundle.bundleIdentifier;
+    if (bundleId.length == 0)
+        return false;
+
+    auto ok = true;
+
+    for (const auto* service: services)
+    {
+        NSTask* task = [[NSTask alloc] init];
+        task.executableURL = [NSURL fileURLWithPath:@"/usr/bin/tccutil"];
+        task.arguments = @[@"reset", @(service), bundleId];
+        task.standardOutput = NSFileHandle.fileHandleWithNullDevice;
+        task.standardError = NSFileHandle.fileHandleWithNullDevice;
+
+        NSError* error = nil;
+        if (![task launchAndReturnError:&error])
+        {
+            ok = false;
+            continue;
+        }
+
+        [task waitUntilExit];
+        ok = ok && task.terminationStatus == 0;
+    }
+
+    return ok;
+}
+
 std::string currentAppBundlePath()
 {
     const auto* path = NSBundle.mainBundle.bundlePath.UTF8String;

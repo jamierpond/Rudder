@@ -131,6 +131,14 @@ bool accessibilityTrusted(bool prompt);
 // Privacy & Security > Accessibility in System Settings.
 bool openAccessibilitySettings();
 
+// Whether the unlock screen offers "Reset permissions" (macOS only: Windows
+// has no grants to go stale).
+bool canResetPermissions();
+
+// Forgets Rudder's stale privacy grants, asks for Accessibility again and
+// opens its pane. The caller goes on polling for the grant as before.
+void resetPermissions();
+
 // What the user drags into the Accessibility list to grant Rudder.
 std::string appBundlePath();
 

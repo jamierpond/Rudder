@@ -1275,6 +1275,19 @@ bool openAccessibilitySettings()
     return ui_automation::openAccessibilitySettings();
 }
 
+bool canResetPermissions()
+{
+    return ui_automation::canResetPrivacyGrants();
+}
+
+void resetPermissions()
+{
+    ui_automation::resetPrivacyGrants();
+    // Re-adds Rudder to the list against this binary's signature, switched off.
+    ui_automation::isAccessibilityTrusted(true);
+    ui_automation::openAccessibilitySettings();
+}
+
 std::string appBundlePath()
 {
     return ui_automation::currentAppBundlePath();

@@ -1195,6 +1195,13 @@ bool openAccessibilitySettings()
     return ui_automation::openAccessibilitySettings();
 }
 
+bool canResetPermissions()
+{
+    return ui_automation::canResetPrivacyGrants();
+}
+
+void resetPermissions() {}
+
 std::string appBundlePath()
 {
     return ui_automation::currentAppBundlePath();

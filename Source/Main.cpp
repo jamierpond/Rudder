@@ -229,6 +229,15 @@ struct RudderApp
 
         panel.onRequestAccessibility = [] { platform::openAccessibilitySettings(); };
 
+        // A stale grant (on in the list, pinned to an old signature) never
+        // turns into trust: forget it and ask again. The gate keeps polling.
+        panel.setPermissionsResettable(platform::canResetPermissions());
+        panel.onResetPermissions = []
+        {
+            logEvent("resetting permissions");
+            platform::resetPermissions();
+        };
+
         // Starting the drag opens the pane, so the list is there to drop on.
         panel.onUnlockDrag = [this]
         {
@@ -1664,6 +1673,7 @@ int snapshot(const std::string& directory)
             };
 
             save("panel.png");
+            panel.setPermissionsResettable(platform::canResetPermissions());
             panel.setAccessibilityGate(true);
             save("unlock.png");
         });

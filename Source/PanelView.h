@@ -170,6 +170,9 @@ public:
     DragTile tile;
     eacp::UI::Button openSettings {"Open Accessibility settings"};
 
+    // Hidden where there are no grants to reset (Windows).
+    eacp::UI::Button resetPermissions {"Reset permissions"};
+
 private:
     eacp::Graphics::Rect card() const;
 };
@@ -244,6 +247,10 @@ public:
     std::function<void(const std::string& action, const std::string& chord)>
         onCaptureEnd = [](auto&, auto&) {};
     std::function<void()> onRequestAccessibility = [] {};
+
+    // The overlay's "Reset permissions": only offered when `can` is true.
+    void setPermissionsResettable(bool can);
+    std::function<void()> onResetPermissions = [] {};
 
     // The overlay's icon was pressed: start the bundle drag, open the pane.
     std::function<void()> onUnlockDrag = [] {};

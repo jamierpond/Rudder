@@ -371,21 +371,23 @@ void DragTile::mouseDown(const UI::MouseEvent&)
 AccessibilityOverlay::AccessibilityOverlay()
 {
     setInterceptsMouseClicks(true);
-    addChildren({tile, openSettings});
+    addChildren({tile, openSettings, resetPermissions});
 }
 
 Rect AccessibilityOverlay::card() const
 {
     auto bounds = getLocalBounds();
-    return {(bounds.w - 500.f) / 2.f, (bounds.h - 364.f) / 2.f, 500.f, 364.f};
+    return {(bounds.w - 500.f) / 2.f, (bounds.h - 384.f) / 2.f, 500.f, 384.f};
 }
 
 void AccessibilityOverlay::resized()
 {
     auto area = card();
     tile.setBounds({area.x + (area.w - 220.f) / 2.f, area.y + 92.f, 220.f, 112.f});
-    openSettings.setBounds(
-        {area.x + (area.w - 220.f) / 2.f, area.bottom() - 52.f, 220.f, 28.f});
+    auto buttons = resetPermissions.isVisible() ? 2.f : 1.f;
+    auto left = area.x + (area.w - (220.f * buttons + 12.f * (buttons - 1.f))) / 2.f;
+    openSettings.setBounds({left, area.bottom() - 52.f, 220.f, 28.f});
+    resetPermissions.setBounds({left + 232.f, area.bottom() - 52.f, 220.f, 28.f});
 }
 
 void AccessibilityOverlay::paint(UI::Graphics& g)
@@ -421,6 +423,9 @@ void AccessibilityOverlay::paint(UI::Graphics& g)
     step("    Privacy & Security › Accessibility.", 15.f);
     step("2. Drop it into the list, or press + there and choose Rudder.", 32.f);
     step("3. Turn Rudder on. This goes away by itself.", 49.f);
+
+    if (resetPermissions.isVisible())
+        step("Already on but still locked? Reset permissions, then turn it on again.", 72.f);
 }
 
 PanelRoot::PanelRoot()
@@ -470,6 +475,13 @@ PanelView::PanelView()
 
     root.overlay.tile.onDragStart = [this] { onUnlockDrag(); };
     root.overlay.openSettings.onClick = [this] { onRequestAccessibility(); };
+    root.overlay.resetPermissions.onClick = [this] { onResetPermissions(); };
+}
+
+void PanelView::setPermissionsResettable(bool can)
+{
+    root.overlay.resetPermissions.setVisible(can);
+    root.overlay.resized();
 }
 
 void PanelView::setAccessibilityGate(bool show)

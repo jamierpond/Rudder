@@ -21,6 +21,16 @@ bool openAccessibilitySettings()
     return false;
 }
 
+bool canResetPrivacyGrants()
+{
+    return false;
+}
+
+bool resetPrivacyGrants()
+{
+    return true;
+}
+
 std::string currentAppBundlePath()
 {
     return {};
