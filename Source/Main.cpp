@@ -1,6 +1,7 @@
 #include "BackStack.h"
 #include "CaptureGate.h"
 #include "Favourites.h"
+#include "Focus.h"
 #include "Frecency.h"
 #include "ContextServer.h"
 #include "Icon.h"
@@ -434,6 +435,7 @@ struct RudderApp
             }
 
             recordActivation(app.id);
+            settleFocusLater();
         };
 
         // Rendering the icon now keeps the next summon free of it.
@@ -448,6 +450,7 @@ struct RudderApp
             backStack.forget(app.id);
             platform::forgetIcon(app.id);
             providers.disconnect(app.id);
+            focus.forget(app.id);
         };
 
         platform::observeWorkspace(std::move(events));
@@ -480,9 +483,17 @@ struct RudderApp
             });
     }
 
+    // Every activation, through Rudder or not: the app and the context it
+    // shows (a CowTerm pane) are stamped at the same moment, so the pane sits
+    // just above its app in the empty query's list.
     void recordActivation(const std::string& appId)
     {
-        mru.touch(appId);
+        auto now = grazer::MruStore::nowMs();
+        mru.touch(appId, now);
+
+        if (auto key = focus.activated(appId, now))
+            mru.touch(*key, now);
+
         backStack.record(appId);
         logStack("activated " + appId);
     }
@@ -1184,6 +1195,7 @@ struct RudderApp
             logEvent(("provider contexts: " + app->second + " "
                       + std::to_string(contexts.size()))
                          .c_str());
+            trackFocus(app->second, contexts);
             providers.setContexts(app->second, std::move(contexts));
         };
 
@@ -1204,6 +1216,7 @@ struct RudderApp
             logEvent(("provider gone: " + bundleId).c_str());
             providerConnection.erase(bundleId);
             providers.disconnect(bundleId);
+            focus.forget(bundleId);
         };
 
         providers.onChanged = [this] { refreshContexts(); };
@@ -1245,6 +1258,45 @@ struct RudderApp
                 return app.id;
 
         return hello.bundleId;
+    }
+
+    // A push may move the provider's focus: that's the user working there.
+    // Never while the panel is up -- previews move it, and only a pick counts
+    // then; Esc's undo puts it back to what the tracker last saw.
+    void trackFocus(const std::string& appId, const std::vector<RudderContext>& contexts)
+    {
+        if (panelVisible)
+            return;
+
+        auto now = FrecencyStore::nowMs();
+        auto frontmost = platform::frontmostApp().id == appId;
+
+        if (auto key = focus.pushed(appId, contexts, frontmost, now))
+        {
+            logEvent(("focus -> " + *key).c_str());
+            mru.touch(*key, now);
+            settleFocusLater();
+        }
+    }
+
+    // A dwell later: the front app's focused context, if it held, earns its
+    // fraction of a pick.
+    void settleFocusLater()
+    {
+        Threads::callAfter(Time::MS {FocusTracker::dwellMs + 250},
+                           [this]
+                           {
+                               if (panelVisible)
+                                   return;
+
+                               auto now = FrecencyStore::nowMs();
+
+                               if (auto key = focus.settle(platform::frontmostApp().id, now))
+                               {
+                                   logEvent(("focus held: " + *key).c_str());
+                                   frecency.touch(*key, now, FocusTracker::focusWeight);
+                               }
+                           });
     }
 
     // A provider pushed or went away while the panel is up: every running
@@ -1625,6 +1677,7 @@ struct RudderApp
         durable.collection<Keybindings>("settings")};
     grazer::MruStore mru {atomic};
     FrecencyStore frecency {atomic};
+    FocusTracker focus;
     emberstore::Document<FavouriteList> favouritesDocument {favouritesPath()};
     FavouriteList favourites;
     // rudder.json's parse error, if any: the footer's standing message.
