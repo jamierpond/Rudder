@@ -195,11 +195,6 @@ std::string handlerFor(const std::string& url, const std::string& openWith);
 // Launches (and activates) the app at `path`.
 bool launchApp(const std::string& path);
 
-// Whether macOS itself has an enabled shortcut on this chord (System Settings
-// > Keyboard > Keyboard Shortcuts). The system wins those, so binding one
-// would be a hotkey that never fires.
-bool isSystemShortcut(std::uint16_t keyCode, const eacp::Graphics::ModifierKeys& modifiers);
-
 // Tells provider apps a (re)started Rudder is listening, so they reconnect:
 // "rudder.started" (RudderProtocol.h).
 void announceStarted();

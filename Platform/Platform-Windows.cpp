@@ -26,13 +26,6 @@
 #include <thread>
 #include <utility>
 
-namespace eacp::Graphics
-{
-// eacp's own map from its (macOS) key codes to Windows virtual keys, the one
-// GlobalHotKey registers with.
-int virtualKeyFromKeyCode(uint16_t keyCode);
-} // namespace eacp::Graphics
-
 namespace rudder::platform
 {
 namespace
@@ -1347,37 +1340,6 @@ std::string handlerFor(const std::string& url, const std::string& openWith)
 bool launchApp(const std::string& path)
 {
     return shellOpen(widen(path));
-}
-
-// Asking for the chord is the test: RegisterHotKey refuses one the shell or
-// another app already holds, which is exactly a hotkey that would never
-// fire. Rudder's own are unregistered before this is asked.
-bool isSystemShortcut(std::uint16_t keyCode,
-                      const eacp::Graphics::ModifierKeys& modifiers)
-{
-    auto key = eacp::Graphics::virtualKeyFromKeyCode(keyCode);
-
-    if (key == 0)
-        return false;
-
-    auto flags = UINT {MOD_NOREPEAT};
-
-    if (modifiers.shift)
-        flags |= MOD_SHIFT;
-    if (modifiers.control)
-        flags |= MOD_CONTROL;
-    if (modifiers.alt)
-        flags |= MOD_ALT;
-    if (modifiers.command)
-        flags |= MOD_WIN;
-
-    constexpr auto probeId = 0xBFFF;
-
-    if (!RegisterHotKey(nullptr, probeId, flags, (UINT) key))
-        return GetLastError() == ERROR_HOTKEY_ALREADY_REGISTERED;
-
-    UnregisterHotKey(nullptr, probeId);
-    return false;
 }
 
 namespace

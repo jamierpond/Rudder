@@ -296,7 +296,7 @@ struct RudderApp
 
         for (auto* text: {&bindings.summon, &bindings.back})
             if (auto chord = parseChord(*text);
-                chord && platform::isSystemShortcut(*keyCodeFor(chord->key), modifiersOf(*chord)))
+                chord && !GlobalHotKey::isAvailable(modifiersOf(*chord), *keyCodeFor(chord->key)))
                 logEvent(("hotkey clashes with a system shortcut: " + *text).c_str());
 
         if (auto chord = parseChord(bindings.summon))
@@ -347,8 +347,10 @@ struct RudderApp
 
         // Quit and favourite only act inside the panel, where Rudder has the
         // keyboard; the two global hotkeys must not be ones the OS keeps.
+        // Recording unregistered Rudder's own (setCapturing), so the chord
+        // bound now reads as free and can be kept.
         if (action != "quit" && action != "favourite"
-            && platform::isSystemShortcut(*keyCodeFor(chord->key), modifiersOf(*chord)))
+            && !GlobalHotKey::isAvailable(modifiersOf(*chord), *keyCodeFor(chord->key)))
         {
             if constexpr (eacp::Platform::isWindows())
                 settingsError = "Windows or another app already uses "
