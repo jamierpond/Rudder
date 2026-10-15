@@ -10,7 +10,7 @@
 // build last claimed it.
 //
 // The Release tree is always reconfigured, so CPM refetches branch-pinned
-// packages (eacp@main) and the install has the latest of them.
+// packages (eacp, emberstore) and the install has the latest of them.
 import { spawn } from 'node:child_process';
 import { copyFileSync, existsSync, mkdirSync, renameSync, rmSync } from 'node:fs';
 import { join } from 'node:path';

@@ -22,7 +22,7 @@ just test    # unit tests
 just install # Release build into /Applications/Rudder.app (macOS) or
              # %LOCALAPPDATA%\Programs\Rudder with a Start Menu shortcut
              # (Windows), then start it so it starts at login from there
-just update-deps  # refetch eacp@main and the other branch-pinned deps
+just update-deps  # refetch eacp and the other branch-pinned deps
 ```
 
 Rudder is an agent app: no Dock icon or taskbar button, a menu-bar / tray icon

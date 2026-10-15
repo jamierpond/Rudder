@@ -13,7 +13,7 @@
 // overlay).
 //
 // The Release tree is always reconfigured, so CPM refetches branch-pinned
-// packages (eacp@main) and the install has the latest of them.
+// packages (eacp, emberstore) and the install has the latest of them.
 import { execFileSync } from 'node:child_process';
 import { existsSync, readdirSync } from 'node:fs';
 import { rm, rename } from 'node:fs/promises';

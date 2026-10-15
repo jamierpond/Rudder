@@ -1,4 +1,4 @@
-// Refetch branch-pinned CPM packages (eacp@main, emberstore@main, ...) in
+// Refetch branch-pinned CPM packages (eacp, emberstore, ...) in
 // every configured build tree. Re-running configure is what makes
 // FetchContent's update step fetch and check out the branch's new head;
 // nothing is built, so a running Rudder isn't touched. The next `just build`

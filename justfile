@@ -25,7 +25,7 @@ relaunch:
 install:
     node Scripts/install.mjs
 
-[doc('Refetch branch-pinned deps (eacp@main, ...) in every configured build tree')]
+[doc('Refetch branch-pinned deps (eacp, emberstore, ...) in every configured build tree')]
 update-deps:
     node Scripts/update-deps.mjs
 

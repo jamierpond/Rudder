@@ -31,10 +31,14 @@ include(cmake/CPM.cmake)
 
 # Work against a local eacp checkout with:
 #   cmake -B build -DCPM_eacp_SOURCE=$HOME/projects/eacp
+#
+# jp/windows-apps is develop plus two open PRs Rudder needs on Windows:
+# #141 (keys reach the focused view; charactersIgnoringModifiers on Windows)
+# and #143 (GlobalHotKey::isAvailable). Move back to develop once they merge.
 CPMAddPackage(
         NAME eacp
-        GITHUB_REPOSITORY jamierpond/eacp
-        GIT_TAG main
+        GITHUB_REPOSITORY eyalamirmusic/eacp
+        GIT_TAG jp/windows-apps
 )
 
 # Local persistence (Firestore-flavoured JSON documents). Must come after
