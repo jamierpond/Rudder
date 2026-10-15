@@ -30,7 +30,7 @@ auto tContextsRoundTrip = test("Protocol/contexts keep every field") = []
     auto sent = Contexts {{{"3", "GitHub", "https://github.com", "https://github.com"},
                            {"4", "Hacker \"News\"\n", "", ""},
                            {"place:/Users/j/projects/tamber-web", "tamber-web", "", "", false},
-                           {"pane:9", "claude", "Tab 3", "", true, "/Users/j/projects/Grazer", true}}};
+                           {"pane:9", "claude", "Tab 3", "", true, "/Users/j/projects/Grazer", true, "main"}}};
     auto line = encode(sent);
     auto message = decode(line.substr(0, line.size() - 1));
     auto* received = message ? std::get_if<Contexts>(&*message) : nullptr;
@@ -82,6 +82,7 @@ auto tOptionalFields = test("Protocol/subtitle and url may be left out") = []
     {
         check(contexts->contexts.front().url.empty());
         check(contexts->contexts.front().path.empty());
+        check(contexts->contexts.front().branch.empty());
         check(contexts->contexts.front().open);
         check(!contexts->contexts.front().focused);
     }
