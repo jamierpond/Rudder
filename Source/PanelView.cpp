@@ -47,6 +47,16 @@ void ResultsList::setItems(const std::vector<RudderItem>& newItems, int newSelec
     repaint();
 }
 
+void ResultsList::setEditing(const std::optional<Line>& line, bool allSelected)
+{
+    if (!line)
+        editScroll = 0.f;
+
+    editing = line;
+    editingAllSelected = line && allSelected;
+    repaint();
+}
+
 void ResultsList::scrollToSelection()
 {
     auto top = (float) selected * rowHeight;
@@ -131,11 +141,58 @@ void ResultsList::paint(UI::Graphics& g)
         g.setColour(item.running ? text : Color(1.f, 1.f, 1.f, 0.7f));
         g.setFontSize(14.f);
 
+        auto titleArea = item.subtitle.empty() ? textArea
+                                               : textArea.withHeight(rowHeight * 0.62f);
+        auto renaming = editing && index == selected;
+        auto& title = renaming ? editing->text : item.title;
+
+        // Renaming: the title is the editor, framed, with a caret.
+        if (renaming)
+        {
+            auto box = Rect {titleArea.x - 4.f,
+                             titleArea.y + titleArea.h / 2.f - 10.f,
+                             titleArea.w + 8.f,
+                             20.f};
+            g.setColour(Color(0.f, 0.f, 0.f, 0.35f));
+            g.fillRoundedRect(box, 4.f);
+            g.setColour(accent);
+            g.drawRoundedRect(box, 4.f, 1.f);
+
+            // A title wider than the box scrolls, so the caret and what's
+            // typed at it stay in view (it starts at the end of the title).
+            auto cursor = std::clamp(editing->cursor, 0, (int) title.size());
+            auto caret = g.measureText(title.substr(0, (std::size_t) cursor));
+            auto width = g.measureText(title);
+            auto visible = titleArea.w - 2.f;
+            editScroll = line::scrollToCaret(caret, width, visible, editScroll);
+
+            auto x = titleArea.x - editScroll;
+
+            g.saveState();
+            g.reduceClipRegion({titleArea.x, box.y, titleArea.w, box.h});
+            if (editingAllSelected)
+            {
+                g.setColour(accent.withAlpha(0.45f));
+                g.fillRect({x, box.y + 3.f, width, box.h - 6.f});
+            }
+            else
+                g.fillRect({x + caret, box.y + 3.f, 1.5f, box.h - 6.f});
+
+            g.setColour(text);
+            g.drawText(title, {x, titleArea.y, width + 4.f, titleArea.h});
+            g.restoreState();
+        }
+
         if (item.subtitle.empty())
-            g.drawText(item.title, textArea);
+        {
+            if (!renaming)
+                g.drawText(title, textArea);
+        }
         else
         {
-            g.drawText(item.title, textArea.withHeight(rowHeight * 0.62f));
+            if (!renaming)
+                g.drawText(title, titleArea);
+
             g.setColour(dimText);
             g.setFontSize(11.f);
             g.drawText(item.subtitle,
@@ -282,6 +339,7 @@ SettingsPage::SettingsPage()
                          &backCaption,
                          &quitCaption,
                          &favouriteCaption,
+                         &renameCaption,
                          &accessibilityCaption})
         caption->setColour(text);
 
@@ -297,6 +355,8 @@ SettingsPage::SettingsPage()
                  quitChord,
                  favouriteCaption,
                  favouriteChord,
+                 renameCaption,
+                 renameChord,
                  favouritesPath,
                  error,
                  accessibilityCaption,
@@ -322,6 +382,7 @@ void SettingsPage::resized()
     row(backCaption, backChord);
     row(quitCaption, quitChord);
     row(favouriteCaption, favouriteChord);
+    row(renameCaption, renameChord);
     row(accessibilityCaption, accessibility);
     favouritesPath.setBounds(area.removeFromTop(22.f));
     error.setBounds(area.removeFromTop(22.f));
@@ -470,6 +531,7 @@ PanelView::PanelView()
     settings.backChord.onClick = [this] { startCapture("back"); };
     settings.quitChord.onClick = [this] { startCapture("quit"); };
     settings.favouriteChord.onClick = [this] { startCapture("favourite"); };
+    settings.renameChord.onClick = [this] { startCapture("rename"); };
     settings.accessibility.onClick = [this] { onRequestAccessibility(); };
     settings.done.onClick = [this] { onCloseSettings(); };
 
@@ -499,6 +561,7 @@ void PanelView::setAccessibilityGate(bool show)
 void PanelView::reset(bool showSettings)
 {
     capturing.clear();
+    stopRenaming();
     root.switcher.query.setText({});
     showPage(showSettings);
 }
@@ -539,6 +602,7 @@ void PanelView::setSettings(const SettingsModel& model)
     settings.quitChord.setText(capturing == "quit" ? "Press keys…" : model.quitLabel);
     settings.favouriteChord.setText(capturing == "favourite" ? "Press keys…"
                                                              : model.favouriteLabel);
+    settings.renameChord.setText(capturing == "rename" ? "Press keys…" : model.renameLabel);
     settings.favouritesPath.setText("Favourites file: " + model.favouritesPath);
     settings.error.setText(model.error);
     settings.accessibility.setText(model.accessibilityTrusted ? "Allowed" : "Allow…");
@@ -570,8 +634,8 @@ void PanelView::updateFooter()
 
     footer.setColour(dimText);
     footer.setText(model.summonLabel + " switch   ·   " + model.backLabel + " back   ·   "
-                   + model.favouriteLabel + " favourite   ·   " + model.quitLabel
-                   + " quit app");
+                   + model.favouriteLabel + " favourite   ·   " + model.renameLabel
+                   + " rename   ·   " + model.quitLabel + " quit app");
 }
 
 void PanelView::startCapture(const std::string& action)
@@ -616,20 +680,37 @@ void PanelView::render(GPU::Frame& frame)
     onFrame();
 }
 
-bool PanelView::editQuery(const Graphics::KeyEvent& event)
+namespace
+{
+// fzf's emacs keys, for the query field and the rename editor alike.
+std::optional<Line> emacsEdit(const Line& current, const Graphics::KeyEvent& event)
 {
     using namespace Graphics;
 
-    auto& query = root.switcher.query;
     auto& mods = event.modifiers;
 
-    if (mods.command || mods.shift)
-        return false;
+    if (mods.shift)
+        return std::nullopt;
 
-    auto current = Line {query.getText(), query.getCaretPosition()};
     auto edited = std::optional<Line> {};
 
-    if (mods.control && !mods.alt)
+    // The Cocoa text field's line keys, which browsers honour: cmd+backspace
+    // clears to the start, cmd+delete to the end, cmd+arrows jump there.
+    if (mods.command)
+    {
+        if (mods.control || mods.alt)
+            return std::nullopt;
+
+        switch (event.keyCode)
+        {
+            case KeyCode::Delete: edited = line::deleteToStart(current); break;
+            case KeyCode::ForwardDelete: edited = line::deleteToEnd(current); break;
+            case KeyCode::LeftArrow: edited = line::start(current); break;
+            case KeyCode::RightArrow: edited = line::end(current); break;
+            default: break;
+        }
+    }
+    else if (mods.control && !mods.alt)
     {
         switch (event.keyCode)
         {
@@ -652,9 +733,43 @@ bool PanelView::editQuery(const Graphics::KeyEvent& event)
             case KeyCode::B: edited = line::wordLeft(current); break;
             case KeyCode::F: edited = line::wordRight(current); break;
             case KeyCode::Delete: edited = line::deleteWord(current); break;
+            case KeyCode::LeftArrow: edited = line::wordLeft(current); break;
+            case KeyCode::RightArrow: edited = line::wordRight(current); break;
             default: break;
         }
     }
+
+    return edited;
+}
+
+// What a key press types, if anything: no control characters, and none of
+// the private-use code points macOS gives arrows and function keys.
+std::optional<std::string> typedText(const Graphics::KeyEvent& event)
+{
+    auto& mods = event.modifiers;
+
+    if (mods.command || mods.control || event.characters.empty())
+        return std::nullopt;
+
+    for (auto c: event.characters)
+        if ((unsigned char) c < 0x20 || c == 0x7f)
+            return std::nullopt;
+
+    auto& text = event.characters;
+
+    if (text.size() >= 3 && (unsigned char) text[0] == 0xEF
+        && (unsigned char) text[1] >= 0x9C && (unsigned char) text[1] <= 0xA3)
+        return std::nullopt;
+
+    return text;
+}
+} // namespace
+
+bool PanelView::editQuery(const Graphics::KeyEvent& event)
+{
+    auto& query = root.switcher.query;
+    auto current = Line {query.getText(), query.getCaretPosition()};
+    auto edited = emacsEdit(current, event);
 
     if (!edited)
         return false;
@@ -665,6 +780,74 @@ bool PanelView::editQuery(const Graphics::KeyEvent& event)
 
     query.setCaretPosition(edited->cursor);
     return true;
+}
+
+void PanelView::stopRenaming()
+{
+    renaming.reset();
+    renameAllSelected = false;
+    root.switcher.list.setEditing(std::nullopt);
+}
+
+void PanelView::editRename(const Graphics::KeyEvent& event)
+{
+    using namespace Graphics;
+
+    auto key = event.keyCode;
+    auto plain = !event.modifiers.command && !event.modifiers.control
+                 && !event.modifiers.alt;
+
+    if (key == KeyCode::Escape)
+    {
+        stopRenaming();
+        return;
+    }
+
+    if (key == KeyCode::Return)
+    {
+        auto name = renaming->text;
+        stopRenaming();
+        onRename(name);
+        return;
+    }
+
+    auto edited = emacsEdit(*renaming, event);
+
+    if (!edited && plain)
+    {
+        if (key == KeyCode::Delete)
+            edited = line::backspace(*renaming);
+        else if (key == KeyCode::ForwardDelete)
+            edited = line::deleteForward(*renaming);
+        else if (key == KeyCode::LeftArrow)
+            edited = line::left(*renaming);
+        else if (key == KeyCode::RightArrow)
+            edited = line::right(*renaming);
+    }
+
+    auto typed = std::optional<std::string> {};
+
+    if (!edited && !event.modifiers.command && !event.modifiers.control)
+        if ((typed = typedText(event)))
+            edited = line::insert(*renaming, *typed);
+
+    if (!edited)
+        return;
+
+    // The whole title is selected: what's typed replaces it, a deletion
+    // clears it, a cursor move just drops the selection.
+    if (renameAllSelected)
+    {
+        if (typed)
+            edited = Line {*typed, (int) typed->size()};
+        else if (edited->text.size() < renaming->text.size())
+            edited = Line {};
+
+        renameAllSelected = false;
+    }
+
+    renaming = *edited;
+    root.switcher.list.setEditing(renaming, renameAllSelected);
 }
 
 void PanelView::keyDown(const Graphics::KeyEvent& event)
@@ -704,8 +887,21 @@ void PanelView::keyDown(const Graphics::KeyEvent& event)
     auto& mods = event.modifiers;
 
     auto favourite = parseChord(settingsModel.favourite);
+    auto rename = parseChord(settingsModel.rename);
 
-    if (quit && matchesChord(*quit, key, mods.control, mods.alt, mods.shift, mods.command))
+    if (renaming)
+        editRename(event);
+    else if (rename
+             && matchesChord(*rename, key, mods.control, mods.alt, mods.shift, mods.command))
+    {
+        if (auto title = onRenameStart())
+        {
+            renaming = Line {*title, (int) title->size()};
+            renameAllSelected = !title->empty();
+            root.switcher.list.setEditing(renaming, renameAllSelected);
+        }
+    }
+    else if (quit && matchesChord(*quit, key, mods.control, mods.alt, mods.shift, mods.command))
         onQuitSelected();
     else if (favourite
              && matchesChord(*favourite, key, mods.control, mods.alt, mods.shift, mods.command))

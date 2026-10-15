@@ -175,4 +175,23 @@ Line deleteToEnd(Line line)
     auto size = (int) line.text.size();
     return erase(std::move(line), at, size);
 }
+
+Line insert(Line line, const std::string& text)
+{
+    auto at = clampCursor(line);
+    line.text.insert((std::size_t) at, text);
+    line.cursor = at + (int) text.size();
+    return line;
+}
+
+float scrollToCaret(float caret, float textWidth, float visible, float scroll)
+{
+    if (caret - scroll > visible)
+        scroll = caret - visible;
+
+    if (caret < scroll)
+        scroll = caret;
+
+    return std::clamp(scroll, 0.f, std::max(0.f, textWidth - visible));
+}
 } // namespace rudder::line

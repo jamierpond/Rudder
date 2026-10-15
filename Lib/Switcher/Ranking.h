@@ -16,7 +16,7 @@ using LastUsedFn = std::function<std::int64_t(const std::string& key)>;
 // picked.
 using FrecencyFn = std::function<double(const std::string& key)>;
 
-// What a context is remembered by -- its frecency, its recency --
+// What a context is remembered by -- its frecency, its recency, its rename --
 // stable across shells and restarts, where a provider's id isn't (CowTerm's
 // pane ids are new for every shell): appId + "/branch:" + branch when it has
 // one, else appId + "/path:" + its directory, else appId + "/" + its id. A
@@ -93,7 +93,7 @@ std::vector<RudderItem> browseItems(const std::vector<RudderItem>& all,
 // or without it the running apps and the favourites in `all`'s order (by
 // recency) -- the switcher, not a launcher of hundreds. Otherwise fuzzy-rank the app titles
 // together with every app's contexts (the start of the query may name the
-// app, the rest matches the context's branch,
+// app, the rest matches the context's branch and the name the user gave it,
 // then its title and url, then its directory's
 // name, subtitle and path; a context matched by its app's name alone ranks
 // below the app), plus each row's frecencyBonus, each

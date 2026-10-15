@@ -12,6 +12,7 @@
 #include "Providers.h"
 #include "QuickWindow.h"
 #include "Ranking.h"
+#include "Renames.h"
 #include "Web.h"
 
 #include <eacp/Core/App/LoginItem.h>
@@ -203,6 +204,9 @@ struct RudderApp
         panel.onQuitSelected = [this] { Threads::callAsync([this] { quitSelected(); }); };
         panel.onToggleFavourite = [this]
         { Threads::callAsync([this] { toggleFavouriteSelected(); }); };
+        panel.onRenameStart = [this] { return renamableSelection(); };
+        panel.onRename = [this](const std::string& name)
+        { Threads::callAsync([this, name] { renameSelected(name); }); };
 
         panel.onCancel = [this]
         {
@@ -347,7 +351,8 @@ struct RudderApp
         for (auto& [name, bound]: {std::pair {"summon", &bindings.summon},
                                    std::pair {"back", &bindings.back},
                                    std::pair {"quit", &bindings.quit},
-                                   std::pair {"favourite", &bindings.favourite}})
+                                   std::pair {"favourite", &bindings.favourite},
+                                   std::pair {"rename", &bindings.rename}})
         {
             if (action != name && *bound == canonical)
             {
@@ -356,11 +361,11 @@ struct RudderApp
             }
         }
 
-        // Quit and favourite only act inside the panel, where Rudder has the
+        // Quit, favourite and rename only act inside the panel, where Rudder has the
         // keyboard; the two global hotkeys must not be ones the OS keeps.
         // Recording unregistered Rudder's own (setCapturing), so the chord
         // bound now reads as free and can be kept.
-        if (action != "quit" && action != "favourite"
+        if (action != "quit" && action != "favourite" && action != "rename"
             && !GlobalHotKey::isAvailable(modifiersOf(*chord), *keyCodeFor(chord->key)))
         {
             if constexpr (eacp::Platform::isWindows())
@@ -380,6 +385,8 @@ struct RudderApp
             bindings.quit = canonical;
         else if (action == "favourite")
             bindings.favourite = canonical;
+        else if (action == "rename")
+            bindings.rename = canonical;
 
         settingsStore.doc(keybindingsDoc).set(bindings);
 
@@ -1038,6 +1045,45 @@ struct RudderApp
         publishResults();
     }
 
+    // The rename binding: only a provider's context can be renamed. The
+    // selected row's title to start the editor from, or nothing.
+    std::optional<std::string> renamableSelection()
+    {
+        if (!panelVisible || filtered.empty())
+            return std::nullopt;
+
+        auto& item = filtered[(std::size_t) selected];
+
+        if (item.kind != "context")
+            return std::nullopt;
+
+        return item.title;
+    }
+
+    // The editor's Enter: name the selection (empty clears the name), keyed
+    // so it sticks to the branch or directory, not this one pane.
+    void renameSelected(const std::string& name)
+    {
+        if (!panelVisible || filtered.empty())
+            return;
+
+        auto& item = filtered[(std::size_t) selected];
+
+        if (item.kind != "context")
+            return;
+
+        auto key = frecencyKey(item);
+        renames.set(key, name);
+        logEvent(("rename " + key + " -> '" + renames.nameFor(key) + "'").c_str());
+
+        for (auto& app: running)
+            for (auto& row: allItems)
+                if (row.kind == "app" && row.running && row.appId == app.id)
+                    row.contexts = contextsFor(app);
+
+        rerankKeepingSelection();
+    }
+
     // The favourite binding: star the selection, or unstar a favourite.
     void toggleFavouriteSelected()
     {
@@ -1316,6 +1362,9 @@ struct RudderApp
     {
         auto contexts = providers.contextsFor(app.id);
 
+        for (auto& context: contexts)
+            context.name = renames.nameFor(contextKey(app.id, context));
+
         for (auto& window: platform::cachedWindows(app))
         {
             auto context = RudderContext {};
@@ -1576,8 +1625,10 @@ struct RudderApp
                            label(bindings.back),
                            label(bindings.quit),
                            label(bindings.favourite),
+                           label(bindings.rename),
                            bindings.quit,
                            bindings.favourite,
+                           bindings.rename,
                            favouritesPath().str(),
                            platform::accessibilityTrusted(false),
                            settingsError});
@@ -1677,6 +1728,7 @@ struct RudderApp
         durable.collection<Keybindings>("settings")};
     grazer::MruStore mru {atomic};
     FrecencyStore frecency {atomic};
+    RenameStore renames {durable};
     FocusTracker focus;
     emberstore::Document<FavouriteList> favouritesDocument {favouritesPath()};
     FavouriteList favourites;
@@ -1763,7 +1815,7 @@ int snapshot(const std::string& directory)
             panel.setBounds({0.f, 0.f, 640.f, 420.f});
             panel.resized();
             panel.setSettings(
-                {"⌥Space", "⌥`", "⌃Q", "⌘D", "control+q", "command+d", "", true, {}});
+                {"⌥Space", "⌥`", "⌃Q", "⌘D", "⌃R", "control+q", "command+d", "control+r", "", true, {}});
 
             auto selected = items.size() > 1 ? 1 : 0;
             auto windows = selected < (int) apps.size()

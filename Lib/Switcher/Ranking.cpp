@@ -20,6 +20,14 @@ RudderItem contextRow(const RudderItem& app, const RudderContext& context)
     row.subtitle = context.subtitle.empty() ? app.title
                                             : app.title + " · " + context.subtitle;
 
+    // Renamed: the user's name is the title, the provider's leads the
+    // subtitle.
+    if (!context.name.empty())
+    {
+        row.title = context.name;
+        row.subtitle = context.title + " · " + row.subtitle;
+    }
+
     row.appId = app.id;
     row.contextId = context.id;
     row.url = context.url;
@@ -80,7 +88,8 @@ std::string lastComponent(std::string path)
     return slash == std::string::npos ? path : path.substr(slash + 1);
 }
 
-// How well `query` finds a context by its own text: its git branch best, then the (provider's) title and url as they read, then the name of its directory and
+// How well `query` finds a context by its own text: its git branch and the
+// name the user gave it best, then the (provider's) title and url as they read, then the name of its directory and
 // the subtitle, then the full path, those three only on a tight match.
 std::optional<int> ownScore(const std::string& query, const RudderContext& context)
 {
@@ -101,6 +110,7 @@ std::optional<int> ownScore(const std::string& query, const RudderContext& conte
     };
 
     consider(context.branch, -branchBonus, false);
+    consider(context.name, -branchBonus, false);
     consider(lastComponent(context.path), dirNamePenalty, true);
     consider(context.subtitle, subtitlePenalty, true);
     consider(context.path, pathPenalty, true);

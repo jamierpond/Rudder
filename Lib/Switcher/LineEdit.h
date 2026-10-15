@@ -41,5 +41,14 @@ Line deleteWord(Line line);
 // ctrl+u / ctrl+k
 Line deleteToStart(Line line);
 Line deleteToEnd(Line line);
+
+// Typing: `text` goes in at the cursor, which ends up after it.
+Line insert(Line line, const std::string& text);
+
+// A one-line editor narrower than its text: how far the text is scrolled
+// left so the caret stays in view. `caret` and `textWidth` are measured from
+// the text's start; `scroll` is the last offset, kept until the caret leaves
+// the `visible` width, and never more than the text needs to fill it.
+float scrollToCaret(float caret, float textWidth, float visible, float scroll);
 } // namespace line
 } // namespace rudder

@@ -57,6 +57,7 @@ the grant first.
 | Esc | Esc | close and put the screen back |
 | ⌃Q | Ctrl+Q | quit the selected app (rebindable) |
 | ⌘D | Ctrl+D | favourite / unfavourite the selection (rebindable) |
+| ⌃R | Ctrl+R | rename the selected pane or tab: Enter saves, Esc cancels, an empty name clears it (rebindable) |
 | ⌃W ⌃U ⌃K ⌃A ⌃E ⌃B ⌃F ⌃H ⌃D, ⌥B ⌥F ⌥⌫ | the same with Ctrl and Alt | readline editing |
 
 On Windows, Alt+Space normally opens the focused window's menu (Restore, Move,
@@ -65,7 +66,7 @@ registered hotkey, so Rudder's RegisterHotKey takes the chord before any app
 sees it. Only another app that registered it first (PowerToys Run, say) wins;
 Settings then says so, and you can pick another chord.
 
-## Recent work
+## Recent work and renames
 
 With nothing typed, the list is the running apps and favourites by when you
 last used them, with the panes and tabs you used in the last 36 hours (at
@@ -77,7 +78,10 @@ panes you work in rise when you type.
 
 A context is remembered by its git branch (else its directory), not by the
 provider's id, so a new shell on the same branch and the unopened place for
-it are one thing.
+it are one thing. That's also what a rename (⌃R) sticks to: the name becomes
+the row's title, the provider's title moves to the subtitle, and typing
+either finds it. Names live in Rudder's own store, so they work for every
+provider.
 
 ## Favourites
 

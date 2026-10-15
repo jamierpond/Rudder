@@ -789,3 +789,36 @@ auto tEmptyListLimited = test("Ranking/no query lists at most a handful of conte
     check(list.front().contextId == "pane:b0");
     check(list.front().running);
 };
+
+auto tRenamedRowShowsName = test("Ranking/a renamed context shows its name, the old title after")
+    = []
+{
+    auto cowTerm = app("com.eacp.cowterm", "CowTerm");
+    auto named = pane("pane:1", "claude", "fix-login", "/p");
+    named.subtitle = "Tab 1";
+    named.name = "Login bug";
+    cowTerm.contexts = {named};
+
+    auto row = rowFor(rankItems({cowTerm}, "login"), "pane:1");
+
+    check(row.title == "Login bug");
+    check(row.subtitle == "claude · CowTerm · Tab 1");
+};
+
+auto tRenameMatches = test("Ranking/a rename matches as well as a branch, the old title still finds it")
+    = []
+{
+    auto cowTerm = app("com.eacp.cowterm", "CowTerm");
+
+    auto named = pane("pane:named", "claude", "", "");
+    named.name = "keychain";
+    auto onBranch = pane("pane:branch", "zsh", "keychain", "");
+    auto onTitle = pane("pane:title", "keychain", "", "");
+    cowTerm.contexts = {onTitle, onBranch, named};
+
+    auto ranked = rankItems({cowTerm}, "keychain");
+
+    check(rankOf(ranked, "pane:named") < rankOf(ranked, "pane:title"));
+    check(rankOf(ranked, "pane:branch") < rankOf(ranked, "pane:title"));
+    check(rowFor(rankItems({cowTerm}, "claude"), "pane:named").title == "keychain");
+};

@@ -52,7 +52,8 @@ bool matchesChord(const Chord& chord,
                   bool command);
 
 // The stored bindings, one document in the settings collection. summon and
-// back are global hotkeys; quit and favourite only act inside the open panel.
+// back are global hotkeys; quit, favourite and rename only act inside the
+// open panel.
 // Win+D is the shell's show-desktop, which never reaches the panel, so
 // Windows favourites with Ctrl+D.
 struct Keybindings
@@ -61,7 +62,8 @@ struct Keybindings
     std::string back = "option+`";
     std::string quit = "control+q";
     std::string favourite = eacp::Platform::isWindows() ? "control+d" : "command+d";
+    std::string rename = "control+r";
 
-    MIRO_REFLECT(summon, back, quit, favourite)
+    MIRO_REFLECT(summon, back, quit, favourite, rename)
 };
 } // namespace rudder

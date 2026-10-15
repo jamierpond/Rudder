@@ -78,3 +78,22 @@ auto tUtf8 = test("LineEdit/moves never split a UTF-8 character") = []
     check(line::backspace(text).text == "caf");
     check(line::right(Line {text.text, 3}).cursor == 5);
 };
+
+auto tInsert = test("LineEdit/typing inserts at the cursor") = []
+{
+    check(show(line::insert(at("ab|d"), "c")) == "abc|d");
+    check(show(line::insert(at("|"), "é")) == "é|");
+};
+
+auto tScroll = test("LineEdit/a long line scrolls to keep the caret in view") = []
+{
+    // Fits: no scroll.
+    check(line::scrollToCaret(40.f, 80.f, 100.f, 0.f) == 0.f);
+    // The caret at the end of a long title: its tail shows.
+    check(line::scrollToCaret(300.f, 300.f, 100.f, 0.f) == 200.f);
+    // Moving back inside the view keeps the scroll; past its left edge follows.
+    check(line::scrollToCaret(250.f, 300.f, 100.f, 200.f) == 200.f);
+    check(line::scrollToCaret(150.f, 300.f, 100.f, 200.f) == 150.f);
+    // Deleting pulls the text back so it still fills the view.
+    check(line::scrollToCaret(120.f, 120.f, 100.f, 200.f) == 20.f);
+};

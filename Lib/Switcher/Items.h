@@ -37,7 +37,11 @@ struct RudderContext
     // context's most telling name, so matched first.
     std::string branch;
 
-    MIRO_REFLECT(id, title, subtitle, url, kind, open, path, branch, focused)
+    // The user's own name for it (RenameStore), set by Rudder, never by the
+    // provider. Shown as the title, and matched as well as the branch.
+    std::string name;
+
+    MIRO_REFLECT(id, title, subtitle, url, kind, open, path, branch, focused, name)
 };
 
 // One row in the panel. kind "app" is a running app (id = appId = its bundle

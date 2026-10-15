@@ -1,11 +1,13 @@
 #pragma once
 
 #include "Items.h"
+#include "LineEdit.h"
 
 #include <eacp/UI/UI.h>
 
 #include <functional>
 #include <map>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -30,10 +32,12 @@ struct SettingsModel
     std::string backLabel;
     std::string quitLabel;
     std::string favouriteLabel;
+    std::string renameLabel;
 
     // Canonical chord text: the panel matches these itself.
     std::string quit;
     std::string favourite;
+    std::string rename;
 
     // Where the favourites file (~/.config/rudder.json) lives, for anyone (or any agent) editing it.
     std::string favouritesPath;
@@ -55,6 +59,11 @@ public:
 
     void setItems(const std::vector<RudderItem>& newItems, int newSelected);
 
+    // The selected row's title as an editor (a rename), or back to the title.
+    // allSelected: the whole title is highlighted, to be replaced by the
+    // first key.
+    void setEditing(const std::optional<Line>& line, bool allSelected = false);
+
     void paint(eacp::UI::Graphics& g) override;
     void mouseDown(const eacp::UI::MouseEvent& event) override;
     bool mouseWheelMove(const eacp::UI::MouseEvent& event) override;
@@ -72,6 +81,10 @@ private:
     std::vector<RudderItem> items;
     int selected = 0;
     float scroll = 0.f;
+    std::optional<Line> editing;
+    bool editingAllSelected = false;
+    // How far the edited title is scrolled left, in points.
+    float editScroll = 0.f;
 
     // Textures by app id: the host's image cache hashes pixels on every get,
     // which is worth doing once per icon rather than once per paint.
@@ -133,6 +146,8 @@ public:
     eacp::UI::Button quitChord;
     eacp::UI::Label favouriteCaption {"Favourite / unfavourite the selection"};
     eacp::UI::Button favouriteChord;
+    eacp::UI::Label renameCaption {"Rename the selected pane or tab"};
+    eacp::UI::Button renameChord;
     eacp::UI::Label favouritesPath;
     eacp::UI::Label error;
     eacp::UI::Label accessibilityCaption {"Live preview (Accessibility)"};
@@ -234,6 +249,15 @@ public:
     // favourite.
     std::function<void()> onToggleFavourite = [] {};
 
+    // The rename binding (⌃R by default): the selected row's title to edit
+    // in place, or nothing when the row can't be renamed (only a provider's
+    // context can). Then Enter hands back the new name (empty clears it), Esc
+    // drops the edit.
+    std::function<std::optional<std::string>()> onRenameStart = [] {
+        return std::optional<std::string> {};
+    };
+    std::function<void(const std::string&)> onRename = [](auto&) {};
+
     // A problem with ~/.config/rudder.json, shown in the footer until it's fixed.
     void setFooterError(const std::string& error);
 
@@ -260,6 +284,10 @@ private:
     // fzf's emacs keys on the query field. True when the key was one.
     bool editQuery(const eacp::Graphics::KeyEvent& event);
 
+    // A key while renaming: every key is the editor's.
+    void editRename(const eacp::Graphics::KeyEvent& event);
+    void stopRenaming();
+
     void startCapture(const std::string& action);
     void recordChord(const eacp::Graphics::KeyEvent& event);
     void showPage(bool showSettings);
@@ -270,6 +298,10 @@ private:
     SettingsModel settingsModel;
     std::string footerError;
     std::string capturing;
+    std::optional<Line> renaming;
+    // A rename starts with the whole title selected: typing replaces it,
+    // deleting clears it, moving the cursor keeps it.
+    bool renameAllSelected = false;
     bool trusted = false;
 };
 } // namespace rudder

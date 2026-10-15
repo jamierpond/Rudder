@@ -67,6 +67,7 @@ add_library(RudderSwitcher STATIC
         Lib/Switcher/Mru.cpp
         Lib/Switcher/Providers.cpp
         Lib/Switcher/Ranking.cpp
+        Lib/Switcher/Renames.cpp
         Lib/Switcher/Url.cpp
         Lib/Switcher/Web.cpp)
 
