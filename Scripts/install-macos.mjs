@@ -8,17 +8,28 @@
 // build*/Rudder.app bundles. The installed Rudder is then opened, so it
 // registers itself to start at login from /Applications.
 //
-// The bundle is ad-hoc signed, so each install is a new cdhash and macOS asks
-// for the Accessibility grant again (drag the icon in from the unlock
-// overlay).
+// The bundle is signed with a self-signed "Rudder Local Signing" identity,
+// made once in its own keychain and reused: the designated requirement then
+// stays the same across installs, so the Accessibility grant survives. It's
+// reset only when the requirement changes (first install, a recreated
+// certificate, an ad-hoc copy installed before). No Apple certificate needed.
 //
 // The Release tree is always reconfigured, so CPM refetches branch-pinned
 // packages (eacp, emberstore) and the install has the latest of them.
 import { execFileSync } from 'node:child_process';
-import { existsSync, readdirSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import { rm, rename } from 'node:fs/promises';
+import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { RELEASE_BUILD_DIR, ROOT, cpmSourceArgs, main, run } from './lib.mjs';
+import {
+  RELEASE_BUILD_DIR,
+  ROOT,
+  RUDDER,
+  cpmSourceArgs,
+  main,
+  resetDevPrivacyGrants,
+  run,
+} from './lib.mjs';
 
 const APP = '/Applications/Rudder.app';
 const STAGING = '/Applications/.Rudder.app.installing';
@@ -26,6 +37,78 @@ const OLD = '/Applications/.Rudder.app.old';
 const LSREGISTER =
   '/System/Library/Frameworks/CoreServices.framework/Frameworks/' +
   'LaunchServices.framework/Support/lsregister';
+
+const IDENTITY = 'Rudder Local Signing';
+const KEYCHAIN = join(homedir(), 'Library', 'Keychains', 'rudder-signing.keychain-db');
+const KEYCHAIN_PASSWORD = 'rudder-signing-local';
+
+const capture = (command, args) =>
+  execFileSync(command, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+
+function designatedRequirement(app) {
+  if (!existsSync(app)) return null;
+  try {
+    return capture('codesign', ['-d', '-r', '-', app]).trim();
+  } catch {
+    // Unsigned, or not a bundle codesign can read.
+    return null;
+  }
+}
+
+function identityHash() {
+  try {
+    const out = capture('security', ['find-identity', '-p', 'codesigning', KEYCHAIN]);
+    return out.match(new RegExp(`([0-9A-F]{40}) "${IDENTITY}"`))?.[1] ?? null;
+  } catch {
+    return null;
+  }
+}
+
+async function ensureKeychain() {
+  if (!existsSync(KEYCHAIN))
+    await run('security', ['create-keychain', '-p', KEYCHAIN_PASSWORD, KEYCHAIN]);
+
+  await run('security', ['unlock-keychain', '-p', KEYCHAIN_PASSWORD, KEYCHAIN]);
+  // No timeout, no lock on sleep.
+  await run('security', ['set-keychain-settings', KEYCHAIN]);
+
+  const searchList = capture('security', ['list-keychains', '-d', 'user'])
+    .split('\n')
+    .map((line) => line.trim().replace(/^"|"$/g, ''))
+    .filter(Boolean);
+
+  if (!searchList.includes(KEYCHAIN))
+    await run('security', ['list-keychains', '-d', 'user', '-s', ...searchList, KEYCHAIN]);
+}
+
+async function createIdentity() {
+  console.log(`[install] creating the "${IDENTITY}" signing identity`);
+  const dir = mkdtempSync(join(tmpdir(), 'rudder-signing-'));
+
+  try {
+    const key = join(dir, 'key.pem');
+    const cert = join(dir, 'cert.pem');
+    const p12 = join(dir, 'identity.p12');
+
+    // /usr/bin/openssl is LibreSSL: its .p12 is one `security import` reads
+    // (OpenSSL 3's default ciphers need -legacy for that).
+    await run('/usr/bin/openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes',
+      '-keyout', key, '-out', cert, '-days', '3650', '-subj', `/CN=${IDENTITY}`,
+      '-addext', 'basicConstraints=critical,CA:false',
+      '-addext', 'keyUsage=critical,digitalSignature',
+      '-addext', 'extendedKeyUsage=critical,codeSigning']);
+    await run('/usr/bin/openssl', ['pkcs12', '-export', '-inkey', key, '-in', cert,
+      '-name', IDENTITY, '-out', p12, '-passout', `pass:${KEYCHAIN_PASSWORD}`]);
+
+    await run('security', ['import', p12, '-k', KEYCHAIN, '-P', KEYCHAIN_PASSWORD,
+      '-T', '/usr/bin/codesign']);
+    // Let codesign use the key without a prompt.
+    await run('security', ['set-key-partition-list', '-S', 'apple-tool:,apple:,codesign:',
+      '-s', '-k', KEYCHAIN_PASSWORD, KEYCHAIN], { stdio: ['inherit', 'ignore', 'inherit'] });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
 
 function bundleId(app) {
   return execFileSync('/usr/libexec/PlistBuddy',
@@ -82,11 +165,20 @@ await main(async () => {
   await rm(STAGING, { recursive: true, force: true });
   await run('ditto', [join(RELEASE_BUILD_DIR, 'Rudder.app'), STAGING]);
 
-  // The linker's ad-hoc signature covers the executable only; seal the whole
-  // bundle (Info.plist, icon) so it verifies and carries the bundle id. Still
-  // ad-hoc: no identity, no keychain.
-  await run('codesign', ['--force', '--sign', '-', STAGING]);
+  await ensureKeychain();
+  if (!identityHash()) await createIdentity();
+  const hash = identityHash();
+  if (!hash) throw new Error(`"${IDENTITY}" isn't usable for code signing in ${KEYCHAIN}`);
+
+  // Seal the whole bundle (Info.plist, icon), not just the executable the
+  // linker signed, with the local identity.
+  console.log(`[install] signing with "${IDENTITY}"`);
+  await run('codesign', ['--force', '--deep', '--options', 'runtime', '--timestamp=none',
+    '--keychain', KEYCHAIN, '--sign', hash, STAGING]);
   await run('codesign', ['--verify', '--deep', '--strict', STAGING]);
+
+  const before = designatedRequirement(APP);
+  const after = designatedRequirement(STAGING);
 
   await quitInstalled();
 
@@ -97,6 +189,13 @@ await main(async () => {
 
   await rename(STAGING, APP);
   await rm(OLD, { recursive: true, force: true });
+
+  if (before !== after) {
+    console.log('[install] signing identity changed');
+    await resetDevPrivacyGrants(RUDDER);
+  } else {
+    console.log('[install] same signing identity: keeping the Accessibility grant');
+  }
 
   await run(LSREGISTER, ['-f', APP]);
 

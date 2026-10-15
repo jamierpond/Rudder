@@ -25,6 +25,11 @@ just install # Release build into /Applications/Rudder.app (macOS) or
 just update-deps  # refetch eacp and the other branch-pinned deps
 ```
 
+`just install` needs no Apple certificate on macOS: it signs with a
+self-signed "Rudder Local Signing" identity it makes once in its own keychain.
+The signature stays the same between installs, so the Accessibility grant
+survives reinstalling.
+
 Rudder is an agent app: no Dock icon or taskbar button, a menu-bar / tray icon
 (Open, Settings…, Quit), and it registers itself to start at login (on Windows
 under `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`). Launching it again
