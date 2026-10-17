@@ -22,6 +22,7 @@
 #include <filesystem>
 #include <map>
 #include <memory>
+#include <cwctype>
 #include <set>
 #include <thread>
 #include <utility>
@@ -736,6 +737,17 @@ KeyCapture activeCapture;
 HWND capturePanel = nullptr;
 HWINEVENTHOOK captureHook = nullptr;
 
+bool isScreenSnipper(DWORD pid)
+{
+    auto path = processPath(pid);
+    auto name = path.substr(path.find_last_of(L"\\/") + 1);
+
+    for (auto& c: name)
+        c = (wchar_t) towlower(c);
+
+    return name == L"screenclippinghost.exe" || name == L"snippingtool.exe";
+}
+
 void CALLBACK
     onCaptureForeground(HWINEVENTHOOK, DWORD, HWND window, LONG, LONG, DWORD, DWORD)
 {
@@ -746,6 +758,11 @@ void CALLBACK
     GetWindowThreadProcessId(window, &pid);
 
     if (pid == GetCurrentProcessId())
+        return;
+
+    // Win+Shift+S and PrintScreen bring up the snipping overlay: the user is
+    // capturing the screen -- maybe the panel -- not leaving it.
+    if (isScreenSnipper(pid))
         return;
 
     if (activeCapture.onMouseDownOutside)
