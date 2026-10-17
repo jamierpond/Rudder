@@ -1,6 +1,7 @@
 #pragma once
 
 #include <CaptureGate.h>
+#include <PanelFrame.h>
 
 #include <eacp/Graphics/Graphics.h>
 
@@ -163,9 +164,11 @@ struct WorkspaceEvents
 // subscriber per process; a second call replaces the first.
 void observeWorkspace(WorkspaceEvents events);
 
-// The top-left (eacp screen space) that centres a width x height panel on the
-// display under the mouse.
-eacp::Graphics::Point panelOrigin(float width, float height);
+// The usable area (eacp screen space: points, top-left origin; no menu bar,
+// Dock or taskbar) of the display under the mouse, and of the display nearest
+// a point.
+Frame screenAreaUnderMouse();
+Frame screenAreaAt(eacp::Graphics::Point point);
 
 // An app bundle in one of the app folders, running or not.
 struct InstalledApp

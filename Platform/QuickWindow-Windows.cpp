@@ -83,6 +83,15 @@ void setLogger(std::function<void(const char*)> log)
 // window for it to ride.
 void enableWindowDragThroughHost() {}
 
+// eacp's own two calls: Windows repaints the pair as one move.
+void setPanelFrame(eacp::Graphics::Window& window,
+                   eacp::Graphics::Point position,
+                   eacp::Graphics::Point size)
+{
+    window.setSize(size);
+    window.setPosition(position);
+}
+
 void rememberAppForHandoff(int pid)
 {
     rememberedWindow = pid != 0 ? frontWindowOf((DWORD) pid) : nullptr;

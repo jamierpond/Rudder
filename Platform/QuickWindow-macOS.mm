@@ -102,6 +102,21 @@ void enableWindowDragThroughHost()
     });
 }
 
+void setPanelFrame(eacp::Graphics::Window& window,
+                   eacp::Graphics::Point position,
+                   eacp::Graphics::Point size)
+{
+    auto* native = nativeWindowOf(window);
+    if (native == nil)
+        return;
+
+    // Borderless: the frame is the content. Cocoa's y runs up from the
+    // primary display's bottom.
+    auto primaryHeight = NSScreen.screens.firstObject.frame.size.height;
+    auto frame = NSMakeRect(position.x, primaryHeight - position.y - size.y, size.x, size.y);
+    [native setFrame:frame display:YES];
+}
+
 void rememberAppForHandoff(int pid)
 {
     rememberedFrontPid = (pid_t) pid;

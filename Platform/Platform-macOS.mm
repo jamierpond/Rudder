@@ -1562,23 +1562,58 @@ void observeWorkspace(WorkspaceEvents events)
                         }];
 }
 
-eacp::Graphics::Point panelOrigin(float width, float height)
+namespace
 {
-    auto mouse = NSEvent.mouseLocation;
-    auto* screen = NSScreen.mainScreen;
-
-    for (NSScreen* candidate in NSScreen.screens)
-        if (NSMouseInRect(mouse, candidate.frame, NO))
-            screen = candidate;
-
+Frame usableArea(NSScreen* screen)
+{
     auto area = screen.visibleFrame;
-    auto x = area.origin.x + (area.size.width - width) / 2;
-    auto bottom = area.origin.y + (area.size.height - height) / 2;
 
     // Cocoa measures up from the primary display's bottom; eacp down from
     // its top.
     auto primaryHeight = NSScreen.screens.firstObject.frame.size.height;
-    return {(float) x, (float) (primaryHeight - bottom - height)};
+    return {(float) area.origin.x,
+            (float) (primaryHeight - NSMaxY(area)),
+            (float) area.size.width,
+            (float) area.size.height};
+}
+
+// The screen holding the Cocoa point, or else the nearest one.
+NSScreen* screenNearest(NSPoint point)
+{
+    NSScreen* nearest = NSScreen.mainScreen;
+    auto best = CGFLOAT_MAX;
+
+    for (NSScreen* screen in NSScreen.screens)
+    {
+        auto frame = screen.frame;
+
+        if (NSMouseInRect(point, frame, NO))
+            return screen;
+
+        auto dx = std::max({NSMinX(frame) - point.x, 0.0, point.x - NSMaxX(frame)});
+        auto dy = std::max({NSMinY(frame) - point.y, 0.0, point.y - NSMaxY(frame)});
+        auto distance = dx * dx + dy * dy;
+
+        if (distance < best)
+        {
+            best = distance;
+            nearest = screen;
+        }
+    }
+
+    return nearest;
+}
+} // namespace
+
+Frame screenAreaUnderMouse()
+{
+    return usableArea(screenNearest(NSEvent.mouseLocation));
+}
+
+Frame screenAreaAt(eacp::Graphics::Point point)
+{
+    auto primaryHeight = NSScreen.screens.firstObject.frame.size.height;
+    return usableArea(screenNearest(NSMakePoint(point.x, primaryHeight - point.y)));
 }
 
 namespace

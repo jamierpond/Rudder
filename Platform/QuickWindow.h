@@ -45,5 +45,12 @@ void installReopenHandler(std::function<void()> onReopen);
 // Off by default — a panel meant to stay put should not become draggable.
 void enableWindowDragThroughHost();
 
+// Moves and sizes the panel in one step (eacp screen space, points, the
+// content's top-left and size), so a drag on its left or top edge doesn't
+// draw a frame with only half of the change.
+void setPanelFrame(eacp::Graphics::Window& window,
+                   eacp::Graphics::Point position,
+                   eacp::Graphics::Point size);
+
 void setLogger(std::function<void(const char*)> log);
 } // namespace rudder::quick_window

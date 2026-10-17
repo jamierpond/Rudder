@@ -22,6 +22,7 @@
 #include <filesystem>
 #include <map>
 #include <memory>
+#include <cmath>
 #include <cwctype>
 #include <set>
 #include <thread>
@@ -1249,28 +1250,46 @@ void observeWorkspace(WorkspaceEvents events)
         EVENT_OBJECT_CLOAKED, EVENT_OBJECT_UNCLOAKED, onWindowListChange);
 }
 
-eacp::Graphics::Point panelOrigin(float width, float height)
+namespace
 {
-    auto cursor = POINT {};
-    GetCursorPos(&cursor);
+float monitorScale(HMONITOR monitor)
+{
+    auto dpiX = UINT {96};
+    auto dpiY = UINT {96};
+    GetDpiForMonitor(monitor, MDT_EFFECTIVE_DPI, &dpiX, &dpiY);
+    return (float) dpiX / 96.f;
+}
 
-    auto monitor = MonitorFromPoint(cursor, MONITOR_DEFAULTTONEAREST);
+// eacp places windows in points: pixels over the display's scale.
+Frame workArea(HMONITOR monitor)
+{
     auto info = MONITORINFO {};
     info.cbSize = sizeof(info);
     GetMonitorInfoW(monitor, &info);
 
-    auto dpiX = UINT {96};
-    auto dpiY = UINT {96};
-    GetDpiForMonitor(monitor, MDT_EFFECTIVE_DPI, &dpiX, &dpiY);
-
-    // eacp places windows in points: pixels over the display's scale.
-    auto scale = (float) dpiX / 96.f;
+    auto scale = monitorScale(monitor);
     auto& area = info.rcWork;
-    auto x = (float) area.left / scale
-             + ((float) (area.right - area.left) / scale - width) / 2;
-    auto y = (float) area.top / scale
-             + ((float) (area.bottom - area.top) / scale - height) / 2;
-    return {x, y};
+    return {(float) area.left / scale,
+            (float) area.top / scale,
+            (float) (area.right - area.left) / scale,
+            (float) (area.bottom - area.top) / scale};
+}
+} // namespace
+
+Frame screenAreaUnderMouse()
+{
+    auto cursor = POINT {};
+    GetCursorPos(&cursor);
+    return workArea(MonitorFromPoint(cursor, MONITOR_DEFAULTTONEAREST));
+}
+
+Frame screenAreaAt(eacp::Graphics::Point point)
+{
+    // Points to pixels at the primary display's scale: near enough to find the
+    // monitor a point is on.
+    auto scale = monitorScale(MonitorFromPoint({0, 0}, MONITOR_DEFAULTTOPRIMARY));
+    auto pixel = POINT {(LONG) std::lround(point.x * scale), (LONG) std::lround(point.y * scale)};
+    return workArea(MonitorFromPoint(pixel, MONITOR_DEFAULTTONEAREST));
 }
 
 void watchInstalledApps(std::function<void(std::vector<InstalledApp>)> onChange)
