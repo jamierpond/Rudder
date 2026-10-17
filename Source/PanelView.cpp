@@ -23,6 +23,10 @@ const auto text = Color(0.95f, 0.95f, 0.96f, 1.f);
 const auto dimText = Color(1.f, 1.f, 1.f, 0.45f);
 const auto selection = Color(0.35f, 0.51f, 1.f, 0.30f);
 const auto accent = Color(0.35f, 0.51f, 1.f, 1.f);
+const auto panelEdge = Color(1.f, 1.f, 1.f, 0.12f);
+
+// The window's corner radius (panelWindowOptions in Main.cpp).
+constexpr auto panelCornerRadius = 14.f;
 
 // Tall enough above the query text for the grab handle's strip.
 constexpr auto queryHeight = 54.f;
@@ -627,6 +631,15 @@ void PanelRoot::resized()
 void PanelRoot::paint(UI::Graphics& g)
 {
     g.fillAll(panelBackground);
+}
+
+// A hairline just inside the window's rounded edge, so the panel stands off a
+// dark window behind it. Inset half a point so the whole stroke is inside the
+// clip, its radius by as much so it runs parallel to the window's corners.
+void PanelRoot::paintOverChildren(UI::Graphics& g)
+{
+    g.setColour(panelEdge);
+    g.drawRoundedRect(getLocalBounds().inset(0.5f), panelCornerRadius - 0.5f, 1.f);
 }
 
 // --- PanelView -----------------------------------------------------------------

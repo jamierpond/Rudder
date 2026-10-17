@@ -259,6 +259,7 @@ public:
     PanelRoot();
 
     void paint(eacp::UI::Graphics& g) override;
+    void paintOverChildren(eacp::UI::Graphics& g) override;
     void resized() override;
 
     SwitcherPage switcher;
