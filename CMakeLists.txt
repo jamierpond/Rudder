@@ -65,6 +65,7 @@ add_library(RudderSwitcher STATIC
         Lib/Switcher/Keybinding.cpp
         Lib/Switcher/LineEdit.cpp
         Lib/Switcher/Mru.cpp
+        Lib/Switcher/PanelFrame.cpp
         Lib/Switcher/Providers.cpp
         Lib/Switcher/Ranking.cpp
         Lib/Switcher/Renames.cpp
