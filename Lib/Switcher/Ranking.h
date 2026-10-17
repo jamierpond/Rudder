@@ -48,22 +48,27 @@ std::vector<std::string> idOnlyContextKeys(const std::string& appId,
 std::string frecencyKey(const RudderItem& item);
 
 // Added to a row's match score for how often and how lately it was picked:
-// k * log2(1 + frecency), at most frecencyCap. The cap is one consecutive
-// letter's worth in fuzzyScore (8, against 1 for a scattered one), so
-// frecency reorders matches that are about as good but never lifts a weak
-// match over a clearly better one.
+// k * log2(1 + frecencyScale * frecency), at most frecencyCap. The cap is
+// one consecutive letter's worth in fuzzyScore (8, against 1 for a scattered
+// one), so frecency reorders matches that are about as good but never lifts
+// a weak match over a clearly better one.
 //
 // Rudder is the app switcher, so heavy use is hundreds of picks a day (the
 // live store showed one every ~80 s), and a row picked n times a day settles
 // near n / (1 - 2^(-1/3)) = 4.85 n frecency (FrecencyStore::halfLifeMs, 3
-// days). With k = 2 the cap came at frecency 15 -- three picks a day -- so
-// every row the user actually lives in tied at 8 and frecency told them
-// apart no more. k = 0.9 reaches the cap only at 2^(8/0.9) - 1 = 474
-// frecency, about 100 picks a day, and stays a log scale below that: one
-// pick is worth 0.9 (about a scattered letter), one a day 2.3, five a day
-// 4.6, twenty 5.9, fifty 7.1. Each doubling of use is worth the same 0.9, so
-// the busiest rows keep their order at any volume a person reaches.
-constexpr auto frecencyK = 0.9;
+// days). The old curve, 2 * log2(1 + frecency), hit the cap at frecency 15
+// -- three picks a day -- so every row the user actually lives in tied at 8
+// and frecency told them apart no more.
+//
+// This one keeps the low end and stretches the top: k = 2/3 and scale 8
+// make it about 2 + (2/3) log2(frecency) once frecency is past 1. One pick
+// is worth 2.1 (as before: a near-tie flips on a single pick), three 3.1; a
+// pick a day settles at 3.5, five a day 5.1, twenty 6.4, fifty 7.3, and the
+// cap comes only at frecency 512, about 105 picks a day. Every doubling of use
+// is worth the same 2/3 of a point, so the busiest rows keep their order at
+// any volume a person reaches.
+constexpr auto frecencyK = 2.0 / 3.0;
+constexpr auto frecencyScale = 8.0;
 constexpr auto frecencyCap = 8.0;
 
 double frecencyBonus(double frecency);

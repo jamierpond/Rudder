@@ -237,7 +237,7 @@ double frecencyBonus(double frecency)
     if (frecency <= 0)
         return 0;
 
-    return std::min(frecencyCap, frecencyK * std::log2(1 + frecency));
+    return std::min(frecencyCap, frecencyK * std::log2(1 + frecencyScale * frecency));
 }
 
 bool pickMoves(const RudderItem& item,

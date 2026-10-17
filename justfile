@@ -36,3 +36,7 @@ clean:
 [doc('Build + run the unit tests in build-test/ (leaves the app in build/ alone)')]
 test:
     node Scripts/test.mjs
+
+[doc('Print the live frecency store: each key decayed to now, its ranking bonus and when it was last used')]
+frecency-report *args:
+    node Scripts/frecency-report.mjs {{args}}

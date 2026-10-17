@@ -1554,8 +1554,19 @@ struct RudderApp
         if (!panelVisible)
             return;
 
-        if (item.kind != "web")
-            frecency.touch(frecencyKey(item));
+        auto now = FrecencyStore::nowMs();
+
+        if (item.kind != "web"
+            && pickMoves(item, frontAppId, providers.contextsFor(frontAppId)))
+            frecency.touch(frecencyKey(item), now);
+
+        // The focus tracker was fed nothing while the panel was up. A picked
+        // context is where the app's focus goes (already counted); an app or
+        // window picked shows whatever its provider last pushed.
+        if (item.kind == "context")
+            focus.picked(item.appId, frecencyKey(item), now);
+        else if (item.kind == "app" || item.kind == "window")
+            focus.pushed(item.appId, providers.contextsFor(item.appId), false, now);
 
         // Apps are stamped when they activate; a favourite and a context
         // here too, under the same key, so they take their place in the

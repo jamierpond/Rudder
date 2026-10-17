@@ -3,6 +3,7 @@
 
 #include <NanoTest/NanoTest.h>
 
+#include <cmath>
 #include <map>
 
 using namespace nano;
@@ -587,8 +588,10 @@ auto tFrecencyBonusCurve = test("Ranking/the frecency bonus grows by log and sto
     = []
 {
     check(frecencyBonus(0) == 0);
-    check(frecencyBonus(1) == frecencyK);
-    check(frecencyBonus(3) == 2 * frecencyK);
+    check(frecencyBonus(1) == frecencyK * std::log2(9));
+    check(frecencyBonus(3) > 3);
+    check(frecencyBonus(500) < frecencyCap);
+    check(frecencyBonus(520) == frecencyCap);
     check(frecencyBonus(1e9) == frecencyCap);
 };
 
@@ -883,4 +886,43 @@ auto tIdOnlyKeys = test("Ranking/only contexts with no branch or path are keyed 
 
     check(idOnlyContextKeys(grazer, contexts)
           == std::vector<std::string> {"audio.pond.grazer/3"});
+};
+
+// --- What a pick counts, and the curve at heavy volume -------------------------
+
+auto tPickWhereYouAre
+    = test("Ranking/Enter on the app summoned over, or the pane it shows, isn't a pick") = []
+{
+    auto cowTerm = app("com.eacp.cowterm", "CowTerm");
+    auto shown = pane("pane:1", "claude", "fix-login", "/p/web");
+    shown.focused = true;
+    auto other = pane("pane:2", "zsh", "rename", "/p/rudder");
+    cowTerm.contexts = {shown, other};
+
+    auto ranked = rankItems({cowTerm, app("com.apple.Safari", "Safari")}, "cowterm");
+
+    check(!pickMoves(cowTerm, "com.eacp.cowterm", cowTerm.contexts));
+    check(!pickMoves(rowFor(ranked, "pane:1"), "com.eacp.cowterm", cowTerm.contexts));
+    check(pickMoves(rowFor(ranked, "pane:2"), "com.eacp.cowterm", cowTerm.contexts));
+    check(pickMoves(app("com.apple.Safari", "Safari"), "com.eacp.cowterm", cowTerm.contexts));
+
+    // Summoned over another app, every CowTerm row goes somewhere.
+    check(pickMoves(cowTerm, "com.apple.Safari", {}));
+    check(pickMoves(rowFor(ranked, "pane:1"), "com.apple.Safari", {}));
+};
+
+auto tBonusSeparatesHeavyUse
+    = test("Ranking/the frecency bonus still orders rows used dozens of times a day") = []
+{
+    // Steady frecency for n picks a day at a 3-day half-life: about 4.85 n.
+    auto perDay = [](double n) { return frecencyBonus(n / (1 - std::exp2(-1.0 / 3))); };
+
+    check(perDay(1) < perDay(5));
+    check(perDay(5) < perDay(20));
+    check(perDay(20) < perDay(50));
+    check(perDay(50) < perDay(90));
+    check(perDay(90) < frecencyCap);
+
+    // Past the first few picks each doubling is worth about the same: k.
+    check(std::abs(frecencyBonus(200) - frecencyBonus(100) - frecencyK) < 0.01);
 };

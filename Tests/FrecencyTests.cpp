@@ -11,7 +11,7 @@ using namespace rudder;
 
 namespace
 {
-constexpr auto week = FrecencyStore::halfLifeMs;
+constexpr auto halfLife = FrecencyStore::halfLifeMs;
 
 bool near(double a, double b) { return std::abs(a - b) < 1e-9; }
 } // namespace
@@ -43,8 +43,8 @@ auto tHalvesPerHalfLife = test("Frecency/the score halves every half-life") = []
     store.touch("com.apple.Safari", 0);
     store.touch("com.apple.Safari", 0);
 
-    check(near(store.frecency("com.apple.Safari", week), 1));
-    check(near(store.frecency("com.apple.Safari", 2 * week), 0.5));
+    check(near(store.frecency("com.apple.Safari", halfLife), 1));
+    check(near(store.frecency("com.apple.Safari", 2 * halfLife), 0.5));
 };
 
 auto tTouchDecaysFirst = test("Frecency/a pick decays the old score before adding") = []
@@ -53,10 +53,10 @@ auto tTouchDecaysFirst = test("Frecency/a pick decays the old score before addin
     auto store = FrecencyStore {db};
 
     store.touch("com.apple.Safari", 0);
-    store.touch("com.apple.Safari", week);
+    store.touch("com.apple.Safari", halfLife);
 
-    check(near(store.frecency("com.apple.Safari", week), 1.5));
-    check(store.entries.get("com.apple.Safari")->at == week);
+    check(near(store.frecency("com.apple.Safari", halfLife), 1.5));
+    check(store.entries.get("com.apple.Safari")->at == halfLife);
 };
 
 auto tFutureStampDoesntGrow = test("Frecency/a stamp from the future doesn't grow") = []
@@ -70,7 +70,7 @@ auto tPruneKeepsHighest = test("Frecency/prune drops the lowest scores") = []
 
     // Older picks have decayed further, so key 0 scores lowest.
     for (std::size_t i = 0; i < FrecencyStore::maxEntries + 10; ++i)
-        store.touch("row-" + std::to_string(i), now - week + (std::int64_t) i * 1000);
+        store.touch("row-" + std::to_string(i), now - halfLife + (std::int64_t) i * 1000);
 
     store.prune();
 

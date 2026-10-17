@@ -101,3 +101,45 @@ auto tForgetKeyEndsSpell = test("Focus/a gone context's spell ends: no stamp, no
     check(focus.pushed(cowTerm, focusedOn("rename"), true, 2000)
           == std::optional<std::string> {"com.eacp.cowterm/branch:rename"});
 };
+
+// The live store had a pick count +1 and then, five seconds later, the same
+// decision again as a held focus: Rudder records the pick's activation, the
+// OS reports it again, and each started a fresh, uncredited spell.
+auto tPickNotCreditedTwice
+    = test("Focus/a picked context isn't credited again for the focus the pick causes") = []
+{
+    auto focus = FocusTracker {};
+    auto dwell = FocusTracker::dwellMs;
+    auto fix = std::string {"com.eacp.cowterm/branch:fix-login"};
+
+    focus.picked(cowTerm, fix, 1000);
+
+    // Rudder's own recordActivation, then the OS's activation event.
+    check(focus.activated(cowTerm, 1000) == std::optional {fix});
+    check(focus.activated(cowTerm, 1300) == std::optional {fix});
+
+    // The push catching up with the pane switch: nothing new.
+    check(!focus.pushed(cowTerm, focusedOn("fix-login"), true, 1400));
+
+    check(!focus.settle(cowTerm, 1000 + 10 * dwell));
+
+    // Coming back to it later is a new spell, and that one counts.
+    check(focus.activated(cowTerm, 100000) == std::optional {fix});
+    check(focus.settle(cowTerm, 100000 + dwell) == std::optional {fix});
+};
+
+// Pushes are ignored while the panel is up, so without picked() the tracker
+// still held the pane the user left: the pick's activation stamped it and
+// its dwell credited it.
+auto tPickReplacesStaleSpell
+    = test("Focus/after a pick the pane left behind is neither stamped nor credited") = []
+{
+    auto focus = FocusTracker {};
+    auto rename = std::string {"com.eacp.cowterm/branch:rename"};
+
+    focus.pushed(cowTerm, focusedOn("fix-login"), true, 0);
+    focus.picked(cowTerm, rename, 60000);
+
+    check(focus.activated(cowTerm, 60000) == std::optional {rename});
+    check(!focus.settle(cowTerm, 60000 + 10 * FocusTracker::dwellMs));
+};
