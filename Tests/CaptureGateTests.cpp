@@ -2,7 +2,9 @@
 
 #include <NanoTest/NanoTest.h>
 
+#include <algorithm>
 #include <array>
+#include <vector>
 
 using namespace nano;
 using namespace rudder;
@@ -119,4 +121,110 @@ auto tChordKeys = test("CaptureGate/chords map to the tap's keys") = []
     check(all.has_value());
     auto key = captureKeyFor(*all);
     check(key.has_value() && key->keyCode == 40 && key->modifiers == 15);
+};
+
+namespace
+{
+constexpr std::uint8_t cmdShift = captureModifiers::command | captureModifiers::shift;
+const auto shot4 = CaptureKey {21, cmdShift};
+const auto shotKeys = std::array {CaptureKey {20, cmdShift}, shot4};
+const auto spaceKey = CaptureKey {49, 0};
+const auto escapeKey = CaptureKey {53, 0};
+const auto screenshotting = CaptureState {true, true, false, true};
+
+bool hasChord(const std::vector<CaptureKey>& chords, CaptureKey key)
+{
+    return std::find(chords.begin(), chords.end(), key) != chords.end();
+}
+} // namespace
+
+auto tScreenshotChordPasses = test("CaptureGate/a screenshot chord reaches the system") = []
+{
+    check(decideCapture(CaptureEvent::keyDown, open, shot4, hotkeys, shotKeys)
+          == CaptureVerdict::passAndScreenshot);
+    check(decideCapture(CaptureEvent::keyUp, open, shot4, hotkeys, shotKeys)
+          == CaptureVerdict::passAndScreenshot);
+
+    // Recording a chord still lets a screenshot of the panel happen.
+    check(decideCapture(CaptureEvent::keyDown, open, shot4, {}, shotKeys)
+          == CaptureVerdict::passAndScreenshot);
+
+    // Without the list it is just typing.
+    check(keyDown(open, shot4) == CaptureVerdict::swallow);
+};
+
+auto tScreenshotKeysPass = test("CaptureGate/keys during a screenshot are the system's") = []
+{
+    for (auto key: {spaceKey, escapeKey, letterA, CaptureKey {123, 0}})
+    {
+        check(decideCapture(CaptureEvent::keyDown, screenshotting, key, hotkeys, shotKeys)
+              == CaptureVerdict::pass);
+        check(decideCapture(CaptureEvent::keyUp, screenshotting, key, hotkeys, shotKeys)
+              == CaptureVerdict::pass);
+    }
+
+    // Once it is over, the panel has the keyboard again.
+    check(decideCapture(CaptureEvent::keyDown, open, escapeKey, hotkeys, shotKeys)
+          == CaptureVerdict::swallow);
+
+    // The safety nets still win.
+    check(decideCapture(CaptureEvent::tapTimedOut, screenshotting, std::nullopt, hotkeys, shotKeys)
+          == CaptureVerdict::passAndAbort);
+    check(decideCapture(CaptureEvent::keyDown, {true, false, false, true}, spaceKey, hotkeys, shotKeys)
+          == CaptureVerdict::passAndStop);
+};
+
+auto tScreenshotDefaults = test("CaptureGate/the screenshot chords default to macOS's") = []
+{
+    auto chords = screenshotChords({});
+    constexpr std::uint8_t ctrlCmdShift = cmdShift | captureModifiers::control;
+
+    check(chords.size() == 6);
+    check(hasChord(chords, {20, cmdShift}));
+    check(hasChord(chords, {20, ctrlCmdShift}));
+    check(hasChord(chords, {21, cmdShift}));
+    check(hasChord(chords, {21, ctrlCmdShift}));
+    check(hasChord(chords, {23, cmdShift}));
+    check(hasChord(chords, {22, cmdShift}));
+};
+
+auto tScreenshotUserChords = test("CaptureGate/the user's screenshot shortcuts win") = []
+{
+    // ⌘⇧4 moved to ⌥⌘4, ⌘⇧3 switched off, ⌘⇧5 with no value, ⌘⇧6 with no key.
+    auto entries = std::array {
+        SymbolicHotKey {30, true, std::uint16_t {21}, (1 << 19) | (1 << 20)},
+        SymbolicHotKey {28, false, std::uint16_t {20}, (1 << 17) | (1 << 20)},
+        SymbolicHotKey {184, true, std::nullopt, 0},
+        SymbolicHotKey {181, true, std::uint16_t {0xFFFF}, 0},
+    };
+
+    auto chords = screenshotChords(entries);
+
+    check(chords.size() == 4);
+    check(hasChord(chords, {21, captureModifiers::option | captureModifiers::command}));
+    check(!hasChord(chords, {21, cmdShift}));
+    check(!hasChord(chords, {20, cmdShift}));
+    check(hasChord(chords, {23, cmdShift}));
+    check(!hasChord(chords, {22, cmdShift}));
+};
+
+auto tScreenshotSession = test("CaptureGate/a screenshot lasts as long as its UI") = []
+{
+    auto session = ScreenshotSession {10 * second};
+
+    // Waiting for the UI to show: on through the grace, then over.
+    check(screenshotGoing(session, false, 10 * second));
+    check(screenshotGoing(session, false, 10 * second + screenshotGraceNanos / 2));
+    check(!screenshotGoing(session, false, 10 * second + screenshotGraceNanos));
+
+    // Shown: on however long the drag takes, over the moment it goes.
+    session = ScreenshotSession {10 * second};
+    check(screenshotGoing(session, true, 10 * second + second / 10));
+    check(screenshotGoing(session, true, 70 * second));
+    check(!screenshotGoing(session, false, 70 * second + second / 10));
+
+    // A quick one (⌘⇧3) ends the session early, inside the grace.
+    session = ScreenshotSession {10 * second};
+    check(screenshotGoing(session, true, 10 * second + second / 10));
+    check(!screenshotGoing(session, false, 10 * second + second / 5));
 };

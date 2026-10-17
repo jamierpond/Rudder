@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <optional>
 #include <span>
+#include <vector>
 
 namespace rudder
 {
@@ -18,6 +19,10 @@ enum class CaptureVerdict
     pass,
     // Rudder takes the key; the main thread gets a copy to type with.
     swallow,
+    // A system screenshot chord: let it go, and let every key after it go
+    // too until the screenshot is over (the space, escape and arrows that
+    // drive ⌘⇧4 and ⌘⇧5 belong to macOS, not the panel).
+    passAndScreenshot,
     // Let it go and switch the tap off: capture is over (the panel hid).
     passAndStop,
     // Let it go, switch the tap off for good and tell the main thread to drop
@@ -88,12 +93,57 @@ struct CaptureState
     bool panelShown = false;
     // The main thread is stuck (mainStalled).
     bool stalled = false;
+    // A screenshot the user started is still going (ScreenshotSession).
+    bool screenshotting = false;
 };
 
 // `key` is the event's key for keyDown / keyUp; `passThrough` the chords that
-// must still reach their global hotkeys (empty while a chord is recorded).
+// must still reach their global hotkeys (empty while a chord is recorded);
+// `screenshot` the system's screenshot chords (screenshotChords), which always
+// reach the system, recording or not.
 CaptureVerdict decideCapture(CaptureEvent event,
                              const CaptureState& state,
                              std::optional<CaptureKey> key,
-                             std::span<const CaptureKey> passThrough);
+                             std::span<const CaptureKey> passThrough,
+                             std::span<const CaptureKey> screenshot = {});
+
+// --- Screenshots -------------------------------------------------------------
+
+// One of macOS's screenshot shortcuts as the user's symbolic hotkeys store it
+// (com.apple.symbolichotkeys, AppleSymbolicHotKeys): its id, whether it is on,
+// and its virtual key code and NSEvent modifier flags (no keyCode: the entry
+// carries none, and the default key holds; 0xFFFF: no key at all).
+struct SymbolicHotKey
+{
+    int id = 0;
+    bool enabled = true;
+    std::optional<std::uint16_t> keyCode;
+    std::uint64_t modifierFlags = 0;
+};
+
+// The screenshot chords in force: macOS's defaults (⌘⇧3, ⌃⌘⇧3, ⌘⇧4, ⌃⌘⇧4,
+// ⌘⇧5, ⌘⇧6), each replaced by the user's own entry for its id when there is
+// one, and dropped when that entry is switched off.
+std::vector<CaptureKey> screenshotChords(std::span<const SymbolicHotKey> userEntries);
+
+// How long after a screenshot chord its UI has to show up before capture
+// takes the keyboard back.
+constexpr std::uint64_t screenshotGraceNanos = 1'000'000'000;
+
+// One screenshot, from its chord until the system's screenshot UI has come and
+// gone. The main thread polls it; the tap only reads whether it is still on.
+struct ScreenshotSession
+{
+    std::uint64_t startedAt = 0;
+    // The screenshot UI has been seen up since the chord.
+    bool seen = false;
+};
+
+// Whether the screenshot is still going, given whether the system's screenshot
+// UI is up now. On through the grace while the UI hasn't shown yet; once it
+// has, on exactly as long as it stays up.
+bool screenshotGoing(ScreenshotSession& session,
+                     bool uiUp,
+                     std::uint64_t now,
+                     std::uint64_t grace = screenshotGraceNanos);
 } // namespace rudder
