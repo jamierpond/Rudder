@@ -94,6 +94,13 @@ namespace
 {
 const auto laptop = Frame {0.f, 33.f, 1512.f, 949.f};
 
+// Read and closed: on Windows an open handle stops the next write's rename.
+std::string readFile(const std::filesystem::path& path)
+{
+    auto file = std::ifstream {path};
+    return {std::istreambuf_iterator<char> {file}, {}};
+}
+
 const auto withPanel = R"({
     "browser": "audio.pond.grazer",
     "favourites": [
@@ -166,8 +173,7 @@ auto tSaveKeepsTheRest = test("Favourites/saving a frame keeps the rest of the f
     auto document = emberstore::Document<FavouriteList> {eacp::FilePath {path.string()}};
     check(document.set(config));
 
-    auto file = std::ifstream {path};
-    auto after = parseFavourites(std::string {std::istreambuf_iterator<char> {file}, {}});
+    auto after = parseFavourites(readFile(path));
 
     check(after.error.empty());
 
@@ -185,8 +191,7 @@ auto tSaveKeepsTheRest = test("Favourites/saving a frame keeps the rest of the f
     forgetFrame(config.panel, external);
     check(document.set(config));
 
-    auto reset = std::ifstream {path};
-    auto text = std::string {std::istreambuf_iterator<char> {reset}, {}};
+    auto text = readFile(path);
     check(text.find("panel") == std::string::npos);
     check(text.find("PRs") != std::string::npos);
 };
