@@ -2,6 +2,7 @@
 #include "Icon.h"
 #include "Keybinding.h"
 #include "LineEdit.h"
+#include "PanelFrame.h"
 
 #include <algorithm>
 #include <utility>
@@ -489,12 +490,57 @@ void AccessibilityOverlay::paint(UI::Graphics& g)
         step("Already on but still locked? Reset permissions, then turn it on again.", 72.f);
 }
 
+EdgeGrip::EdgeGrip()
+{
+    setInterceptsMouseClicks(true);
+}
+
+bool EdgeGrip::hitTest(Graphics::Point localPoint) const
+{
+    return frameEdgesAt(localPoint.x, localPoint.y, getWidth(), getHeight()) != 0;
+}
+
+void EdgeGrip::mouseMove(const UI::MouseEvent& event)
+{
+    auto under = frameEdgesAt(event.position.x, event.position.y, getWidth(), getHeight());
+
+    // eacp has no diagonal cursors: a corner shows the up-down one.
+    if ((under & (frameEdge::top | frameEdge::bottom)) != 0)
+        setMouseCursor(Graphics::MouseCursor::ResizeUpDown);
+    else if (under != 0)
+        setMouseCursor(Graphics::MouseCursor::ResizeLeftRight);
+    else
+        setMouseCursor(Graphics::MouseCursor::Default);
+}
+
+void EdgeGrip::mouseDown(const UI::MouseEvent& event)
+{
+    edges = frameEdgesAt(event.position.x, event.position.y, getWidth(), getHeight());
+    onFrameDrag(FrameDrag::begin, edges, event.position);
+}
+
+void EdgeGrip::mouseDrag(const UI::MouseEvent& event)
+{
+    onFrameDrag(FrameDrag::update, edges, event.position);
+}
+
+void EdgeGrip::mouseUp(const UI::MouseEvent& event)
+{
+    onFrameDrag(FrameDrag::end, edges, event.position);
+}
+
 PanelRoot::PanelRoot()
 {
+    setInterceptsMouseClicks(true);
+
     // eacp components start visible, so the two that wait are hidden here.
-    addChildren({switcher, settings, overlay});
+    // The grip last: topmost, so the edge band is its everywhere.
+    addChildren({switcher, settings, overlay, grip});
     settings.setVisible(false);
     overlay.setVisible(false);
+
+    grip.onFrameDrag = [this](auto phase, auto edges, auto at)
+    { onFrameDrag(phase, edges, at); };
 }
 
 void PanelRoot::resized()
@@ -502,6 +548,27 @@ void PanelRoot::resized()
     switcher.setBounds(getLocalBounds());
     settings.setBounds(getLocalBounds());
     overlay.setBounds(getLocalBounds());
+    grip.setBounds(getLocalBounds());
+}
+
+void PanelRoot::mouseDown(const UI::MouseEvent& event)
+{
+    onFrameDrag(FrameDrag::begin, 0, event.position);
+}
+
+void PanelRoot::mouseDrag(const UI::MouseEvent& event)
+{
+    onFrameDrag(FrameDrag::update, 0, event.position);
+}
+
+void PanelRoot::mouseUp(const UI::MouseEvent& event)
+{
+    onFrameDrag(FrameDrag::end, 0, event.position);
+}
+
+void PanelRoot::mouseDoubleClick(const UI::MouseEvent& event)
+{
+    onFrameDrag(FrameDrag::reset, 0, event.position);
 }
 
 void PanelRoot::paint(UI::Graphics& g)
@@ -538,6 +605,9 @@ PanelView::PanelView()
     root.overlay.tile.onDragStart = [this] { onUnlockDrag(); };
     root.overlay.openSettings.onClick = [this] { onRequestAccessibility(); };
     root.overlay.resetPermissions.onClick = [this] { onResetPermissions(); };
+
+    root.onFrameDrag = [this](auto phase, auto edges, auto at)
+    { onFrameDrag(phase, edges, at); };
 }
 
 void PanelView::setPermissionsResettable(bool can)

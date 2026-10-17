@@ -3,6 +3,8 @@
 #include "Items.h"
 #include "LineEdit.h"
 
+#include <cstdint>
+
 #include <eacp/UI/UI.h>
 
 #include <functional>
@@ -192,6 +194,41 @@ private:
     eacp::Graphics::Rect card() const;
 };
 
+// A press that moves or resizes the panel: where it went down, each drag,
+// the release, and a double-click (back to the default frame). `at` is in the
+// panel's own points; `edges` the frameEdge bits grabbed, none for a move.
+enum class FrameDrag
+{
+    begin,
+    update,
+    end,
+    reset,
+};
+
+using FrameDragHandler =
+    std::function<void(FrameDrag phase, std::uint8_t edges, eacp::Graphics::Point at)>;
+
+// A thin band around the panel's edge, above everything else: pressing it
+// resizes the panel.
+class EdgeGrip final : public eacp::UI::Component
+{
+public:
+    EdgeGrip();
+
+    bool hitTest(eacp::Graphics::Point localPoint) const override;
+    void mouseMove(const eacp::UI::MouseEvent& event) override;
+    void mouseDown(const eacp::UI::MouseEvent& event) override;
+    void mouseDrag(const eacp::UI::MouseEvent& event) override;
+    void mouseUp(const eacp::UI::MouseEvent& event) override;
+
+    FrameDragHandler onFrameDrag = [](auto, auto, auto) {};
+
+private:
+    std::uint8_t edges = 0;
+};
+
+// Pressing the background anywhere nothing else takes the click (the search
+// bar around the text, the preview, the footer) moves the panel.
 class PanelRoot final : public eacp::UI::Component
 {
 public:
@@ -200,9 +237,17 @@ public:
     void paint(eacp::UI::Graphics& g) override;
     void resized() override;
 
+    void mouseDown(const eacp::UI::MouseEvent& event) override;
+    void mouseDrag(const eacp::UI::MouseEvent& event) override;
+    void mouseUp(const eacp::UI::MouseEvent& event) override;
+    void mouseDoubleClick(const eacp::UI::MouseEvent& event) override;
+
     SwitcherPage switcher;
     SettingsPage settings;
     AccessibilityOverlay overlay;
+    EdgeGrip grip;
+
+    FrameDragHandler onFrameDrag = [](auto, auto, auto) {};
 };
 
 // The panel's content view: one ComponentHost (a GPUView) drawing the whole
@@ -280,6 +325,10 @@ public:
     // The overlay's icon was pressed: start the bundle drag, open the pane.
     std::function<void()> onUnlockDrag = [] {};
     std::function<void()> onCloseSettings = [] {};
+
+    // The panel's background or edge was dragged (see FrameDrag): the app
+    // moves and sizes the window.
+    FrameDragHandler onFrameDrag = [](auto, auto, auto) {};
 
 private:
     // fzf's emacs keys on the query field. True when the key was one.
