@@ -52,6 +52,11 @@ bool activateApp(const RunningApp& app);
 // runs on the main thread: the panel must go. `onMouseDownOutside` fires for a
 // click in another app (a passive monitor: clicks are never held up). Needs
 // accessibility; off (no tap, no timer, no cost) between summons.
+//
+// The system's screenshot shortcuts (the user's, from Keyboard Shortcuts) always
+// reach macOS, and from one of them until the screenshot UI is gone every key
+// goes to macOS and clicks don't count as leaving: the panel stays up, ready to
+// be captured.
 struct KeyCapture
 {
     std::function<void(const eacp::Graphics::KeyEvent&)> onKey;

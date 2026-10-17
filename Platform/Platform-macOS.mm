@@ -6,6 +6,7 @@
 #import <Carbon/Carbon.h>
 #import <CoreServices/CoreServices.h>
 
+#include <libproc.h>
 #include <os/log.h>
 
 #include <algorithm>
@@ -371,6 +372,13 @@ constexpr std::size_t maxPassThrough = 4;
 std::array<std::atomic<std::uint32_t>, maxPassThrough> passThroughKeys {};
 std::atomic<std::size_t> passThroughCount {0};
 
+// The system's screenshot chords, and whether a screenshot is under way: while
+// it is, every key goes to macOS.
+constexpr std::size_t maxScreenshotKeys = 8;
+std::array<std::atomic<std::uint32_t>, maxScreenshotKeys> screenshotKeys {};
+std::atomic<std::size_t> screenshotKeyCount {0};
+std::atomic<bool> screenshotOn {false};
+
 // RUDDER_DEBUG_STALL_TAP_MS: the tap thread itself sleeps on each key press,
 // so the OS times the tap out -- for proving that is honoured.
 const int tapStallMs = []
@@ -384,6 +392,8 @@ KeyCapture activeCapture;
 __weak NSWindow* capturePanel = nil;
 id mouseMonitor = nil;
 NSTimer* captureWatch = nil;
+NSTimer* screenshotWatch = nil;
+ScreenshotSession screenshotSession;
 CFRunLoopSourceRef captureSource = nullptr;
 CFRunLoopRef tapRunLoop = nullptr;
 std::atomic<bool> trustProbeInFlight {false};
@@ -458,10 +468,18 @@ void disableTap()
         CGEventTapEnable(tap, false);
 }
 
+void endScreenshot()
+{
+    screenshotOn = false;
+    [screenshotWatch invalidate];
+    screenshotWatch = nil;
+}
+
 void endCapture()
 {
     disableTap();
     capturePanelShown = false;
+    endScreenshot();
 
     if (mouseMonitor != nil)
     {
@@ -517,6 +535,139 @@ void handleCapturedKey(CGEventType type, CGEventRef event)
     lastKeyProgress = uptimeNanos();
 }
 
+// --- Screenshots under capture
+//
+// ⌘⇧4 runs /usr/sbin/screencapture for as long as the user is picking an area
+// or window; ⌘⇧5 puts screencaptureui's toolbar up (above the menu bar). Either
+// one up means the screenshot is still going.
+
+void logScreenshot(const char* what)
+{
+    os_log(OS_LOG_DEFAULT, "Rudder: screenshot under capture %{public}s", what);
+}
+
+std::string processName(pid_t pid)
+{
+    char name[2 * MAXCOMLEN + 1] = {};
+    proc_name(pid, name, sizeof(name));
+    return name;
+}
+
+bool screencaptureRunning()
+{
+    auto pids = std::vector<pid_t>(4096);
+    auto count = proc_listallpids(pids.data(), (int) (pids.size() * sizeof(pid_t)));
+
+    for (int i = 0; i < count && i < (int) pids.size(); ++i)
+        if (processName(pids[(std::size_t) i]) == "screencapture")
+            return true;
+
+    return false;
+}
+
+bool screenshotToolbarUp()
+{
+    auto* windows = (__bridge_transfer NSArray*) CGWindowListCopyWindowInfo(
+        kCGWindowListOptionOnScreenOnly | kCGWindowListExcludeDesktopElements,
+        kCGNullWindowID);
+
+    for (NSDictionary* window in windows)
+    {
+        // screencaptureui also leaves a full-screen window at the main menu's
+        // layer up after the toolbar has gone; only what sits above it counts.
+        if ([window[(id) kCGWindowLayer] intValue] <= kCGMainMenuWindowLevel)
+            continue;
+
+        auto pid = (pid_t) [window[(id) kCGWindowOwnerPID] intValue];
+
+        if (processName(pid) == "screencaptureui")
+            return true;
+    }
+
+    return false;
+}
+
+void watchScreenshot()
+{
+    auto uiUp = screencaptureRunning() || screenshotToolbarUp();
+
+    if (!screenshotGoing(screenshotSession, uiUp, uptimeNanos()))
+    {
+        logScreenshot("over");
+        endScreenshot();
+    }
+}
+
+// Main thread, from the tap: a screenshot chord went to the system.
+void beginScreenshot()
+{
+    if (!captureOn)
+        return;
+
+    screenshotOn = true;
+    screenshotSession = {uptimeNanos()};
+    logScreenshot("started");
+
+    if (screenshotWatch != nil)
+        return;
+
+    screenshotWatch = [NSTimer scheduledTimerWithTimeInterval:0.05
+                                                      repeats:YES
+                                                        block:^(NSTimer*) { watchScreenshot(); }];
+    [NSRunLoop.mainRunLoop addTimer:screenshotWatch forMode:NSRunLoopCommonModes];
+}
+
+// The user's screenshot shortcuts, read fresh at each summon (System Settings
+// writes them from another process).
+std::vector<SymbolicHotKey> userScreenshotHotKeys()
+{
+    auto entries = std::vector<SymbolicHotKey> {};
+    auto domain = CFSTR("com.apple.symbolichotkeys");
+    CFPreferencesAppSynchronize(domain);
+
+    auto* all = (__bridge_transfer NSDictionary*) CFPreferencesCopyAppValue(
+        CFSTR("AppleSymbolicHotKeys"), domain);
+
+    if (![all isKindOfClass:NSDictionary.class])
+        return entries;
+
+    for (int number: {28, 29, 30, 31, 181, 184})
+    {
+        NSDictionary* entry = all[[NSString stringWithFormat:@"%d", number]];
+
+        if (![entry isKindOfClass:NSDictionary.class])
+            continue;
+
+        auto hotKey = SymbolicHotKey {number};
+        id enabled = entry[@"enabled"];
+        hotKey.enabled = enabled == nil || [enabled boolValue];
+
+        NSArray* parameters = entry[@"value"][@"parameters"];
+
+        if ([parameters isKindOfClass:NSArray.class] && parameters.count >= 3)
+        {
+            hotKey.keyCode = (std::uint16_t) [parameters[1] intValue];
+            hotKey.modifierFlags = [parameters[2] unsignedLongLongValue];
+        }
+
+        entries.push_back(hotKey);
+    }
+
+    return entries;
+}
+
+void setScreenshotKeys()
+{
+    auto chords = screenshotChords(userScreenshotHotKeys());
+    auto count = std::min(chords.size(), maxScreenshotKeys);
+    screenshotKeyCount = 0;
+
+    for (std::size_t i = 0; i < count; ++i)
+        screenshotKeys[i] = pack(chords[i]);
+
+    screenshotKeyCount = count;
+}
+
 CaptureEvent classify(CGEventType type)
 {
     switch (type)
@@ -556,6 +707,7 @@ CGEventRef captureCallback(CGEventTapProxy, CGEventType type, CGEventRef event, 
     state.capturing = captureOn;
     state.panelShown = capturePanelShown;
     state.stalled = mainStalled(backlog, now);
+    state.screenshotting = screenshotOn;
 
     auto keys = std::array<CaptureKey, maxPassThrough> {};
     auto count = std::min(passThroughCount.load(), maxPassThrough);
@@ -563,7 +715,17 @@ CGEventRef captureCallback(CGEventTapProxy, CGEventType type, CGEventRef event, 
     for (std::size_t i = 0; i < count; ++i)
         keys[i] = unpack(passThroughKeys[i]);
 
-    auto verdict = decideCapture(kind, state, key, std::span {keys.data(), count});
+    auto shots = std::array<CaptureKey, maxScreenshotKeys> {};
+    auto shotCount = std::min(screenshotKeyCount.load(), maxScreenshotKeys);
+
+    for (std::size_t i = 0; i < shotCount; ++i)
+        shots[i] = unpack(screenshotKeys[i]);
+
+    auto verdict = decideCapture(kind,
+                                 state,
+                                 key,
+                                 std::span {keys.data(), count},
+                                 std::span {shots.data(), shotCount});
 
     if (tapStallMs > 0 && verdict == CaptureVerdict::swallow
         && kind == CaptureEvent::keyDown)
@@ -585,6 +747,17 @@ CGEventRef captureCallback(CGEventTapProxy, CGEventType type, CGEventRef event, 
             queueAbort(kind == CaptureEvent::tapTimedOut
                            ? "the OS timed the tap out"
                            : "the main thread stopped taking keys");
+            return event;
+        }
+
+        case CaptureVerdict::passAndScreenshot:
+        {
+            if (kind == CaptureEvent::keyDown)
+            {
+                screenshotOn = true;
+                dispatch_async(dispatch_get_main_queue(), ^{ beginScreenshot(); });
+            }
+
             return event;
         }
 
@@ -767,12 +940,16 @@ bool startKeyCapture(eacp::Graphics::Window& panel,
     activeCapture = std::move(capture);
     capturePanel = (__bridge NSWindow*) panel.getHandle();
     setPassThrough(passThrough);
+    setScreenshotKeys();
 
+    // A click mid-screenshot is the user picking what to capture -- maybe the
+    // panel itself -- not leaving it.
     mouseMonitor = [NSEvent
         addGlobalMonitorForEventsMatchingMask:NSEventMaskLeftMouseDown
                                               | NSEventMaskRightMouseDown
                                       handler:^(NSEvent*) {
-                                        if (activeCapture.onMouseDownOutside)
+                                        if (!screenshotOn
+                                            && activeCapture.onMouseDownOutside)
                                             activeCapture.onMouseDownOutside();
                                       }];
 
