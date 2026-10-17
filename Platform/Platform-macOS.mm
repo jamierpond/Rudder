@@ -12,6 +12,9 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <chrono>
+#include <cstdio>
+#include <cstdlib>
 #include <map>
 #include <memory>
 #include <set>
@@ -922,6 +925,60 @@ void noteAXError(AXError error)
         queueAbort("accessibility was revoked (AX API disabled)");
     }
 }
+// RUDDER_LOG: a click the global monitor saw -- one macOS delivered to another
+// app -- with the window under it and the panel's own frame, to tell a real
+// outside click from one that fell through the panel.
+void logOutsideClick()
+{
+    static const auto enabled = std::getenv("RUDDER_LOG") != nullptr;
+
+    if (!enabled)
+        return;
+
+    auto mouse = NSEvent.mouseLocation;
+    auto under = [NSWindow windowNumberAtPoint:mouse belowWindowWithWindowNumber:0];
+    auto owner = std::string {"?"};
+    auto layer = 0;
+
+    auto* info = (__bridge_transfer NSArray*) CGWindowListCopyWindowInfo(
+        kCGWindowListOptionIncludingWindow, (CGWindowID) under);
+
+    if (info.count > 0)
+    {
+        owner = processName((pid_t) [info[0][(id) kCGWindowOwnerPID] intValue]);
+        layer = [info[0][(id) kCGWindowLayer] intValue];
+    }
+
+    NSWindow* panel = capturePanel;
+    auto frame = panel != nil ? panel.frame : NSZeroRect;
+    auto* parent = panel.parentWindow;
+
+    using namespace std::chrono;
+    auto ms = duration_cast<milliseconds>(steady_clock::now().time_since_epoch());
+    std::fprintf(stderr,
+                 "[rudder %lld] outside click at (%.0f, %.0f) on window %ld (%s, "
+                 "layer %d); panel %ld at (%.0f, %.0f, %.0f x %.0f) visible %d key "
+                 "%d ignores %d, parent %ld ignores %d; app active %d; "
+                 "screenshot %d\n",
+                 (long long) ms.count() % 100000,
+                 mouse.x,
+                 mouse.y,
+                 (long) under,
+                 owner.c_str(),
+                 layer,
+                 (long) panel.windowNumber,
+                 frame.origin.x,
+                 frame.origin.y,
+                 frame.size.width,
+                 frame.size.height,
+                 (int) panel.isVisible,
+                 (int) panel.isKeyWindow,
+                 (int) panel.ignoresMouseEvents,
+                 (long) parent.windowNumber,
+                 (int) parent.ignoresMouseEvents,
+                 (int) NSApp.isActive,
+                 (int) screenshotOn.load());
+}
 } // namespace
 
 bool startKeyCapture(eacp::Graphics::Window& panel,
@@ -948,6 +1005,8 @@ bool startKeyCapture(eacp::Graphics::Window& panel,
         addGlobalMonitorForEventsMatchingMask:NSEventMaskLeftMouseDown
                                               | NSEventMaskRightMouseDown
                                       handler:^(NSEvent*) {
+                                        logOutsideClick();
+
                                         if (!screenshotOn
                                             && activeCapture.onMouseDownOutside)
                                             activeCapture.onMouseDownOutside();

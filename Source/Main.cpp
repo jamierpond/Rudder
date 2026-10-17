@@ -196,6 +196,8 @@ struct RudderApp
         panel.onAccept = [this] { Threads::callAsync([this] { activateSelection(); }); };
         panel.onChoose = [this](int index)
         {
+            logEvent(("panel: row " + std::to_string(index) + " clicked").c_str());
+
             if (index < 0 || index >= (int) filtered.size())
                 return;
 
@@ -573,6 +575,7 @@ struct RudderApp
 
         if (phase == FrameDrag::begin)
         {
+            logEvent(("panel frame: press, edges " + std::to_string(edges)).c_str());
             frameDrag = FrameDragState {currentFrame(), pointer, edges};
             return;
         }
@@ -593,6 +596,7 @@ struct RudderApp
 
         auto moved = frame != frameDrag->start;
         frameDrag.reset();
+        logEvent(moved ? "panel frame: release, moved" : "panel frame: release, still");
 
         // A plain click is no move: nothing to remember.
         if (!moved)
