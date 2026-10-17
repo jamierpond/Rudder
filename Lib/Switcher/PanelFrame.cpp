@@ -134,23 +134,35 @@ std::string screenKey(const Frame& area)
            + number(area.height);
 }
 
-PanelFrameStore::PanelFrameStore(const emberstore::Database& db)
-    : frames(db.collection<Frame>("panel-frames"))
+std::optional<Frame> savedFrame(const PanelFrames& frames, const Frame& area)
 {
+    if (!frames)
+        return std::nullopt;
+
+    auto found = frames->find(screenKey(area));
+
+    if (found == frames->end())
+        return std::nullopt;
+
+    return found->second;
 }
 
-std::optional<Frame> PanelFrameStore::savedFor(const Frame& area)
+void saveFrame(PanelFrames& frames, const Frame& area, const Frame& frame)
 {
-    return frames.get(screenKey(area));
+    if (!frames)
+        frames.emplace();
+
+    (*frames)[screenKey(area)] = frame;
 }
 
-void PanelFrameStore::save(const Frame& area, const Frame& frame)
+bool forgetFrame(PanelFrames& frames, const Frame& area)
 {
-    frames.doc(screenKey(area)).set(frame);
-}
+    if (!frames || frames->erase(screenKey(area)) == 0)
+        return false;
 
-void PanelFrameStore::forget(const Frame& area)
-{
-    frames.remove(screenKey(area));
+    if (frames->empty())
+        frames.reset();
+
+    return true;
 }
 } // namespace rudder

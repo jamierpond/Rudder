@@ -526,7 +526,7 @@ struct RudderApp
     void placePanel()
     {
         auto area = platform::screenAreaUnderMouse();
-        applyFrame(placedFrame(panelFrames.savedFor(area), area));
+        applyFrame(placedFrame(savedFrame(favourites.panel, area), area));
     }
 
     Frame currentFrame()
@@ -562,9 +562,12 @@ struct RudderApp
         {
             frameDrag.reset();
             auto area = screenUnderPanel(currentFrame());
-            panelFrames.forget(area);
             applyFrame(placedFrame(std::nullopt, area));
             logEvent("panel frame: reset");
+
+            if (forgetFrame(favourites.panel, area))
+                savePanelFrames();
+
             return;
         }
 
@@ -602,7 +605,22 @@ struct RudderApp
         if (kept != frame)
             applyFrame(kept);
 
-        panelFrames.save(area, kept);
+        saveFrame(favourites.panel, area, kept);
+        savePanelFrames();
+    }
+
+    // The frames go in rudder.json with the rest of the config, written the
+    // way the favourite toggle writes it. Not while the file holds a bad hand
+    // edit: that would overwrite the edit with the last good config.
+    void savePanelFrames()
+    {
+        if (!favouritesError.empty())
+        {
+            logEvent("panel frame: not saved, rudder.json has an error");
+            return;
+        }
+
+        favouritesDocument.set(favourites);
     }
 
     struct FrameDragState
@@ -1078,6 +1096,7 @@ struct RudderApp
             favouritesDocument.set(favourites);
 
         reloadFavourites();
+        migratePanelFrames();
 
         // The watcher sits on ~/.config and reacts to rudder.json alone, so an
         // editor's save-by-rename is seen and other files' churn isn't.
@@ -1107,6 +1126,37 @@ struct RudderApp
         logEvent(("favourites: moved " + old + " to " + now).c_str());
     }
 
+    // The panel's frames used to live in Rudder's emberstore folder. Taken into
+    // rudder.json once, only when it has no "panel" yet, then the old file goes.
+    void migratePanelFrames()
+    {
+        auto old = (durable.directory() / "panel-frames.json").str();
+
+        if (!std::filesystem::exists(old) || !favouritesError.empty())
+            return;
+
+        auto file = std::ifstream {old};
+        auto text = std::string {std::istreambuf_iterator<char> {file}, {}};
+        file.close();
+
+        auto error = std::string {};
+        auto adopted = adoptPanelFrames(favourites, text, error);
+
+        if (adopted && !favouritesDocument.set(favourites))
+        {
+            logEvent(("panel frame: couldn't write " + favouritesPath().str()).c_str());
+            return;
+        }
+
+        if (!error.empty())
+            logEvent(("panel frame: dropped " + old + ": " + error).c_str());
+        else if (adopted)
+            logEvent(("panel frame: moved " + old + " into " + favouritesPath().str()).c_str());
+
+        auto removed = std::error_code {};
+        std::filesystem::remove(old, removed);
+    }
+
     void reloadFavourites()
     {
         auto file = std::ifstream {favouritesPath().str()};
@@ -1125,12 +1175,17 @@ struct RudderApp
             return;
         }
 
+        // A panel frame alone (our own drag's write, say) leaves the rows be.
+        auto rowsChanged = result.list->favourites != favourites.favourites
+                           || result.list->browser != favourites.browser
+                           || result.list->searchUrl != favourites.searchUrl;
+
         favourites = std::move(*result.list);
         favouritesError.clear();
         panel.setFooterError({});
         logEvent(("favourites: " + std::to_string(favourites.favourites.size())).c_str());
 
-        if (panelVisible)
+        if (panelVisible && rowsChanged)
             rebuildFavouriteRows();
     }
 
@@ -1879,7 +1934,6 @@ struct RudderApp
     grazer::MruStore mru {atomic};
     FrecencyStore frecency {atomic};
     RenameStore renames {durable};
-    PanelFrameStore panelFrames {durable};
     FocusTracker focus;
     emberstore::Document<FavouriteList> favouritesDocument {favouritesPath()};
     FavouriteList favourites;

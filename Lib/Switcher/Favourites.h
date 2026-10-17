@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Items.h"
+#include "PanelFrame.h"
 
 #include <Miro/Reflect.h>
 
@@ -24,6 +25,8 @@ struct Favourite
     // A url opens in this app (bundle id) instead of the default browser.
     std::string openWith;
 
+    bool operator==(const Favourite&) const = default;
+
     MIRO_REFLECT(title, url, app, path, keywords, openWith)
 };
 
@@ -40,7 +43,10 @@ struct FavouriteList
     // Where a web search goes, %s standing for the query; empty is Google.
     std::string searchUrl;
 
-    MIRO_REFLECT(favourites, browser, searchUrl)
+    // Where the panel was left on each screen; absent is centred.
+    PanelFrames panel;
+
+    MIRO_REFLECT(favourites, browser, searchUrl, panel)
 };
 
 struct FavouritesResult
@@ -55,6 +61,11 @@ struct FavouritesResult
 // is an error naming it rather than a silently empty favourite. // and /* */
 // comments are tolerated (Rudder's own writes drop them).
 FavouritesResult parseFavourites(std::string_view text);
+
+// The panel frames from the old per-screen store (`oldText`, the same shape as
+// "panel"), taken into `config` when it has none of its own. True when
+// `config` changed; a bad old file is `error` and changes nothing.
+bool adoptPanelFrames(FavouriteList& config, std::string_view oldText, std::string& error);
 
 // Rows for the panel, in list order: kind "favourite", id "fav:<index>",
 // the target in url / appId / path.

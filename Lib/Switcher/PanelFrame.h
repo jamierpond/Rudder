@@ -1,9 +1,8 @@
 #pragma once
 
 #include <Miro/Reflect.h>
-#include <emberstore/Emberstore.h>
-
 #include <cstdint>
+#include <map>
 #include <optional>
 #include <string>
 
@@ -69,18 +68,15 @@ Frame placedFrame(const std::optional<Frame>& saved, const Frame& area);
 // (unplugged, rearranged) starts fresh.
 std::string screenKey(const Frame& area);
 
-// The panel's frame per screen, kept across summons and relaunches. Rare,
-// deliberate writes: give it a Durable database.
-struct PanelFrameStore
-{
-    explicit PanelFrameStore(const emberstore::Database& db);
+// The panel's frame per screen, by screenKey: the "panel" object in
+// ~/.config/rudder.json. Absent (or a screen missing from it) is centred at
+// the default size.
+using PanelFrames = Miro::Omittable<std::map<std::string, Frame>>;
 
-    std::optional<Frame> savedFor(const Frame& area);
-    void save(const Frame& area, const Frame& frame);
+std::optional<Frame> savedFrame(const PanelFrames& frames, const Frame& area);
+void saveFrame(PanelFrames& frames, const Frame& area, const Frame& frame);
 
-    // Back to the default: centred, at the default size.
-    void forget(const Frame& area);
-
-    emberstore::Collection<Frame> frames;
-};
+// Back to the default: centred, at the default size. The last screen gone
+// drops "panel" altogether. False when there was nothing saved.
+bool forgetFrame(PanelFrames& frames, const Frame& area);
 } // namespace rudder

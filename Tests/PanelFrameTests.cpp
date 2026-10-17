@@ -1,5 +1,3 @@
-#include "TestSupport.h"
-
 #include <PanelFrame.h>
 
 #include <NanoTest/NanoTest.h>
@@ -112,25 +110,25 @@ auto tScreenKey = test("PanelFrame/screens are told apart by their area") = []
     check(screenKey(laptop) != screenKey({1512.f, 0.f, 2560.f, 1415.f}));
 };
 
-auto tStore = test("PanelFrame/the frame per screen survives a reopen, and resets") = []
+auto tFrames = test("PanelFrame/the frame per screen is saved and reset") = []
 {
-    auto db = testing::freshDatabase("panel-frames");
     auto external = Frame {1512.f, 0.f, 2560.f, 1415.f};
     auto onExternal = Frame {1700.f, 300.f, 900.f, 600.f};
+    auto frames = PanelFrames {};
 
-    {
-        auto store = PanelFrameStore {db};
-        check(!store.savedFor(laptop));
+    check(!savedFrame(frames, laptop));
+    check(!forgetFrame(frames, laptop));
 
-        store.save(laptop, start);
-        store.save(external, onExternal);
-    }
+    saveFrame(frames, laptop, start);
+    saveFrame(frames, external, onExternal);
+    check(savedFrame(frames, laptop) == start);
+    check(savedFrame(frames, external) == onExternal);
 
-    auto again = PanelFrameStore {db};
-    check(again.savedFor(laptop) == start);
-    check(again.savedFor(external) == onExternal);
+    check(forgetFrame(frames, laptop));
+    check(!savedFrame(frames, laptop));
+    check(savedFrame(frames, external) == onExternal);
 
-    again.forget(laptop);
-    check(!again.savedFor(laptop));
-    check(again.savedFor(external) == onExternal);
+    // The last screen gone takes "panel" with it.
+    check(forgetFrame(frames, external));
+    check(!frames);
 };

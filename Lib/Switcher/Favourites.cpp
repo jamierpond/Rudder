@@ -154,6 +154,59 @@ std::optional<Favourite> readFavourite(const Miro::JSON& json,
 
     return favourite;
 }
+
+// {"<screenKey>": {"x", "y", "width", "height"}}, every field a number and the
+// size positive, so a typo is an error rather than a panel at 0,0.
+std::optional<std::map<std::string, Frame>> readPanelFrames(const Miro::JSON& json,
+                                                            std::string& error)
+{
+    if (!json.isObject())
+    {
+        error = "\"panel\" must be an object of screens";
+        return std::nullopt;
+    }
+
+    auto frames = std::map<std::string, Frame> {};
+
+    for (auto& [key, value]: json.asObject())
+    {
+        auto where = "panel \"" + key + "\"";
+
+        if (!value.isObject())
+        {
+            error = where + " must be an object";
+            return std::nullopt;
+        }
+
+        auto frame = Frame {};
+
+        for (auto [field, out]: {std::pair {"x", &frame.x},
+                                 std::pair {"y", &frame.y},
+                                 std::pair {"width", &frame.width},
+                                 std::pair {"height", &frame.height}})
+        {
+            auto* number = Miro::Json::find(value.asObject(), field);
+
+            if (number == nullptr || !number->isNumber())
+            {
+                error = where + ": \"" + field + "\" must be a number";
+                return std::nullopt;
+            }
+
+            *out = (float) number->asNumber();
+        }
+
+        if (frame.width <= 0.f || frame.height <= 0.f)
+        {
+            error = where + ": \"width\" and \"height\" must be above 0";
+            return std::nullopt;
+        }
+
+        frames[key] = frame;
+    }
+
+    return frames;
+}
 } // namespace
 
 FavouritesResult parseFavourites(std::string_view text)
@@ -191,6 +244,17 @@ FavouritesResult parseFavourites(std::string_view text)
         return {std::nullopt,
                 "rudder.json: \"searchUrl\" needs a %s where the query goes"};
 
+    if (auto* panel = Miro::Json::find(json.asObject(), "panel"))
+    {
+        auto error = std::string {};
+        auto frames = readPanelFrames(*panel, error);
+
+        if (!frames)
+            return {std::nullopt, "rudder.json: " + error};
+
+        config.panel = std::move(*frames);
+    }
+
     auto* favourites = Miro::Json::find(json.asObject(), "favourites");
 
     if (favourites == nullptr)
@@ -213,6 +277,38 @@ FavouritesResult parseFavourites(std::string_view text)
     }
 
     return {config, {}};
+}
+
+bool adoptPanelFrames(FavouriteList& config, std::string_view oldText, std::string& error)
+{
+    if (config.panel)
+        return false;
+
+    auto json = Miro::JSON {};
+
+    try
+    {
+        json = Miro::Json::parse(std::string {oldText});
+    }
+    catch (const std::exception& failure)
+    {
+        error = std::string {"panel-frames.json: "} + failure.what();
+        return false;
+    }
+
+    auto frames = readPanelFrames(json, error);
+
+    if (!frames)
+    {
+        error = "panel-frames.json: " + error;
+        return false;
+    }
+
+    if (frames->empty())
+        return false;
+
+    config.panel = std::move(*frames);
+    return true;
 }
 
 std::vector<RudderItem> favouriteItems(const FavouriteList& config)
