@@ -7,6 +7,7 @@
 #include "Icon.h"
 #include "Keybinding.h"
 #include "Mru.h"
+#include "PanelFrame.h"
 #include "PanelView.h"
 #include "Platform.h"
 #include "Providers.h"
@@ -251,6 +252,9 @@ struct RudderApp
             platform::openAccessibilitySettings();
         };
 
+        panel.onFrameDrag = [this](FrameDrag phase, std::uint8_t edges, Point at)
+        { onFrameDrag(phase, edges, at); };
+
         panel.onCloseSettings = [this]
         {
             settingsError.clear();
@@ -266,8 +270,8 @@ struct RudderApp
     {
         auto options = WindowOptions();
 
-        options.width = (int) panelWidth;
-        options.height = (int) panelHeight;
+        options.width = (int) panelDefaultWidth;
+        options.height = (int) panelDefaultHeight;
         options.isPrimary = false;
 
         // NonactivatingPanel is NOT honored: the mask only works on a real
@@ -516,6 +520,100 @@ struct RudderApp
         logEvent((text + (backStack.walking() ? " (walking)" : "")).c_str());
     }
 
+    // --- Panel frame ------------------------------------------------------------
+
+    // Where the user left the panel on the screen under the mouse, or centred.
+    void placePanel()
+    {
+        auto area = platform::screenAreaUnderMouse();
+        applyFrame(placedFrame(panelFrames.savedFor(area), area));
+    }
+
+    Frame currentFrame()
+    {
+        auto position = window.getPosition();
+        auto size = window.getSize();
+        return {position.x, position.y, size.x, size.y};
+    }
+
+    void applyFrame(const Frame& frame)
+    {
+        quick_window::setPanelFrame(
+            window, {frame.x, frame.y}, {frame.width, frame.height});
+    }
+
+    // The screen the panel's centre is on: where its frame is filed.
+    Frame screenUnderPanel(const Frame& frame)
+    {
+        return platform::screenAreaAt(
+            {frame.x + frame.width / 2.f, frame.y + frame.height / 2.f});
+    }
+
+    // A press on the panel's background or edge. Worked in screen points (the
+    // window's position plus where the pointer is in it), so the window moving
+    // under the pointer doesn't feed back into the drag. Clicks, focus and key
+    // capture are untouched: the press never reaches a row or the query.
+    void onFrameDrag(FrameDrag phase, std::uint8_t edges, Point at)
+    {
+        auto origin = window.getPosition();
+        auto pointer = Point {origin.x + at.x, origin.y + at.y};
+
+        if (phase == FrameDrag::reset)
+        {
+            frameDrag.reset();
+            auto area = screenUnderPanel(currentFrame());
+            panelFrames.forget(area);
+            applyFrame(placedFrame(std::nullopt, area));
+            logEvent("panel frame: reset");
+            return;
+        }
+
+        if (phase == FrameDrag::begin)
+        {
+            frameDrag = FrameDragState {currentFrame(), pointer, edges};
+            return;
+        }
+
+        if (!frameDrag)
+            return;
+
+        auto frame = draggedFrame(frameDrag->start,
+                                  frameDrag->edges,
+                                  pointer.x - frameDrag->pointer.x,
+                                  pointer.y - frameDrag->pointer.y);
+
+        if (frame != currentFrame())
+            applyFrame(frame);
+
+        if (phase != FrameDrag::end)
+            return;
+
+        auto moved = frame != frameDrag->start;
+        frameDrag.reset();
+
+        // A plain click is no move: nothing to remember.
+        if (!moved)
+            return;
+
+        // Dropped part off the screen: back inside it, and remembered there.
+        auto area = screenUnderPanel(frame);
+        auto kept = clampedFrame(frame, area);
+
+        if (kept != frame)
+            applyFrame(kept);
+
+        panelFrames.save(area, kept);
+    }
+
+    struct FrameDragState
+    {
+        Frame start;
+        Point pointer;
+        std::uint8_t edges = 0;
+    };
+
+    std::optional<FrameDragState> frameDrag;
+
     // --- Key capture ------------------------------------------------------------
 
     // While the panel is up the keyboard is ours, whichever app the preview
@@ -661,7 +759,7 @@ struct RudderApp
         publishSettings();
 
         if (!window.isVisible())
-            window.setPosition(platform::panelOrigin(panelWidth, panelHeight));
+            placePanel();
 
         window.setVisible(true);
         panelVisible = true;
@@ -1771,8 +1869,6 @@ struct RudderApp
             });
     }
 
-    static constexpr auto panelWidth = 640.f;
-    static constexpr auto panelHeight = 420.f;
     static constexpr auto keybindingsDoc = "keybindings";
 
     emberstore::Database durable {emberstore::appDataDirectory("pond", "Rudder"),
@@ -1783,6 +1879,7 @@ struct RudderApp
     grazer::MruStore mru {atomic};
     FrecencyStore frecency {atomic};
     RenameStore renames {durable};
+    PanelFrameStore panelFrames {durable};
     FocusTracker focus;
     emberstore::Document<FavouriteList> favouritesDocument {favouritesPath()};
     FavouriteList favourites;
