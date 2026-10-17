@@ -106,6 +106,23 @@ Each needs a `title` and one of `url`, `app` (bundle id) or `path`; `openWith`
 executable's file name: `"app": "notepad.exe"`, `"openWith": "firefox.exe"`. A url that's already open in a
 provider's tab (Grazer) switches to that tab instead of opening another.
 
+The same file holds where you left the panel. Drag its background to move it,
+its edges to resize it, and double-click the background to put it back; Rudder
+writes the result under `panel`, one frame per screen (keyed by the screen's
+usable area, so a different display or arrangement starts fresh):
+
+```json
+{
+  "panel": {
+    "0,33 1512x949": {"x": 850, "y": 84, "width": 640, "height": 420}
+  }
+}
+```
+
+No `panel`, or no entry for a screen, opens the panel centred at the default
+size. Each of `x`, `y`, `width` and `height` must be a number, the size above 0.
+Rudder rewrites the file only when a drag or resize ends, or on a reset.
+
 ## Icons
 
 `Assets/Icon/Source.png` is the art; `Scripts/make-icons.sh` (ImageMagick 7)
