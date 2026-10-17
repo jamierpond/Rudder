@@ -42,7 +42,12 @@ struct FrecencyStore
     // `score` decayed from `fromMs` to `toMs`.
     static double decayed(double score, std::int64_t fromMs, std::int64_t toMs);
 
-    static constexpr std::int64_t halfLifeMs = 7LL * 24 * 60 * 60 * 1000;
+    // Three days: what the user works on now, not last week. Branches and
+    // panes come and go within days, so a pane used all day and then left
+    // falls below one used steadily a few times a day within the week (the
+    // simulation in FrecencyTests), where at seven days it took two; an app
+    // used every working day keeps most of its weight over a weekend.
+    static constexpr std::int64_t halfLifeMs = 3LL * 24 * 60 * 60 * 1000;
     static constexpr std::size_t maxEntries = 500;
 
     emberstore::Collection<FrecencyEntry> entries;

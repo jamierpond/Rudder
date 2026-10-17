@@ -240,6 +240,25 @@ double frecencyBonus(double frecency)
     return std::min(frecencyCap, frecencyK * std::log2(1 + frecency));
 }
 
+bool pickMoves(const RudderItem& item,
+               const std::string& frontAppId,
+               const std::vector<RudderContext>& frontContexts)
+{
+    if (frontAppId.empty() || item.appId != frontAppId)
+        return true;
+
+    if (item.kind == "app")
+        return false;
+
+    if (item.kind != "context")
+        return true;
+
+    return std::none_of(frontContexts.begin(),
+                        frontContexts.end(),
+                        [&](const RudderContext& context)
+                        { return context.focused && context.id == item.contextId; });
+}
+
 std::vector<RudderItem> orderByRecency(std::vector<RudderItem> apps,
                                        const LastUsedFn& lastUsed)
 {

@@ -22,12 +22,19 @@ std::optional<std::string> FocusTracker::pushed(const std::string& appId,
     if (spell.key == key)
         return std::nullopt;
 
-    spell = {key, nowMs, false};
+    spell = {key, nowMs, false, false};
 
     if (!frontmost || key.empty())
         return std::nullopt;
 
     return key;
+}
+
+void FocusTracker::picked(const std::string& appId,
+                          const std::string& key,
+                          std::int64_t nowMs)
+{
+    spells[appId] = {key, nowMs, true, true};
 }
 
 std::optional<std::string> FocusTracker::activated(const std::string& appId,
@@ -38,9 +45,16 @@ std::optional<std::string> FocusTracker::activated(const std::string& appId,
     if (found == spells.end() || found->second.key.empty())
         return std::nullopt;
 
-    found->second.since = nowMs;
-    found->second.credited = false;
-    return found->second.key;
+    auto& spell = found->second;
+
+    // The pick's own activation -- Rudder records one as it opens the row,
+    // and the OS reports it again a moment later.
+    if (spell.picked && nowMs - spell.since < dwellMs)
+        return spell.key;
+
+    spell = {spell.key, nowMs, false, false};
+
+    return spell.key;
 }
 
 std::optional<std::string> FocusTracker::settle(const std::string& frontAppId,

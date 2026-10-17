@@ -51,10 +51,19 @@ std::string frecencyKey(const RudderItem& item);
 // k * log2(1 + frecency), at most frecencyCap. The cap is one consecutive
 // letter's worth in fuzzyScore (8, against 1 for a scattered one), so
 // frecency reorders matches that are about as good but never lifts a weak
-// match over a clearly better one. k = 2: one pick is worth 2, a pick a day
-// settles near 11 frecency (1 / (1 - 2^(-1/7))) and so 7 points, and only a
-// few picks a day reach the cap.
-constexpr auto frecencyK = 2.0;
+// match over a clearly better one.
+//
+// Rudder is the app switcher, so heavy use is hundreds of picks a day (the
+// live store showed one every ~80 s), and a row picked n times a day settles
+// near n / (1 - 2^(-1/3)) = 4.85 n frecency (FrecencyStore::halfLifeMs, 3
+// days). With k = 2 the cap came at frecency 15 -- three picks a day -- so
+// every row the user actually lives in tied at 8 and frecency told them
+// apart no more. k = 0.9 reaches the cap only at 2^(8/0.9) - 1 = 474
+// frecency, about 100 picks a day, and stays a log scale below that: one
+// pick is worth 0.9 (about a scattered letter), one a day 2.3, five a day
+// 4.6, twenty 5.9, fifty 7.1. Each doubling of use is worth the same 0.9, so
+// the busiest rows keep their order at any volume a person reaches.
+constexpr auto frecencyK = 0.9;
 constexpr auto frecencyCap = 8.0;
 
 double frecencyBonus(double frecency);
@@ -64,6 +73,14 @@ double frecencyBonus(double frecency);
 // match. The same one letter run as frecencyCap: a much better match on a
 // closed row still wins, and a closed row picked often only evens out.
 constexpr auto closedPenalty = 8.0;
+
+// Whether picking `item` takes the user anywhere: not when it is the app
+// the panel was summoned over (`frontAppId`), or the context that app is
+// showing (focused among `frontContexts`). Enter there only closes the panel
+// -- the user is already where they are -- so it isn't counted as a pick.
+bool pickMoves(const RudderItem& item,
+               const std::string& frontAppId,
+               const std::vector<RudderContext>& frontContexts);
 
 // Most-recently-used first, each row's stamp looked up by its frecencyKey.
 // Stable, so rows never used keep the order they came in: pass the running

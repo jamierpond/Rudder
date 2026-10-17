@@ -39,8 +39,19 @@ public:
                                       bool frontmost,
                                       std::int64_t nowMs);
 
+    // The user picked `key`, one of `appId`'s contexts, in the panel. The
+    // pick already counted it, and the panel hid the push that moves the
+    // app's focus there (nothing is fed while it is up), so the app's spell
+    // is now on `key`, already credited: neither the activation that follows
+    // nor the push that catches up adds the focus fraction on top, and
+    // neither stamps or credits the pane the user just left.
+    void picked(const std::string& appId, const std::string& key, std::int64_t nowMs);
+
     // `appId` came to the front: its focused context's key (if it has one),
-    // to stamp along with the app. Starts a new spell.
+    // to stamp along with the app. Starts a new spell -- except within
+    // dwellMs of a pick of one of its contexts: that activation is the
+    // pick's own (Rudder records it, then the OS reports it), and carries
+    // the picked spell on.
     std::optional<std::string> activated(const std::string& appId, std::int64_t nowMs);
 
     // The front app's focused context once it has held dwellMs this spell,
@@ -60,6 +71,9 @@ private:
         std::string key;
         std::int64_t since = 0;
         bool credited = false;
+
+        // Started by picked(); its own activations carry it on.
+        bool picked = false;
     };
 
     std::map<std::string, Spell> spells;
