@@ -227,8 +227,32 @@ private:
     std::uint8_t edges = 0;
 };
 
-// Pressing the background anywhere nothing else takes the click (the search
-// bar around the text, the preview, the footer) moves the panel.
+// The pill centred on the top edge, and the empty strip around it: dragging
+// either moves the panel, double-clicking puts it back to the default frame.
+// Quiet at rest, brighter under the pointer.
+class GrabHandle final : public eacp::UI::Component
+{
+public:
+    GrabHandle();
+
+    void paint(eacp::UI::Graphics& g) override;
+    bool hitTest(eacp::Graphics::Point localPoint) const override;
+    void mouseMove(const eacp::UI::MouseEvent& event) override;
+    void mouseExit(const eacp::UI::MouseEvent& event) override;
+    void mouseDown(const eacp::UI::MouseEvent& event) override;
+    void mouseDrag(const eacp::UI::MouseEvent& event) override;
+    void mouseUp(const eacp::UI::MouseEvent& event) override;
+    void mouseDoubleClick(const eacp::UI::MouseEvent& event) override;
+
+    FrameDragHandler onFrameDrag = [](auto, auto, auto) {};
+
+private:
+    void setLit(bool shouldLight);
+
+    bool hovered = false;
+    bool pressed = false;
+};
+
 class PanelRoot final : public eacp::UI::Component
 {
 public:
@@ -237,15 +261,11 @@ public:
     void paint(eacp::UI::Graphics& g) override;
     void resized() override;
 
-    void mouseDown(const eacp::UI::MouseEvent& event) override;
-    void mouseDrag(const eacp::UI::MouseEvent& event) override;
-    void mouseUp(const eacp::UI::MouseEvent& event) override;
-    void mouseDoubleClick(const eacp::UI::MouseEvent& event) override;
-
     SwitcherPage switcher;
     SettingsPage settings;
     AccessibilityOverlay overlay;
     EdgeGrip grip;
+    GrabHandle handle;
 
     FrameDragHandler onFrameDrag = [](auto, auto, auto) {};
 };

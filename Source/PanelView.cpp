@@ -1,4 +1,5 @@
 #include "PanelView.h"
+#include "DragHandle.h"
 #include "Icon.h"
 #include "Keybinding.h"
 #include "LineEdit.h"
@@ -23,7 +24,8 @@ const auto dimText = Color(1.f, 1.f, 1.f, 0.45f);
 const auto selection = Color(0.35f, 0.51f, 1.f, 0.30f);
 const auto accent = Color(0.35f, 0.51f, 1.f, 1.f);
 
-constexpr auto queryHeight = 50.f;
+// Tall enough above the query text for the grab handle's strip.
+constexpr auto queryHeight = 54.f;
 constexpr auto footerHeight = 28.f;
 constexpr auto listShare = 0.58f;
 
@@ -315,7 +317,12 @@ void SwitcherPage::resized()
 {
     auto area = getLocalBounds();
 
-    query.setBounds(area.removeFromTop(queryHeight).inset(18.f, 10.f));
+    // Clear of the grab handle's strip along the top.
+    auto header = area.removeFromTop(queryHeight);
+    query.setBounds({header.x + 18.f,
+                     header.y + moveStripHeight,
+                     header.w - 36.f,
+                     header.h - moveStripHeight - 10.f});
     footer.setBounds(area.removeFromBottom(footerHeight).inset(14.f, 0.f));
 
     list.setBounds(area.removeFromLeft(area.w * listShare));
@@ -529,17 +536,82 @@ void EdgeGrip::mouseUp(const UI::MouseEvent& event)
     onFrameDrag(FrameDrag::end, edges, event.position);
 }
 
-PanelRoot::PanelRoot()
+GrabHandle::GrabHandle()
 {
     setInterceptsMouseClicks(true);
+}
 
+bool GrabHandle::hitTest(Graphics::Point localPoint) const
+{
+    return pressMovesPanel(localPoint.x, localPoint.y, getWidth(), getHeight());
+}
+
+void GrabHandle::setLit(bool shouldLight)
+{
+    if (hovered == shouldLight)
+        return;
+
+    hovered = shouldLight;
+    repaint();
+}
+
+void GrabHandle::paint(UI::Graphics& g)
+{
+    auto bar = dragHandleBar(getWidth());
+    auto lit = hovered || pressed;
+
+    g.setColour(Color(1.f, 1.f, 1.f, lit ? 0.5f : 0.18f));
+    g.fillRoundedRect({bar.x, bar.y, bar.width, bar.height}, bar.height / 2.f);
+}
+
+// eacp has no open- or closed-hand cursor: the arrow it is.
+void GrabHandle::mouseMove(const UI::MouseEvent& event)
+{
+    setMouseCursor(Graphics::MouseCursor::Default);
+    setLit(overDragHandle(event.position.x, event.position.y, getWidth()));
+}
+
+void GrabHandle::mouseExit(const UI::MouseEvent&)
+{
+    setLit(false);
+}
+
+void GrabHandle::mouseDown(const UI::MouseEvent& event)
+{
+    pressed = true;
+    repaint();
+    onFrameDrag(FrameDrag::begin, 0, event.position);
+}
+
+void GrabHandle::mouseDrag(const UI::MouseEvent& event)
+{
+    onFrameDrag(FrameDrag::update, 0, event.position);
+}
+
+void GrabHandle::mouseUp(const UI::MouseEvent& event)
+{
+    pressed = false;
+    repaint();
+    onFrameDrag(FrameDrag::end, 0, event.position);
+}
+
+void GrabHandle::mouseDoubleClick(const UI::MouseEvent& event)
+{
+    onFrameDrag(FrameDrag::reset, 0, event.position);
+}
+
+PanelRoot::PanelRoot()
+{
     // eacp components start visible, so the two that wait are hidden here.
-    // The grip last: topmost, so the edge band is its everywhere.
-    addChildren({switcher, settings, overlay, grip});
+    // The grip and the handle last: topmost, so the edge band and the top
+    // strip are theirs everywhere, the handle over the grip.
+    addChildren({switcher, settings, overlay, grip, handle});
     settings.setVisible(false);
     overlay.setVisible(false);
 
     grip.onFrameDrag = [this](auto phase, auto edges, auto at)
+    { onFrameDrag(phase, edges, at); };
+    handle.onFrameDrag = [this](auto phase, auto edges, auto at)
     { onFrameDrag(phase, edges, at); };
 }
 
@@ -549,26 +621,7 @@ void PanelRoot::resized()
     settings.setBounds(getLocalBounds());
     overlay.setBounds(getLocalBounds());
     grip.setBounds(getLocalBounds());
-}
-
-void PanelRoot::mouseDown(const UI::MouseEvent& event)
-{
-    onFrameDrag(FrameDrag::begin, 0, event.position);
-}
-
-void PanelRoot::mouseDrag(const UI::MouseEvent& event)
-{
-    onFrameDrag(FrameDrag::update, 0, event.position);
-}
-
-void PanelRoot::mouseUp(const UI::MouseEvent& event)
-{
-    onFrameDrag(FrameDrag::end, 0, event.position);
-}
-
-void PanelRoot::mouseDoubleClick(const UI::MouseEvent& event)
-{
-    onFrameDrag(FrameDrag::reset, 0, event.position);
+    handle.setBounds(getLocalBounds());
 }
 
 void PanelRoot::paint(UI::Graphics& g)
