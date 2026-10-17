@@ -70,6 +70,7 @@ add_library(RudderSwitcher STATIC
         Lib/Switcher/Providers.cpp
         Lib/Switcher/Ranking.cpp
         Lib/Switcher/Renames.cpp
+        Lib/Switcher/TextFit.cpp
         Lib/Switcher/Url.cpp
         Lib/Switcher/Web.cpp)
 

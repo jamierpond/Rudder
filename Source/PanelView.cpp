@@ -4,6 +4,7 @@
 #include "Keybinding.h"
 #include "LineEdit.h"
 #include "PanelFrame.h"
+#include "TextFit.h"
 
 #include <algorithm>
 #include <utility>
@@ -36,6 +37,12 @@ constexpr auto listShare = 0.58f;
 const UI::Theme& theme()
 {
     return UI::defaultTheme();
+}
+
+// The text cut to `width` with an ellipsis, in the font set on `g`.
+std::string fitted(UI::Graphics& g, const std::string& text, float width)
+{
+    return ellipsized(text, width, [&](std::string_view part) { return g.measureText(part); });
 }
 } // namespace
 
@@ -193,16 +200,16 @@ void ResultsList::paint(UI::Graphics& g)
         if (item.subtitle.empty())
         {
             if (!renaming)
-                g.drawText(title, textArea);
+                g.drawText(fitted(g, title, textArea.w), textArea);
         }
         else
         {
             if (!renaming)
-                g.drawText(title, titleArea);
+                g.drawText(fitted(g, title, titleArea.w), titleArea);
 
             g.setColour(dimText);
             g.setFontSize(11.f);
-            g.drawText(item.subtitle,
+            g.drawText(fitted(g, item.subtitle, textArea.w),
                        {textArea.x, y + rowHeight * 0.5f, textArea.w, rowHeight * 0.45f});
         }
     }

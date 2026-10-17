@@ -106,8 +106,8 @@ Each needs a `title` and one of `url`, `app` (bundle id) or `path`; `openWith`
 executable's file name: `"app": "notepad.exe"`, `"openWith": "firefox.exe"`. A url that's already open in a
 provider's tab (Grazer) switches to that tab instead of opening another.
 
-The same file holds where you left the panel. Drag its background to move it,
-its edges to resize it, and double-click the background to put it back; Rudder
+The same file holds where you left the panel. Drag the handle on its top edge
+to move it, its edges to resize it, and double-click the handle to put it back; Rudder
 writes the result under `panel`, one frame per screen (keyed by the screen's
 usable area, so a different display or arrangement starts fresh):
 

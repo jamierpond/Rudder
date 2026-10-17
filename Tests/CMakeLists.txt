@@ -15,6 +15,7 @@ add_executable(RudderTests
         ProvidersTests.cpp
         RankingTests.cpp
         RenamesTests.cpp
+        TextFitTests.cpp
         UrlTests.cpp
         WebTests.cpp)
 
