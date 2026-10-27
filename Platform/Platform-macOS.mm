@@ -244,8 +244,18 @@ const eacp::Graphics::Image& appIcon(const RunningApp& app)
     if (auto found = cache.find(app.id); found != cache.end())
         return found->second;
 
+    // An app that has only just launched has no icon yet: nothing is cached,
+    // so the next lookup renders it.
+    auto* icon = lookUp(app).icon;
+
+    if (icon == nil)
+    {
+        static const auto noIcon = eacp::Graphics::Image {};
+        return noIcon;
+    }
+
     auto& image = cache[app.id];
-    image = renderIcon(lookUp(app).icon);
+    image = renderIcon(icon);
     return image;
 }
 

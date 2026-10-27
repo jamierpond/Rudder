@@ -453,7 +453,10 @@ struct RudderApp
 
         // Rendering the icon now keeps the next summon free of it.
         events.onLaunched = [](const platform::RunningApp& app)
-        { platform::appIcon(app); };
+        {
+            platform::forgetIcon(app.id);
+            platform::appIcon(app);
+        };
 
         events.onTerminated = [this](const platform::RunningApp& app)
         {
