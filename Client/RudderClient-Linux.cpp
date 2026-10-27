@@ -7,7 +7,7 @@ struct RudderClient::Native
 {
 };
 
-RudderClient::RudderClient(protocol::Hello)
+RudderClient::RudderClient(protocol::Hello, std::string)
     : native(std::make_unique<Native>())
 {
 }

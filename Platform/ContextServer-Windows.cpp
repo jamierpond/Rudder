@@ -233,13 +233,13 @@ ContextServer::~ContextServer()
     native->connections.clear();
 }
 
-bool ContextServer::start()
+bool ContextServer::start(const std::string& endpoint)
 {
     // A Rudder that died leaves nothing to sweep: the pipe went with it.
     // Another live Rudder holding the name is the one failure.
     try
     {
-        native->server.emplace(protocol::endpoint());
+        native->server.emplace(endpoint);
     }
     catch (const eacp::IPC::Error& error)
     {

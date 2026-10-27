@@ -38,6 +38,7 @@ struct RudderClient::Native
         RudderClient* owner = nullptr;
 
         protocol::Hello hello;
+        std::string endpoint;
 
         // Guards the channel's existence and the latest list, so a push from
         // the main thread and the worker's greeting never interleave.
@@ -71,11 +72,11 @@ struct RudderClient::Native
         }
     }
 
-    static std::optional<eacp::IPC::Channel> dial()
+    static std::optional<eacp::IPC::Channel> dial(const std::string& endpoint)
     {
         try
         {
-            return eacp::IPC::Channel::connect(protocol::endpoint(), dialTimeout);
+            return eacp::IPC::Channel::connect(endpoint, dialTimeout);
         }
         catch (const eacp::IPC::Error&)
         {
@@ -98,12 +99,12 @@ struct RudderClient::Native
             if (signalled != WAIT_OBJECT_0 + 1 || state.stop)
                 return std::nullopt;
 
-            if (auto channel = dial())
+            if (auto channel = dial(state.endpoint))
                 return channel;
 
             ResetEvent(state.started);
 
-            if (auto channel = dial())
+            if (auto channel = dial(state.endpoint))
                 return channel;
         }
 
@@ -177,7 +178,7 @@ struct RudderClient::Native
     {
         // Rudder may already be up: try it straight away, as the macOS
         // client does at construction.
-        auto channel = dial();
+        auto channel = dial(state->endpoint);
 
         while (!state->stop)
         {
@@ -196,12 +197,13 @@ struct RudderClient::Native
     }
 };
 
-RudderClient::RudderClient(protocol::Hello hello)
+RudderClient::RudderClient(protocol::Hello hello, std::string endpoint)
     : native(std::make_unique<Native>())
 {
     auto& state = native->state;
     state->owner = this;
     state->hello = std::move(hello);
+    state->endpoint = std::move(endpoint);
 
     if (state->hello.pid == 0)
         state->hello.pid = (std::int64_t) GetCurrentProcessId();

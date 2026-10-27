@@ -122,9 +122,8 @@ ContextServer::~ContextServer()
         dispatch_source_cancel(native->acceptor);
 }
 
-bool ContextServer::start()
+bool ContextServer::start(const std::string& path)
 {
-    auto path = protocol::endpoint();
     auto address = sockaddr_un {};
     address.sun_family = AF_UNIX;
 

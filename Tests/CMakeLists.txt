@@ -21,9 +21,13 @@ add_executable(RudderTests
 
 target_link_libraries(RudderTests PRIVATE NanoTest NanoTestMain RudderSwitcher)
 
-# The contexts transport end to end, client and server in one process. Windows
-# only: the macOS server would take over a running Rudder's socket file, where
-# a named pipe a live Rudder holds just refuses (and the test steps aside).
+# The contexts transport end to end, client and server in one process. On
+# macOS over a socket in a temporary folder, never a running Rudder's.
+if (APPLE)
+    target_sources(RudderTests PRIVATE TransportTests-macOS.cpp)
+    target_link_libraries(RudderTests PRIVATE RudderClient RudderPlatform)
+endif ()
+
 if (WIN32)
     target_sources(RudderTests PRIVATE TransportTests-Windows.cpp)
     target_link_libraries(RudderTests PRIVATE RudderClient RudderPlatform)

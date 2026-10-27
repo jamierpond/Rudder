@@ -9,15 +9,16 @@
 
 namespace rudder
 {
-// An app's connection to Rudder, for publishing its contexts. Connects at
-// construction if Rudder is listening, and again whenever Rudder announces it
-// has (re)started; with no Rudder running it stays silent and costs nothing.
+// An app's connection to Rudder, for publishing its contexts. Connects when
+// Rudder is listening and keeps reconnecting by itself while the client lives;
+// with no Rudder running it stays silent and costs next to nothing.
 // Main thread only.
 class RudderClient
 {
 public:
     // `hello.pid` may be left 0: the client fills in this process's.
-    explicit RudderClient(protocol::Hello hello);
+    explicit RudderClient(protocol::Hello hello,
+                          std::string endpoint = protocol::endpoint());
     ~RudderClient();
 
     RudderClient(const RudderClient&) = delete;

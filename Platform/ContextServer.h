@@ -9,7 +9,7 @@
 
 namespace rudder::platform
 {
-// Rudder's end of the contexts socket: listens at protocol::endpoint(),
+// Rudder's end of the contexts socket: listens at an endpoint,
 // accepts provider apps and reads their newline-delimited messages. Idle, it
 // costs nothing: dispatch sources on the main queue on macOS, threads parked
 // in blocking pipe reads on Windows. Callbacks run on the main thread;
@@ -25,7 +25,7 @@ public:
 
     // Starts listening (on macOS, after removing a stale socket file). False
     // if it can't -- on Windows, when another Rudder already is.
-    bool start();
+    bool start(const std::string& endpoint = protocol::endpoint());
 
     // activate or close, to one connected app.
     void send(int connection, const protocol::Message& message);
