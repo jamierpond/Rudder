@@ -21,7 +21,7 @@ run:
 relaunch:
     node Scripts/run.mjs --relaunch
 
-[doc('Build Release + install (macOS: /Applications/Rudder.app; Windows: %LOCALAPPDATA%\Programs\Rudder) and start it')]
+[doc('Build Release + install (macOS: ~/.local/libexec/rudder/Rudder.app, linked from ~/.local/bin/rudder; Windows: %LOCALAPPDATA%\Programs\Rudder) and start it')]
 install:
     node Scripts/install.mjs
 

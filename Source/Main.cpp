@@ -1030,6 +1030,13 @@ struct RudderApp
         if (action == PreviewAction::none)
             return;
 
+        // Under key capture the preview can activate for real -- the only
+        // way the window gets above everything -- and typing still lands in
+        // the panel. Without it (no grant), nothing is raised or focused: a
+        // provider focusing its pane (CowTerm) would take key and close us.
+        if (!capturingKeys)
+            return;
+
         auto start = uptime();
 
         // A provider's context: the app only switches to it (never raising
@@ -1042,13 +1049,6 @@ struct RudderApp
         // Whatever raises it -- the provider above, or the preview below --
         // must not land after the panel has closed onto something else.
         lateRaise.previewed(item.appId);
-
-        // Under key capture the preview can activate for real -- the only
-        // way the window gets above everything -- and typing still lands in
-        // the panel. Without it (no grant), nothing is raised: the pane shows
-        // the selection instead.
-        if (!capturingKeys)
-            return;
 
         // Off the main thread: a hung app answers late, and only its own
         // preview waits.

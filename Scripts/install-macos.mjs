@@ -1,12 +1,13 @@
-// Build Release + install to /Applications/Rudder.app, as Grazer's
-// install-macos.mjs does.
+// Build Release + install to ~/.local/libexec/rudder/Rudder.app, with a
+// ~/.local/bin/rudder launcher script that opens it through LaunchServices.
 //
 // The new bundle is copied next to the old one first, then swapped in by
-// rename, so /Applications never holds a half-copied Rudder. A running
+// rename, so the install dir never holds a half-copied Rudder. A running
 // installed Rudder is asked to quit first; dev builds are left alone.
 // LaunchServices is pointed at the installed copy and told to forget the
 // build*/Rudder.app bundles. The installed Rudder is then opened, so it
-// registers itself to start at login from /Applications.
+// registers itself to start at login from there. A Rudder left in
+// /Applications by older installs is quit, unregistered and removed.
 //
 // The bundle is signed with a self-signed "Rudder Local Signing" identity,
 // made once in its own keychain and reused: the designated requirement then
@@ -17,8 +18,8 @@
 // The Release tree is always reconfigured, so CPM refetches branch-pinned
 // packages (eacp, emberstore) and the install has the latest of them.
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
-import { rm, rename } from 'node:fs/promises';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
+import { rm, rename, writeFile } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -31,9 +32,14 @@ import {
   run,
 } from './lib.mjs';
 
-const APP = '/Applications/Rudder.app';
-const STAGING = '/Applications/.Rudder.app.installing';
-const OLD = '/Applications/.Rudder.app.old';
+const LOCAL_DIRECTORY = join(homedir(), '.local');
+const INSTALL_DIRECTORY = join(LOCAL_DIRECTORY, 'libexec', 'rudder');
+const COMMAND_DIRECTORY = join(LOCAL_DIRECTORY, 'bin');
+const APP = join(INSTALL_DIRECTORY, 'Rudder.app');
+const STAGING = join(INSTALL_DIRECTORY, '.Rudder.app.installing');
+const OLD = join(INSTALL_DIRECTORY, '.Rudder.app.old');
+const COMMAND_LAUNCHER = join(COMMAND_DIRECTORY, 'rudder');
+const LEGACY_APPLICATIONS_APP = '/Applications/Rudder.app';
 const LSREGISTER =
   '/System/Library/Frameworks/CoreServices.framework/Frameworks/' +
   'LaunchServices.framework/Support/lsregister';
@@ -154,7 +160,42 @@ async function quitInstalled(app = APP) {
   return pids.length > 0;
 }
 
+async function removeLegacyApplicationsInstall() {
+  if (!existsSync(LEGACY_APPLICATIONS_APP))
+    return;
+
+  console.log(`[install] removing the old ${LEGACY_APPLICATIONS_APP}`);
+  await quitInstalled(LEGACY_APPLICATIONS_APP);
+  await run(LSREGISTER, ['-u', LEGACY_APPLICATIONS_APP], { stdio: 'ignore' }).catch(() => {});
+  await rm(LEGACY_APPLICATIONS_APP, { recursive: true, force: true });
+}
+
+const COMMAND_LAUNCHER_FILE_MODE = 0o755;
+
+// A plain launch goes through LaunchServices, not the bundle's executable, so
+// macOS makes the app (not the terminal) the responsible process for TCC
+// prompts and grants. Any argument execs the executable directly instead:
+// argv and the terminal's stdout/stderr reach it, as before.
+function describeCommandLauncherScript(appBundlePath) {
+  const appExecutablePath = join(appBundlePath, 'Contents', 'MacOS', 'Rudder');
+  return [
+    '#!/bin/sh',
+    `[ "$#" -gt 0 ] && exec ${JSON.stringify(appExecutablePath)} "$@"`,
+    `exec open -a ${JSON.stringify(appBundlePath)}`,
+    '',
+  ].join('\n');
+}
+
+async function writeCommandLauncher(launcherPath, appBundlePath) {
+  await rm(launcherPath, { force: true });
+  await writeFile(launcherPath, describeCommandLauncherScript(appBundlePath),
+    { mode: COMMAND_LAUNCHER_FILE_MODE });
+}
+
 await main(async () => {
+  mkdirSync(INSTALL_DIRECTORY, { recursive: true });
+  mkdirSync(COMMAND_DIRECTORY, { recursive: true });
+
   await run('cmake', [
     '-G', 'Ninja', '-B', RELEASE_BUILD_DIR, '-DCMAKE_BUILD_TYPE=Release',
     ...cpmSourceArgs(),
@@ -181,6 +222,7 @@ await main(async () => {
   const after = designatedRequirement(STAGING);
 
   await quitInstalled();
+  await removeLegacyApplicationsInstall();
 
   await rm(OLD, { recursive: true, force: true });
 
@@ -196,6 +238,8 @@ await main(async () => {
   } else {
     console.log('[install] same signing identity: keeping the Accessibility grant');
   }
+
+  await writeCommandLauncher(COMMAND_LAUNCHER, APP);
 
   await run(LSREGISTER, ['-f', APP]);
 

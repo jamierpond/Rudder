@@ -1695,7 +1695,26 @@ std::vector<std::string> appFolders()
                                              "/System/Applications/Utilities"};
 
     folders.push_back(toString(NSHomeDirectory()) + "/Applications");
+    folders.push_back(toString(NSHomeDirectory()) + "/.local/libexec");
     return folders;
+}
+
+NSString* getCommandLineLinksFolder()
+{
+    return [NSHomeDirectory() stringByAppendingPathComponent:@".local/bin"];
+}
+
+// "~/.local/bin/ct" -> ".../CowTerm.app/Contents/MacOS/CowTerm" -> ".../CowTerm.app".
+NSString* findEnclosingAppBundle(NSString* path)
+{
+    for (auto* candidate = path; candidate.length > 1;
+         candidate = candidate.stringByDeletingLastPathComponent)
+    {
+        if ([candidate.pathExtension isEqualToString:@"app"])
+            return candidate;
+    }
+
+    return nil;
 }
 
 // Every .app directly in the folders, and one folder down for the vendor
@@ -1747,6 +1766,21 @@ std::vector<InstalledApp> scanInstalledApps()
                 if ([inner.pathExtension isEqualToString:@"app"])
                     add([path stringByAppendingPathComponent:inner]);
         }
+    }
+
+    auto* linksFolder = getCommandLineLinksFolder();
+
+    for (NSString* entry in [files contentsOfDirectoryAtPath:linksFolder error:nil])
+    {
+        auto* linkPath = [linksFolder stringByAppendingPathComponent:entry];
+
+        if ([files destinationOfSymbolicLinkAtPath:linkPath error:nil] == nil)
+            continue;
+
+        auto* resolvedPath = linkPath.stringByResolvingSymlinksInPath;
+
+        if (auto* bundlePath = findEnclosingAppBundle(resolvedPath))
+            add(bundlePath);
     }
 
     return apps;
