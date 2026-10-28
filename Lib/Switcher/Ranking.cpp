@@ -32,6 +32,7 @@ RudderItem contextRow(const RudderItem& app, const RudderContext& context)
     row.contextId = context.id;
     row.url = context.url;
     row.branch = context.branch;
+    row.repo = context.repo;
     row.contextPath = context.path;
 
     // A place that isn't open yet reads like a closed app and, like one, is
@@ -161,12 +162,13 @@ std::optional<int> contextScore(const std::string& query,
 namespace
 {
 std::string stableKey(const std::string& appId,
+                      const std::string& repo,
                       const std::string& branch,
                       const std::string& path,
                       const std::string& id)
 {
-    if (!branch.empty())
-        return appId + "/branch:" + branch;
+    if (!repo.empty() && !branch.empty())
+        return appId + "/repo:" + repo + "#branch:" + branch;
 
     if (!path.empty())
         return appId + "/path:" + path;
@@ -177,7 +179,7 @@ std::string stableKey(const std::string& appId,
 
 std::string contextKey(const std::string& appId, const RudderContext& context)
 {
-    return stableKey(appId, context.branch, context.path, context.id);
+    return stableKey(appId, context.repo, context.branch, context.path, context.id);
 }
 
 std::vector<std::string> goneContextKeys(const std::string& appId,
@@ -210,7 +212,7 @@ std::vector<std::string> idOnlyContextKeys(const std::string& appId,
     auto keys = std::vector<std::string> {};
 
     for (auto& context: contexts)
-        if (context.branch.empty() && context.path.empty())
+        if (context.path.empty() && (context.repo.empty() || context.branch.empty()))
             if (auto key = contextKey(appId, context); seen.insert(key).second)
                 keys.push_back(std::move(key));
 
@@ -220,7 +222,7 @@ std::vector<std::string> idOnlyContextKeys(const std::string& appId,
 std::string frecencyKey(const RudderItem& item)
 {
     if (item.kind == "context" || item.kind == "window")
-        return stableKey(item.appId, item.branch, item.contextPath, item.contextId);
+        return stableKey(item.appId, item.repo, item.branch, item.contextPath, item.contextId);
 
     if (item.kind != "favourite")
         return item.id;

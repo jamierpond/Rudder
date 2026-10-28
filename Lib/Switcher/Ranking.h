@@ -18,10 +18,10 @@ using FrecencyFn = std::function<double(const std::string& key)>;
 
 // What a context is remembered by -- its frecency, its recency, its rename --
 // stable across shells and restarts, where a provider's id isn't (CowTerm's
-// pane ids are new for every shell): appId + "/branch:" + branch when it has
-// one, else appId + "/path:" + its directory, else appId + "/" + its id. A
-// live pane and the unopened place on the same branch share it, so their
-// uses add up.
+// pane ids are new for every shell): appId + "/repo:" + repo + "#branch:" +
+// branch when it has both, else appId + "/path:" + its directory, else
+// appId + "/" + its id. A live pane and the unopened place on the same branch
+// of the same repository share it, so their uses add up.
 std::string contextKey(const std::string& appId, const RudderContext& context);
 
 // The contextKeys of the contexts in `before` that `after` has no context
@@ -35,7 +35,7 @@ std::vector<std::string> goneContextKeys(const std::string& appId,
                                          const std::vector<RudderContext>& after);
 
 // The contextKeys among `contexts` that are only the provider's id (no
-// branch, no path). Those ids mean nothing once the app's connection ends:
+// repository and branch, no path). Those ids mean nothing once the app's connection ends:
 // Grazer numbers its tabs from 0 again each launch, so tab "3" after a
 // restart is another page.
 std::vector<std::string> idOnlyContextKeys(const std::string& appId,

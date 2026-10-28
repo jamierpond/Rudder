@@ -70,15 +70,16 @@ Settings then says so, and you can pick another chord.
 
 With nothing typed, the list is the running apps and favourites by when you
 last used them, with the panes and tabs you used in the last 36 hours (at
-most six) among them. Rudder learns that from what you do, not only from what
+most six) among them. An app whose panes or tabs are listed isn't listed again
+as an app, typed query or not. Rudder learns that from what you do, not only from what
 you pick in the panel: every app activation, and every time a provider's
 focused context changes while its app is in front. A context that stays
 focused for 5 seconds also earns a quarter of a pick's frecency, so the
 panes you work in rise when you type.
 
-A context is remembered by its git branch (else its directory), not by the
-provider's id, so a new shell on the same branch and the unopened place for
-it are one thing. That's also what a rename (⌃R) sticks to: the name becomes
+A context is remembered by its repository and git branch (else its
+directory), not by the provider's id, so a new shell on the same branch of a
+repo and the unopened place for it are one thing. That's also what a rename (⌃R) sticks to: the name becomes
 the row's title, the provider's title moves to the subtitle, and typing
 either finds it. Names live in Rudder's own store, so they work for every
 provider.

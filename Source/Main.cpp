@@ -1395,6 +1395,7 @@ struct RudderApp
                 converted.open = context.open;
                 converted.path = context.path;
                 converted.branch = context.branch;
+                converted.repo = context.repo;
                 converted.focused = context.focused;
                 contexts.push_back(std::move(converted));
             }

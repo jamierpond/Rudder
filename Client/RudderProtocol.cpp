@@ -92,6 +92,7 @@ std::optional<Message> readContexts(const Object& object)
             || !readString(fields, "url", context.url)
             || !readString(fields, "path", context.path)
             || !readString(fields, "branch", context.branch)
+            || !readString(fields, "repo", context.repo)
             || !readBool(fields, "open", context.open)
             || !readBool(fields, "focused", context.focused))
             return std::nullopt;

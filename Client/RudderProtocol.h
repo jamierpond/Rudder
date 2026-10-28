@@ -17,8 +17,8 @@
 //   app -> Rudder   {"type":"hello","app":"Grazer","bundleId":"audio.pond.grazer","pid":42,
 //                    "canClose":true}
 //   app -> Rudder   {"type":"contexts","contexts":[{"id":"3","title":"…","url":"…"}]}
-//                   (each context may also carry "subtitle", "path", "branch",
-//                   "open": false and "focused": true)
+//                   (each context may also carry "subtitle", "path", "repo",
+//                   "branch", "open": false and "focused": true)
 //   Rudder -> app   {"type":"activate","contextId":"3","raise":true}
 //   Rudder -> app   {"type":"close","contextId":"3"}
 //
@@ -75,7 +75,11 @@ struct Context
     // detached. A context's most telling name: Rudder matches on it first.
     std::string branch;
 
-    MIRO_REFLECT(id, title, subtitle, url, open, path, focused, branch)
+    // The root of the git repository `path` is in (a worktree's own root),
+    // empty outside a repo. With `branch`, it names the context for Rudder.
+    std::string repo;
+
+    MIRO_REFLECT(id, title, subtitle, url, open, path, focused, branch, repo)
 
     bool operator==(const Context&) const = default;
 };

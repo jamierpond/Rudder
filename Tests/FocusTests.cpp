@@ -13,8 +13,10 @@ std::vector<RudderContext> focusedOn(const std::string& branch)
 {
     auto a = RudderContext {"pane:a", "claude", "", ""};
     a.branch = "fix-login";
+    a.repo = "/p";
     auto b = RudderContext {"pane:b", "zsh", "", ""};
     b.branch = "rename";
+    b.repo = "/p";
 
     (branch == a.branch ? a : b).focused = true;
     return {a, b};
@@ -27,13 +29,13 @@ auto tFocusChangeStamps = test("Focus/a focus change in the front app is stamped
     auto focus = FocusTracker {};
 
     check(focus.pushed(cowTerm, focusedOn("fix-login"), true, 1000)
-          == std::optional<std::string> {"com.eacp.cowterm/branch:fix-login"});
+          == std::optional<std::string> {"com.eacp.cowterm/repo:/p#branch:fix-login"});
 
     // The same focus pushed again (a title changed): nothing new.
     check(!focus.pushed(cowTerm, focusedOn("fix-login"), true, 2000));
 
     check(focus.pushed(cowTerm, focusedOn("rename"), true, 3000)
-          == std::optional<std::string> {"com.eacp.cowterm/branch:rename"});
+          == std::optional<std::string> {"com.eacp.cowterm/repo:/p#branch:rename"});
 };
 
 auto tBackgroundFocusNotStamped
@@ -43,7 +45,7 @@ auto tBackgroundFocusNotStamped
 
     check(!focus.pushed(cowTerm, focusedOn("rename"), false, 1000));
     check(focus.activated(cowTerm, 5000)
-          == std::optional<std::string> {"com.eacp.cowterm/branch:rename"});
+          == std::optional<std::string> {"com.eacp.cowterm/repo:/p#branch:rename"});
     check(!focus.activated("com.apple.Safari", 5000));
 };
 
@@ -60,7 +62,7 @@ auto tDwellCreditsOnce = test("Focus/a focus that holds earns frecency once, a f
     check(!focus.settle(cowTerm, dwell));
 
     check(focus.settle(cowTerm, 500 + dwell)
-          == std::optional<std::string> {"com.eacp.cowterm/branch:rename"});
+          == std::optional<std::string> {"com.eacp.cowterm/repo:/p#branch:rename"});
     check(!focus.settle(cowTerm, 500 + 10 * dwell));
 
     // Only the front app's focus counts.
@@ -88,7 +90,7 @@ auto tForgetDrops = test("Focus/an app that quits is forgotten") = []
 auto tForgetKeyEndsSpell = test("Focus/a gone context's spell ends: no stamp, no credit") = []
 {
     auto focus = FocusTracker {};
-    auto key = std::string {"com.eacp.cowterm/branch:fix-login"};
+    auto key = std::string {"com.eacp.cowterm/repo:/p#branch:fix-login"};
 
     check(focus.pushed(cowTerm, focusedOn("fix-login"), true, 0) == std::optional {key});
 
@@ -99,7 +101,7 @@ auto tForgetKeyEndsSpell = test("Focus/a gone context's spell ends: no stamp, no
 
     // The next push that focuses something starts a spell again.
     check(focus.pushed(cowTerm, focusedOn("rename"), true, 2000)
-          == std::optional<std::string> {"com.eacp.cowterm/branch:rename"});
+          == std::optional<std::string> {"com.eacp.cowterm/repo:/p#branch:rename"});
 };
 
 // The live store had a pick count +1 and then, five seconds later, the same
@@ -110,7 +112,7 @@ auto tPickNotCreditedTwice
 {
     auto focus = FocusTracker {};
     auto dwell = FocusTracker::dwellMs;
-    auto fix = std::string {"com.eacp.cowterm/branch:fix-login"};
+    auto fix = std::string {"com.eacp.cowterm/repo:/p#branch:fix-login"};
 
     focus.picked(cowTerm, fix, 1000);
 
@@ -135,7 +137,7 @@ auto tPickReplacesStaleSpell
     = test("Focus/after a pick the pane left behind is neither stamped nor credited") = []
 {
     auto focus = FocusTracker {};
-    auto rename = std::string {"com.eacp.cowterm/branch:rename"};
+    auto rename = std::string {"com.eacp.cowterm/repo:/p#branch:rename"};
 
     focus.pushed(cowTerm, focusedOn("fix-login"), true, 0);
     focus.picked(cowTerm, rename, 60000);

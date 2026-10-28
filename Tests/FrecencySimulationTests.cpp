@@ -43,7 +43,7 @@ std::vector<int> everyDay() { return {0, 1, 2, 3, 4, 5, 6}; }
 
 std::string branchKey(const std::string& branch)
 {
-    return std::string {cowTermId} + "/branch:" + branch;
+    return std::string {cowTermId} + "/repo:/p/" + branch + "#branch:" + branch;
 }
 
 // Picks spread evenly over a 09:00-18:00 working day.
@@ -121,6 +121,7 @@ RudderContext claudePane(const std::string& id, const std::string& branch, bool 
     auto context = RudderContext {id, "claude", "", ""};
     context.branch = branch;
     context.path = "/p/" + branch;
+    context.repo = context.path;
     context.open = open;
     return context;
 }

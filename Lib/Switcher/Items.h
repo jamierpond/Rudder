@@ -37,11 +37,14 @@ struct RudderContext
     // context's most telling name, so matched first.
     std::string branch;
 
+    // The root of the git repository `path` is in (protocol repo, optional).
+    std::string repo;
+
     // The user's own name for it (RenameStore), set by Rudder, never by the
     // provider. Shown as the title, and matched as well as the branch.
     std::string name;
 
-    MIRO_REFLECT(id, title, subtitle, url, kind, open, path, branch, focused, name)
+    MIRO_REFLECT(id, title, subtitle, url, kind, open, path, branch, repo, focused, name)
 };
 
 // One row in the panel. kind "app" is a running app (id = appId = its bundle
@@ -71,9 +74,10 @@ struct RudderItem
     std::vector<std::string> keywords;
     std::string openWith;
 
-    // A context row's branch and directory, carried from its RudderContext so
+    // A context row's repository, branch and directory, carried from its RudderContext so
     // frecencyKey can name it the same way whichever pane or place it is.
     std::string branch;
+    std::string repo;
     std::string contextPath;
 
     MIRO_REFLECT(kind,
@@ -89,6 +93,7 @@ struct RudderItem
                  keywords,
                  openWith,
                  branch,
+                 repo,
                  contextPath)
 };
 } // namespace rudder
