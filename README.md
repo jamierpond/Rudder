@@ -19,7 +19,7 @@ Drawn with eacp's GPU component tier (one `ComponentHost`), no web view.
 just build   # configure + build (macOS: Ninja, Windows: the default Visual Studio generator; deps via CPM)
 just run     # build, quit any running Rudder (macOS: and reset its dev Accessibility grant), open it
 just test    # unit tests
-just install # Release build into /Applications/Rudder.app (macOS) or
+just install # Release build into ~/.local/libexec/rudder/Rudder.app (macOS) or
              # %LOCALAPPDATA%\Programs\Rudder with a Start Menu shortcut
              # (Windows), then start it so it starts at login from there
 just update-deps  # refetch eacp and the other branch-pinned deps
@@ -29,6 +29,18 @@ just update-deps  # refetch eacp and the other branch-pinned deps
 self-signed "Rudder Local Signing" identity it makes once in its own keychain.
 The signature stays the same between installs, so the Accessibility grant
 survives reinstalling.
+
+### Dogfood cycle: install the moment it builds
+
+Jamie runs the installed Rudder all day, so a change only exists once it is
+installed. The cycle must be extremely fast: write the change, `just test`,
+commit, push, `just install`, in that order, immediately, every time. Never
+leave a built change sitting in `build-release/`, and never wait to be asked
+to install. `just install` quits and relaunches the running Rudder; that is
+expected and wanted. (The `/Applications` path above is out of date: it
+installs to `~/.local/libexec/rudder/Rudder.app` with a `~/.local/bin/rudder`
+launcher.) The same goes for agents working in this repo: install as soon as
+the change is written.
 
 Rudder is an agent app: no Dock icon or taskbar button, a menu-bar / tray icon
 (Open, Settings…, Quit), and it registers itself to start at login (on Windows
