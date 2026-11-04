@@ -24,6 +24,11 @@ being asked and without asking.
 - Never launch the raw bundle executable from a shell (TCC then blames the
   terminal). Use `open`, the `~/.local/bin/rudder` launcher or `just install`.
 
+## Debugging
+
+Rudder always logs to `~/Library/Logs/Rudder/rudder.log`. When something
+misbehaves, read it first, before asking Jamie anything.
+
 ## Product rules decided by Jamie
 
 - While the panel is up, Rudder keeps keyboard focus. A preview brings the

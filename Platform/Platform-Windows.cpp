@@ -30,6 +30,8 @@
 
 namespace rudder::platform
 {
+void setLogger(std::function<void(const char*)>) {}
+
 namespace
 {
 using eacp::Strings::narrow;

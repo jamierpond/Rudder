@@ -13,6 +13,9 @@
 // and Platform-Windows.cpp implement it. All calls are main thread only.
 namespace rudder::platform
 {
+// Where the platform layer's diagnostics go (Rudder's log file).
+void setLogger(std::function<void(const char*)> log);
+
 // A running, user-facing app (macOS: activation policy regular; Windows: a
 // process with a window in the taskbar). `id` is its bundle id, or
 // "pid:<n>" for the odd app without one; on Windows, which has no bundle ids,

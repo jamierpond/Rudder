@@ -33,6 +33,7 @@
 #include <fstream>
 #include <iterator>
 #include <map>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <thread>
@@ -45,17 +46,101 @@ using namespace rudder;
 
 namespace
 {
-// Set RUDDER_LOG=1 to trace the panel's show/hide handshake on stderr.
-void logEvent(const char* message)
-{
-    static const auto enabled = std::getenv("RUDDER_LOG") != nullptr;
+constexpr auto maximumLogFileBytes = std::uintmax_t {10 * 1024 * 1024};
+constexpr auto monotonicMillisecondsWrap = 100000LL;
+constexpr auto millisecondsPerSecond = 1000LL;
 
-    if (!enabled)
+std::filesystem::path getLogDirectory()
+{
+#if defined(_WIN32)
+    if (auto* localAppData = std::getenv("LOCALAPPDATA"))
+        return std::filesystem::path {localAppData} / "Rudder" / "Logs";
+#else
+    if (auto* home = std::getenv("HOME"))
+        return std::filesystem::path {home} / "Library" / "Logs" / "Rudder";
+#endif
+    return std::filesystem::temp_directory_path() / "Rudder";
+}
+
+// Renames a log over the size limit to rudder.log.1, replacing the old one.
+void rotateLogFileIfTooLarge(const std::filesystem::path& logFile)
+{
+    auto error = std::error_code {};
+    auto size = std::filesystem::file_size(logFile, error);
+
+    if (error || size <= maximumLogFileBytes)
         return;
 
+    auto rotated = logFile;
+    rotated += ".1";
+    std::filesystem::rename(logFile, rotated, error);
+}
+
+FILE* openLogFile()
+{
+    auto directory = getLogDirectory();
+    auto error = std::error_code {};
+    std::filesystem::create_directories(directory, error);
+
+    auto logFile = directory / "rudder.log";
+    rotateLogFileIfTooLarge(logFile);
+
+    auto* file = std::fopen(logFile.string().c_str(), "a");
+
+    if (file != nullptr)
+        std::setvbuf(file, nullptr, _IOLBF, BUFSIZ);
+
+    return file;
+}
+
+std::string formatWallClockTime()
+{
     using namespace std::chrono;
-    auto ms = duration_cast<milliseconds>(steady_clock::now().time_since_epoch());
-    std::fprintf(stderr, "[rudder %lld] %s\n", (long long) ms.count() % 100000, message);
+    auto now = system_clock::now();
+    auto seconds = system_clock::to_time_t(now);
+    auto milliseconds =
+        duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count()
+        % millisecondsPerSecond;
+
+    auto local = std::tm {};
+#if defined(_WIN32)
+    localtime_s(&local, &seconds);
+#else
+    localtime_r(&seconds, &local);
+#endif
+
+    char text[32];
+    std::snprintf(text,
+                  sizeof(text),
+                  "%02d:%02d:%02d.%03lld",
+                  local.tm_hour,
+                  local.tm_min,
+                  local.tm_sec,
+                  (long long) milliseconds);
+    return text;
+}
+
+// Always appends to the log file; RUDDER_LOG=1 mirrors each line to stderr.
+void logEvent(const char* message)
+{
+    static auto mutex = std::mutex {};
+    static auto* file = openLogFile();
+    static const auto mirrorToStandardError = std::getenv("RUDDER_LOG") != nullptr;
+
+    using namespace std::chrono;
+    auto monotonic =
+        duration_cast<milliseconds>(steady_clock::now().time_since_epoch());
+    auto line = formatWallClockTime() + " [rudder "
+                + std::to_string(monotonic.count() % monotonicMillisecondsWrap)
+                + "] " + message + "\n";
+
+    auto lock = std::lock_guard {mutex};
+
+    if (file != nullptr)
+        std::fputs(line.c_str(), file);
+
+    if (mirrorToStandardError)
+        std::fputs(line.c_str(), stderr);
 }
 
 std::optional<std::filesystem::path> getPanelDumpDirectory()
@@ -87,6 +172,8 @@ struct RudderApp
             Apps::setLaunchAtLogin(true);
 
         quick_window::setLogger(logEvent);
+        platform::setLogger(logEvent);
+        logEvent("launched " RUDDER_VERSION);
 
         // Opening Rudder.app again while it runs (Finder, Spotlight) arrives
         // as a reopen: summon the panel. quick_window swallows the reopens its
@@ -177,7 +264,7 @@ struct RudderApp
 
         panel.onQueryChange = [this](const std::string& text) { setQuery(text); };
 
-        // RUDDER_LOG latency trace: hotkey to the first frame on screen, and
+        // Latency trace: hotkey to the first frame on screen, and
         // each key event (by its OS timestamp) to the frame that shows it.
         panel.onFrame = [this]
         {

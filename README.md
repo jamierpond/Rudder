@@ -146,8 +146,11 @@ outputs are committed; rerun the script only when the art changes.
 
 ## Debugging
 
-- `RUDDER_LOG=1` traces the show/hide handshake, previews, the back stack and
-  latency (hotkey → first frame, key → frame) on stderr.
+- Rudder always logs to `~/Library/Logs/Rudder/rudder.log`: launch, the
+  show/hide handshake, previews, activation reclaims, the back stack and
+  latency (hotkey → first frame, key → frame). Over 10 MB at launch it moves
+  to `rudder.log.1`. Read it first when something misbehaves.
+- `RUDDER_LOG=1` mirrors the same lines to stderr.
 - `Rudder --snapshot <dir>` renders the panel and the unlock overlay to PNGs.
 
 ## Publishing contexts from an app
