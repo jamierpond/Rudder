@@ -152,7 +152,7 @@ void takeKeyForTyping(eacp::Graphics::Window& window)
 // The foreground lock can still refuse -- a summon from the tray menu, or
 // input that went elsewhere since the hotkey. SwitchToThisWindow is what
 // Alt+Tab uses, and it isn't refused.
-void activateForPanel()
+void activateForPanel(double)
 {
     if (panelWindow == nullptr || GetForegroundWindow() == panelWindow)
     {

@@ -1,4 +1,5 @@
 #include "QuickWindow.h"
+#include "Platform.h"
 
 #import <AppKit/AppKit.h>
 #import <objc/runtime.h>
@@ -207,13 +208,23 @@ void takeKeyForTyping(eacp::Graphics::Window& window)
     logEvent("reveal: panel is key + main");
 }
 
-void activateForPanel()
+// Cooperative activation, when macOS grants it, lands within a frame or two;
+// waiting longer only delays the panel taking the keyboard.
+constexpr auto cooperativeActivationWaitSeconds = 0.03;
+
+void activateForPanel(double hotkeyUptime)
 {
     hiddenSinceActivation = false;
 
+    auto sinceHotkey = [hotkeyUptime]
+    {
+        return std::to_string((int) ((platform::uptime() - hotkeyUptime) * 1000.0))
+               + " ms after hotkey";
+    };
+
     if (NSApp.isActive)
     {
-        logEvent("activateForPanel: already active");
+        logEvent(("activateForPanel: already active, " + sinceHotkey()).c_str());
         return;
     }
 
@@ -227,12 +238,12 @@ void activateForPanel()
     // working" elsewhere — exactly a hotkey summon over the DAW — so escalate to
     // a LaunchServices open, which counts as a user-level activation.
     dispatch_after(
-        dispatch_time(DISPATCH_TIME_NOW, (int64_t) (0.3 * NSEC_PER_SEC)),
+        dispatch_time(DISPATCH_TIME_NOW, (int64_t) (cooperativeActivationWaitSeconds * NSEC_PER_SEC)),
         dispatch_get_main_queue(),
         ^{
           if (NSApp.isActive)
           {
-              logEvent("activateForPanel: cooperative won");
+              logEvent(("activateForPanel: cooperative won, " + sinceHotkey()).c_str());
               return;
           }
 
@@ -249,7 +260,7 @@ void activateForPanel()
               return;
           }
 
-          logEvent("activateForPanel: escalating via LaunchServices");
+          logEvent(("activateForPanel: escalating via LaunchServices, " + sinceHotkey()).c_str());
           suppressReopenUntil = CFAbsoluteTimeGetCurrent() + 3.0;
           auto* configuration = [NSWorkspaceOpenConfiguration configuration];
           configuration.activates = YES;

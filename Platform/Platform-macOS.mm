@@ -551,6 +551,10 @@ void handleCapturedKey(CGEventType type, CGEventRef event)
 {
     if (captureOn && activeCapture.onKey)
         activeCapture.onKey(toKeyEvent(type, event));
+    else if (type == kCGEventKeyDown)
+        logEvent("captured key "
+                 + std::to_string(CGEventGetIntegerValueField(event, kCGKeyboardEventKeycode))
+                 + " -> dropped because capture stopped before it ran");
 
     handledKeys += 1;
     lastKeyProgress = uptimeNanos();
@@ -689,6 +693,34 @@ void setScreenshotKeys()
     screenshotKeyCount = count;
 }
 
+const char* describePassVerdict(CaptureVerdict verdict)
+{
+    switch (verdict)
+    {
+        case CaptureVerdict::pass:
+            return "passed through (hotkey or screenshot under way)";
+        case CaptureVerdict::passAndStop:
+            return "passed through, capture off or panel not shown";
+        case CaptureVerdict::passAndAbort:
+            return "passed through, capture aborted";
+        case CaptureVerdict::passAndScreenshot:
+            return "passed through as a screenshot chord";
+        case CaptureVerdict::swallow:
+            return "swallowed";
+    }
+
+    return "?";
+}
+
+// The tap thread: the line is written on the main thread.
+void logPassedKey(CaptureKey key, CaptureVerdict verdict)
+{
+    auto line = "captured key " + std::to_string(key.keyCode) + " mods "
+                + std::to_string(key.modifiers) + " -> " + describePassVerdict(verdict);
+
+    dispatch_async(dispatch_get_main_queue(), ^{ logEvent(line); });
+}
+
 CaptureEvent classify(CGEventType type)
 {
     switch (type)
@@ -751,6 +783,9 @@ CGEventRef captureCallback(CGEventTapProxy, CGEventType type, CGEventRef event, 
     if (tapStallMs > 0 && verdict == CaptureVerdict::swallow
         && kind == CaptureEvent::keyDown)
         usleep((useconds_t) tapStallMs * 1000);
+
+    if (kind == CaptureEvent::keyDown && verdict != CaptureVerdict::swallow)
+        logPassedKey(*key, verdict);
 
     switch (verdict)
     {
@@ -1031,7 +1066,9 @@ bool startKeyCapture(eacp::Graphics::Window& panel,
     [NSRunLoop.mainRunLoop addTimer:captureWatch forMode:NSRunLoopCommonModes];
 
     lastKeyProgress = uptimeNanos();
-    capturePanelShown = capturePanel != nil && capturePanel.isVisible;
+    // Started at the top of a reveal, before the panel is ordered in; the
+    // capture watch checks it is on screen half a second later.
+    capturePanelShown = capturePanel != nil;
     captureOn = true;
     CGEventTapEnable(captureTap.load(), true);
     return true;

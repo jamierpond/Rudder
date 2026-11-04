@@ -31,7 +31,8 @@ void takeKeyForTyping(eacp::Graphics::Window& window);
 
 // Call with the panel already front-and-key. Requires installReopenHandler — the
 // escalation this falls back to arrives as a reopen.
-void activateForPanel();
+// hotkeyUptime (platform::uptime of the summon) is for the log only.
+void activateForPanel(double hotkeyUptime);
 
 void hideYieldingActivation(eacp::Graphics::Window& window,
                             std::function<void()> hide);

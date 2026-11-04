@@ -51,6 +51,9 @@ constexpr auto monotonicMillisecondsWrap = 100000LL;
 constexpr auto millisecondsPerSecond = 1000LL;
 // How long a provider takes to draw the context a preview switched it to.
 constexpr auto contextSwitchRedrawMs = 150;
+// How long after the summon hotkey a key carrying the hotkey's modifiers is
+// taken as typed before those modifiers were released.
+constexpr auto summonModifiersReleaseSeconds = 1.0;
 
 std::filesystem::path getLogDirectory()
 {
@@ -792,9 +795,6 @@ struct RudderApp
 
     void onCapturedKey(const KeyEvent& event)
     {
-        if (capturing && event.type == KeyEventType::Down)
-            logEvent(("captured key " + std::to_string(event.keyCode)).c_str());
-
         // RUDDER_DEBUG_STALL_MS: hold the main thread on every key press, to
         // prove a stuck Rudder can't take the keyboard with it.
         static const auto stallMs = []
@@ -809,11 +809,59 @@ struct RudderApp
             std::this_thread::sleep_for(std::chrono::milliseconds {stallMs});
         }
 
-        if (!capturing && (isChord(event, bindings.summon) || isChord(event, bindings.back)))
+        if (event.type != KeyEventType::Down)
             return;
 
-        if (event.type == KeyEventType::Down)
-            panel.keyDown(event);
+        if (!capturing && (isChord(event, bindings.summon) || isChord(event, bindings.back)))
+        {
+            logCapturedKey(event, "ignored as hotkey");
+            return;
+        }
+
+        auto typed = event;
+
+        if (isTypedBeforeSummonModifiersReleased(event))
+        {
+            typed.modifiers = {};
+            typed.characters = event.charactersIgnoringModifiers;
+            logCapturedKey(event, "delivered without the summon modifiers");
+        }
+        else
+        {
+            summonModifiersMayBeHeld = false;
+            logCapturedKey(event, "delivered");
+        }
+
+        panel.keyDown(typed);
+    }
+
+    // The first letters after the summon often go down before the hotkey's
+    // modifiers come up: Option+Space then "e" arrives as Option+E, which is
+    // a dead key and types nothing.
+    bool isTypedBeforeSummonModifiersReleased(const KeyEvent& event) const
+    {
+        if (capturing || !summonModifiersMayBeHeld
+            || uptime() - summonUptime > summonModifiersReleaseSeconds)
+            return false;
+
+        auto chord = parseChord(bindings.summon);
+
+        if (!chord || !(chord->control || chord->option || chord->command))
+            return false;
+
+        auto& mods = event.modifiers;
+        return mods.control == chord->control && mods.alt == chord->option
+               && mods.shift == chord->shift && mods.command == chord->command;
+    }
+
+    void logCapturedKey(const KeyEvent& event, const char* outcome)
+    {
+        auto& mods = event.modifiers;
+        auto line = "captured key " + std::to_string(event.keyCode) + " mods "
+                    + (mods.command ? "cmd " : "") + (mods.control ? "ctrl " : "")
+                    + (mods.alt ? "alt " : "") + (mods.shift ? "shift " : "") + "-> "
+                    + outcome + ", " + millis(uptime() - summonUptime) + " after summon";
+        logEvent(line.c_str());
     }
 
     static bool isChord(const KeyEvent& event, const std::string& text)
@@ -865,6 +913,12 @@ struct RudderApp
     void reveal(bool showSettings)
     {
         logEvent("reveal: begin");
+        summonUptime = uptime();
+        summonModifiersMayBeHeld = true;
+        // First, so keys typed while the panel is being built are swallowed;
+        // they run on the main thread after this reveal returns.
+        startKeyCapture();
+        logEvent("reveal: key capture on");
 
         // BEFORE the panel takes key: that app gets focus back on the way out.
         quick_window::rememberFrontmostApp();
@@ -892,11 +946,10 @@ struct RudderApp
         quick_window::raiseAboveFullScreen(window);
         quick_window::takeKeyForTyping(window);
         // Without this, macOS routes every keystroke to the app underneath.
-        quick_window::activateForPanel();
+        quick_window::activateForPanel(summonUptime);
 
         panel.focus();
         syncAccessibilityGate(true);
-        startKeyCapture();
         platform::watchWindows(running,
                                [this](const std::string& appId) { onWindowsChanged(appId); });
         logEvent("reveal: shown");
@@ -1060,6 +1113,7 @@ struct RudderApp
 
         query = text;
         logEvent(("query '" + query + "'").c_str());
+        logEvent(("line edit: " + std::to_string(query.size()) + " chars").c_str());
         filtered = rankWithWeb(allItems, query, webSettings(), frecencyLookup(), recencyLookup());
         selected = initialSelection(filtered, query, frontAppId);
         previewSelection();
@@ -2155,6 +2209,8 @@ struct RudderApp
     int selected = 0;
     Image noIcon;
     double hotkeyTime = 0.0;
+    double summonUptime = 0.0;
+    bool summonModifiersMayBeHeld = false;
     platform::RunningApp origin;
     bool capturingKeys = false;
     std::optional<RudderItem> pendingPreview;
