@@ -1047,14 +1047,39 @@ void stopKeyCapture()
 
 namespace
 {
-// axQueue only. That exact window to the front of the screen; its app stays
-// inactive, so keyboard focus stays where it was.
-bool raiseWindowWithoutActivating(AXUIElementRef window, bool unminimize, const std::string& title)
+// axQueue only. The preview's activation: AXFrontmost plus a raise of the
+// cached front window.
+bool previewFrontWindow(pid_t pid, const std::string& name)
+{
+    auto appElement = AXUIElementCreateApplication(pid);
+    AXUIElementSetMessagingTimeout(appElement, axTimeoutSeconds);
+    auto error =
+        AXUIElementSetAttributeValue(appElement, kAXFrontmostAttribute, kCFBooleanTrue);
+    CFRelease(appElement);
+
+    if (error != kAXErrorSuccess)
+    {
+        NSLog(@"Rudder: preview activation failed for %s: AXError %d",
+              name.c_str(),
+              (int) error);
+        noteAXError(error);
+    }
+
+    return raiseFrontWindow(pid) && error == kAXErrorSuccess;
+}
+
+// axQueue only. That exact window to the front, its app frontmost.
+bool raiseWindow(pid_t pid, AXUIElementRef window, bool unminimize, const std::string& title)
 {
     AXUIElementSetMessagingTimeout(window, axTimeoutSeconds);
 
     if (unminimize)
         AXUIElementSetAttributeValue(window, kAXMinimizedAttribute, kCFBooleanFalse);
+
+    auto appElement = AXUIElementCreateApplication(pid);
+    AXUIElementSetMessagingTimeout(appElement, axTimeoutSeconds);
+    AXUIElementSetAttributeValue(appElement, kAXFrontmostAttribute, kCFBooleanTrue);
+    CFRelease(appElement);
 
     AXUIElementSetAttributeValue(window, kAXMainAttribute, kCFBooleanTrue);
     auto error = AXUIElementPerformAction(window, kAXRaiseAction);
@@ -1066,17 +1091,6 @@ bool raiseWindowWithoutActivating(AXUIElementRef window, bool unminimize, const 
     }
 
     return error == kAXErrorSuccess;
-}
-
-// axQueue only. That exact window to the front, its app frontmost.
-bool raiseWindow(pid_t pid, AXUIElementRef window, bool unminimize, const std::string& title)
-{
-    auto appElement = AXUIElementCreateApplication(pid);
-    AXUIElementSetMessagingTimeout(appElement, axTimeoutSeconds);
-    AXUIElementSetAttributeValue(appElement, kAXFrontmostAttribute, kCFBooleanTrue);
-    CFRelease(appElement);
-
-    return raiseWindowWithoutActivating(window, unminimize, title);
 }
 
 std::vector<std::string> titlesOf(pid_t pid);
@@ -1475,11 +1489,10 @@ void previewApp(const RunningApp& app,
 
                      if (byWindow)
                          result->raised =
-                             element != nullptr
-                             && raiseWindowWithoutActivating(element, false, title);
+                             element != nullptr && raiseWindow(pid, element, false, title);
                      else
                      {
-                         result->raised = raiseFrontWindow(pid);
+                         result->raised = previewFrontWindow(pid, name);
 
                          if (restoreOrigin)
                              raisePreviewOrigin();

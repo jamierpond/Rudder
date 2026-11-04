@@ -33,6 +33,11 @@ void takeKeyForTyping(eacp::Graphics::Window& window);
 // escalation this falls back to arrives as a reopen.
 void activateForPanel();
 
+// A preview activated another app to bring its window forward: take activation
+// straight back and make the panel key again, so typing stays in the panel.
+// No LaunchServices escalation; it is too slow to run on every keystroke.
+void reclaimActivationForPanel(eacp::Graphics::Window& window);
+
 void hideYieldingActivation(eacp::Graphics::Window& window,
                             std::function<void()> hide);
 

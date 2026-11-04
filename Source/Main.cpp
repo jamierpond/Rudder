@@ -439,12 +439,16 @@ struct RudderApp
     {
         auto events = platform::WorkspaceEvents {};
 
-        // Apps can activate while the panel is up (a provider raising itself);
-        // only what the panel commits to counts (openItem records it).
+        // Apps activate while the panel is up (a preview bringing its window
+        // forward, a provider raising itself); Rudder takes activation back at
+        // once. Only what the panel commits to counts (openItem records it).
         events.onActivated = [this](const platform::RunningApp& app)
         {
             if (panelVisible)
+            {
+                quick_window::reclaimActivationForPanel(window);
                 return;
+            }
 
             if (auto target = lateRaise.activated(app.id, uptime()))
             {
@@ -651,8 +655,9 @@ struct RudderApp
 
     // --- Key capture ------------------------------------------------------------
 
-    // While the panel is up the keyboard is ours. The two hotkeys pass through so they still toggle and go
-    // back -- except while a new chord is being recorded.
+    // While the panel is up the keyboard is ours, even in the moment a preview
+    // has activated another app. The two hotkeys pass through so they still
+    // toggle and go back -- except while a new chord is being recorded.
     void startKeyCapture()
     {
         if (!platform::accessibilityTrusted(false))
@@ -1025,7 +1030,7 @@ struct RudderApp
         previewedAppId = target->appId;
 
         // After the next frame: the list shows the keystroke first, and the
-        // raise (an AX round trip to the target) follows at once.
+        // activation (an AX round trip to the target) follows at once.
         pendingPreview = *target;
         panel.repaint();
     }
@@ -1042,10 +1047,11 @@ struct RudderApp
         if (action == PreviewAction::none)
             return;
 
-        // A preview raises windows but never activates their app; only Enter
-        // moves keyboard focus. Without key capture (no grant) nothing is
-        // raised: a provider focusing its pane (CowTerm) would take key and
-        // close us.
+        // A preview activates the app to bring its window forward and Rudder
+        // takes activation back at once, so the keyboard stays in the panel;
+        // key capture covers the flip. Without key capture (no grant) nothing
+        // is previewed: a provider focusing its pane (CowTerm) would take key
+        // and close us.
         if (!capturingKeys)
             return;
 
@@ -1074,7 +1080,12 @@ struct RudderApp
             item.kind != "window" && action == PreviewAction::restoreOrigin,
             [this, id, label, start](platform::PreviewResult result)
             {
-                if (!panelVisible || previewedId != id)
+                if (!panelVisible)
+                    return;
+
+                quick_window::reclaimActivationForPanel(window);
+
+                if (previewedId != id)
                     return;
 
                 previewRaised = result.raised;

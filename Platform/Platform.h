@@ -42,8 +42,8 @@ bool activateApp(const RunningApp& app);
 
 // While the panel is up, the keyboard is Rudder's whichever app is active:
 // every key event system-wide is swallowed and handed to `onKey` on the main
-// thread, except the `passThrough` chords (the global hotkeys), so typing
-// carries on into the panel while a preview raises other apps' windows.
+// thread, except the `passThrough` chords (the global hotkeys), so no
+// keystroke is lost in the moment a preview has another app active.
 //
 // The tap runs on its own thread and decides in O(1) (CaptureGate.h); it never
 // waits for the main thread. If the main thread sits on a key for more than
@@ -74,13 +74,13 @@ void stopKeyCapture();
 void setKeyCapturePassThrough(const std::vector<CaptureKey>& passThrough);
 
 // The live preview, off the main thread so a hung app can't stall Rudder:
-// raises the app's cached front window
+// activates the app and raises its cached front window
 // (`windowId` empty), or of that exact window. `restoreOrigin` raises the
 // summon's origin window too (previewing the app the panel opened over).
 // `onDone` gets whether it raised and the app's window titles, front to back,
 // on the main thread. A newer preview supersedes one not yet started, which
-// then never reports. Never activates the app or moves keyboard focus: only
-// Enter does that.
+// then never reports. On macOS the caller takes activation straight back
+// (quick_window::reclaimActivationForPanel), so the keyboard stays in the panel.
 struct PreviewResult
 {
     bool raised = false;

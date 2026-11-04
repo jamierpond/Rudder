@@ -259,6 +259,29 @@ void activateForPanel()
         });
 }
 
+void reclaimActivationForPanel(eacp::Graphics::Window& window)
+{
+    if (NSApp.isActive)
+        return;
+
+    if (@available(macOS 14.0, *))
+        [NSApp activate];
+
+    if (!NSApp.isActive)
+        [NSApp activateIgnoringOtherApps:YES];
+
+    takeKeyForTyping(window);
+
+    constexpr auto declinedCheckDelaySeconds = 0.1;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW,
+                                 (int64_t) (declinedCheckDelaySeconds * NSEC_PER_SEC)),
+                   dispatch_get_main_queue(),
+                   ^{
+                     if (!NSApp.isActive)
+                         logEvent("reclaimActivationForPanel: activation declined, panel not active");
+                   });
+}
+
 // A key window ordering out while the app is active makes AppKit promote the
 // next visible one — the big window. [NSApp deactivate] is ASYNCHRONOUS, so
 // hiding on the next line still promotes; hence the wait for resign-active,
