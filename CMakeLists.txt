@@ -115,6 +115,7 @@ target_link_libraries(RudderPlatform PUBLIC eacp-graphics RudderProtocol RudderS
 add_executable(Rudder
         Source/Icon.cpp
         Source/Main.cpp
+        Source/PanelDump.cpp
         Source/PanelView.cpp)
 
 target_link_libraries(Rudder PRIVATE eacp-ui RudderSwitcher RudderPlatform)

@@ -7,6 +7,7 @@
 #include "Icon.h"
 #include "Keybinding.h"
 #include "Mru.h"
+#include "PanelDump.h"
 #include "PanelFrame.h"
 #include "PanelView.h"
 #include "Platform.h"
@@ -54,6 +55,14 @@ void logEvent(const char* message)
     using namespace std::chrono;
     auto ms = duration_cast<milliseconds>(steady_clock::now().time_since_epoch());
     std::fprintf(stderr, "[rudder %lld] %s\n", (long long) ms.count() % 100000, message);
+}
+
+std::optional<std::filesystem::path> getPanelDumpDirectory()
+{
+    if (auto* directory = std::getenv("RUDDER_DUMP_DIR"))
+        return std::filesystem::path {directory};
+
+    return std::nullopt;
 }
 
 ModifierKeys modifiersOf(const Chord& chord)
@@ -921,6 +930,7 @@ struct RudderApp
         previewedAppId.clear();
         previewWindows.clear();
         previewRaised = false;
+        dumpReason = PanelDumpReason::summon;
         publishResults();
     }
 
@@ -963,6 +973,7 @@ struct RudderApp
         filtered = rankWithWeb(allItems, query, webSettings(), frecencyLookup(), recencyLookup());
         selected = initialSelection(filtered, query, frontAppId);
         previewSelection();
+        dumpReason = PanelDumpReason::query;
         publishResults();
     }
 
@@ -1406,6 +1417,7 @@ struct RudderApp
             trackFocus(app->second, contexts);
             forgetContexts(
                 goneContextKeys(app->second, providers.contextsFor(app->second), contexts));
+            panelDump.writePush(FrecencyStore::nowMs(), app->second, contexts);
             providers.setContexts(app->second, std::move(contexts));
         };
 
@@ -1826,6 +1838,30 @@ struct RudderApp
     void publishResults()
     {
         panel.setModel({filtered, selected, previewWindows, previewRaised});
+        dumpPanel(std::exchange(dumpReason, PanelDumpReason::refresh));
+    }
+
+    void dumpPanel(PanelDumpReason reason)
+    {
+        if (!panelDump.isEnabled())
+            return;
+
+        auto providerContexts = std::map<std::string, std::vector<RudderContext>> {};
+
+        if (reason == PanelDumpReason::summon)
+        {
+            for (auto& entry: providerConnection)
+                providerContexts[entry.first] = providers.contextsFor(entry.first);
+        }
+
+        panelDump.writePanel(FrecencyStore::nowMs(),
+                             reason,
+                             query,
+                             frontAppId,
+                             selected,
+                             filtered,
+                             [this](const std::string& key) { return mru.lastUsed(key); },
+                             providerContexts);
     }
 
     void publishSettings()
@@ -1982,6 +2018,8 @@ struct RudderApp
     std::map<int, std::string> connectionApps;
     std::map<int, protocol::Hello> connectionHellos;
     std::map<std::string, int> providerConnection;
+    PanelDump panelDump {getPanelDumpDirectory()};
+    PanelDumpReason dumpReason = PanelDumpReason::refresh;
     std::optional<Threads::Timer> accessibilityPoll;
 
     TrayIcon tray;
