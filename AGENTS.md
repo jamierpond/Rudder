@@ -32,8 +32,8 @@ misbehaves, read it first, before asking Jamie anything.
 ## Product rules decided by Jamie
 
 - While the panel is up, Rudder keeps keyboard focus. A preview brings the
-  selected window forward behind the panel; on macOS that needs the app
-  activated, so Rudder takes activation back at once. (2026-11-04)
+  selected window forward (the Accessibility raise action only) and never
+  activates its app. Only Enter activates. (2026-11-03)
 
 ## Code style
 

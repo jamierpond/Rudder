@@ -164,11 +164,6 @@ void activateForPanel()
     SwitchToThisWindow(panelWindow, TRUE);
 }
 
-// A preview here never activates another app, so there is nothing to reclaim.
-void reclaimActivationForPanel(eacp::Graphics::Window&)
-{
-}
-
 void hideYieldingActivation(eacp::Graphics::Window& window,
                             std::function<void()> hide)
 {
