@@ -7,6 +7,12 @@
 
 #include <utility>
 
+// Private window-server call (see Platform-macOS.mm): fronts Rudder showing
+// the panel even when the public activation calls are declined.
+extern "C" CGError _SLPSSetFrontProcessWithOptions(ProcessSerialNumber* psn,
+                                                   uint32_t windowId,
+                                                   uint32_t mode);
+
 namespace rudder::quick_window
 {
 namespace
@@ -263,6 +269,16 @@ void reclaimActivationForPanel(eacp::Graphics::Window& window)
 {
     if (NSApp.isActive)
         return;
+
+    constexpr auto frontProcessUserGenerated = std::uint32_t {0x200};
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+    auto rudderProcess = ProcessSerialNumber {};
+    GetCurrentProcess(&rudderProcess);
+#pragma clang diagnostic pop
+    auto* native = nativeWindowOf(window);
+    auto panelWindowId = native != nil ? (std::uint32_t) native.windowNumber : std::uint32_t {0};
+    _SLPSSetFrontProcessWithOptions(&rudderProcess, panelWindowId, frontProcessUserGenerated);
 
     if (@available(macOS 14.0, *))
         [NSApp activate];

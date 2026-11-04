@@ -527,7 +527,7 @@ struct RudderApp
         auto events = platform::WorkspaceEvents {};
 
         // An app that activates while the panel is up (a provider raising
-        // itself, or a preview the window server let through) loses
+        // itself, or a preview target activating after the flip) loses
         // activation back to Rudder at once. Only what the panel commits to counts (openItem records it).
         events.onActivated = [this](const platform::RunningApp& app)
         {
