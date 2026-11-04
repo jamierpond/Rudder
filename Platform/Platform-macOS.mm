@@ -1096,146 +1096,17 @@ bool raiseWindowWithinApp(AXUIElementRef window, const std::string& title)
     return error == kAXErrorSuccess;
 }
 
-constexpr auto previewSurfacePollIntervalMs = 8;
-constexpr auto previewSurfaceDeadlineMs = 150;
-constexpr auto previewFlipReportDelayMs = 100;
-
-std::atomic<std::uint64_t> latestPreview {0};
-
-
-dispatch_time_t getDispatchTimeAfterMilliseconds(int milliseconds)
+// Main thread only. Fronts the previewed process showing that window, then at
+// once fronts Rudder showing the panel and makes the panel key again.
+// Activation leaves Rudder only between the two window-server calls.
+void orderPreviewForwardKeepingPanelKey(pid_t pid, CGWindowID windowId)
 {
-    return dispatch_time(DISPATCH_TIME_NOW, (int64_t) milliseconds * (int64_t) NSEC_PER_MSEC);
-}
-
-// The topmost normal-layer window on screen, ignoring Rudder's own, is the
-// target window (or, for windowId 0, any window of the target pid).
-bool isPreviewWindowOnTop(pid_t pid, CGWindowID windowId)
-{
-    auto options = kCGWindowListOptionOnScreenOnly | kCGWindowListExcludeDesktopElements;
-    auto* windows = (__bridge_transfer NSArray*) CGWindowListCopyWindowInfo(options, kCGNullWindowID);
-    auto rudderPid = NSProcessInfo.processInfo.processIdentifier;
-
-    for (NSDictionary* info in windows)
-    {
-        auto ownerPid = [info[(__bridge NSString*) kCGWindowOwnerPID] intValue];
-        auto layer = [info[(__bridge NSString*) kCGWindowLayer] intValue];
-
-        if (ownerPid == rudderPid || layer != 0)
-            continue;
-
-        if (windowId == noWindowId)
-            return ownerPid == pid;
-
-        auto number = [info[(__bridge NSString*) kCGWindowNumber] unsignedIntValue];
-        return number == windowId;
-    }
-
-    return false;
-}
-
-void frontRudderShowingPanel()
-{
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdeprecated-declarations"
-    auto rudderProcess = ProcessSerialNumber {};
-    GetCurrentProcess(&rudderProcess);
-#pragma clang diagnostic pop
-
-    NSWindow* panel = capturePanel;
-    auto panelWindowId = panel != nil ? (std::uint32_t) panel.windowNumber : noWindowId;
-    auto rudderError =
-        _SLPSSetFrontProcessWithOptions(&rudderProcess, panelWindowId, frontProcessUserGenerated);
-    [panel makeKeyAndOrderFront:nil];
-
-    if (rudderError != kCGErrorSuccess)
-        logEvent("preview: window server front failed: panel window "
-                 + std::to_string(panelWindowId) + " error " + std::to_string((int) rudderError));
-
-    if (!NSApp.isActive)
-    {
-        if (@available(macOS 14.0, *))
-            [NSApp activate];
-
-        if (!NSApp.isActive)
-            [NSApp activateIgnoringOtherApps:YES];
-    }
-}
-
-bool isPreviewFlipStale(std::uint64_t generation)
-{
-    NSWindow* panel = capturePanel;
-    return generation != latestPreview || panel == nil || !panel.isVisible;
-}
-
-void reportPreviewFlipState()
-{
-    dispatch_after(getDispatchTimeAfterMilliseconds(previewFlipReportDelayMs),
-                   dispatch_get_main_queue(),
-                   ^{
-                     NSWindow* panel = capturePanel;
-                     auto panelKey = panel != nil && panel.isKeyWindow;
-                     logEvent(std::string("preview flip: rudder active ")
-                              + (NSApp.isActive ? "1" : "0") + ", panel key "
-                              + (panelKey ? "1" : "0"));
-                   });
-}
-
-// Main thread only. Polls until the previewed window is on top, then fronts
-// Rudder again. Fronting Rudder in the same instant as the target makes the
-// target see activate and deactivate together, and it never orders its window.
-void waitForPreviewToSurface(std::uint64_t generation,
-                             pid_t pid,
-                             CGWindowID windowId,
-                             std::string label,
-                             int elapsedMs)
-{
-    if (isPreviewFlipStale(generation))
-        return;
-
-    auto surfaced = isPreviewWindowOnTop(pid, windowId);
-
-    if (surfaced || elapsedMs >= previewSurfaceDeadlineMs)
-    {
-        frontRudderShowingPanel();
-
-        if (surfaced)
-            logEvent("preview flip: " + label + " surfaced in " + std::to_string(elapsedMs) + " ms");
-        else
-            logEvent("preview flip: " + label + " did not surface in "
-                     + std::to_string(previewSurfaceDeadlineMs) + " ms");
-
-        reportPreviewFlipState();
-        return;
-    }
-
-    dispatch_after(getDispatchTimeAfterMilliseconds(previewSurfacePollIntervalMs),
-                   dispatch_get_main_queue(),
-                   ^{
-                     waitForPreviewToSurface(generation,
-                                             pid,
-                                             windowId,
-                                             label,
-                                             elapsedMs + previewSurfacePollIntervalMs);
-                   });
-}
-
-// Main thread only. Fronts the previewed process showing that window, waits
-// until that window is on screen on top (at most previewSurfaceDeadlineMs),
-// then fronts Rudder again and makes the panel key. Key capture keeps typing
-// in the panel during the gap.
-void orderPreviewForwardKeepingPanelKey(std::uint64_t generation,
-                                        pid_t pid,
-                                        CGWindowID windowId,
-                                        const std::string& label)
-{
-    if (isPreviewFlipStale(generation))
-        return;
-
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
     auto targetProcess = ProcessSerialNumber {};
+    auto rudderProcess = ProcessSerialNumber {};
     auto lookupError = GetProcessForPID(pid, &targetProcess);
+    GetCurrentProcess(&rudderProcess);
 #pragma clang diagnostic pop
 
     if (lookupError != noErr)
@@ -1247,11 +1118,17 @@ void orderPreviewForwardKeepingPanelKey(std::uint64_t generation,
     auto targetError =
         _SLPSSetFrontProcessWithOptions(&targetProcess, windowId, frontProcessUserGenerated);
 
-    if (targetError != kCGErrorSuccess)
-        logEvent("preview: window server front failed: target window "
-                 + std::to_string(windowId) + " error " + std::to_string((int) targetError));
+    NSWindow* panel = capturePanel;
+    auto panelWindowId = panel != nil ? (std::uint32_t) panel.windowNumber : noWindowId;
+    auto rudderError =
+        _SLPSSetFrontProcessWithOptions(&rudderProcess, panelWindowId, frontProcessUserGenerated);
+    [panel makeKeyAndOrderFront:nil];
 
-    waitForPreviewToSurface(generation, pid, windowId, label, 0);
+    if (targetError != kCGErrorSuccess || rudderError != kCGErrorSuccess)
+        logEvent("preview: window server front failed: target window "
+                 + std::to_string(windowId) + " error " + std::to_string((int) targetError)
+                 + ", panel window " + std::to_string(panelWindowId) + " error "
+                 + std::to_string((int) rudderError));
 }
 
 // axQueue only. That exact window to the front, its app frontmost.
@@ -1281,6 +1158,7 @@ bool raiseWindow(pid_t pid, AXUIElementRef window, bool unminimize, const std::s
 
 std::vector<std::string> titlesOf(pid_t pid);
 
+std::atomic<std::uint64_t> latestPreview {0};
 } // namespace
 
 void rememberPreviewOrigin(const RunningApp& origin)
@@ -1655,7 +1533,6 @@ void previewApp(const RunningApp& app,
     auto byWindow = !windowId.empty();
     auto pid = app.pid;
     auto title = window.title;
-    auto label = title.empty() ? app.name : app.name + " / " + title;
     auto done = std::make_shared<std::function<void(PreviewResult)>>(std::move(onDone));
 
     dispatch_async(axQueue(),
@@ -1703,8 +1580,7 @@ void previewApp(const RunningApp& app,
 
                      dispatch_async(dispatch_get_main_queue(),
                                     ^{
-                                      orderPreviewForwardKeepingPanelKey(
-                                          generation, pid, shownWindowId, label);
+                                      orderPreviewForwardKeepingPanelKey(pid, shownWindowId);
 
                                       if (*done)
                                           (*done)(std::move(*result));
