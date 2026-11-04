@@ -20,14 +20,6 @@
 #include <set>
 #include <utility>
 
-// Private window-server calls, as AltTab (lwouis/alt-tab-macos) and yabai use
-// them: the only way to order another app's window forward and hand
-// activation back without asking the apps to cooperate.
-extern "C" CGError _SLPSSetFrontProcessWithOptions(ProcessSerialNumber* psn,
-                                                   uint32_t windowId,
-                                                   uint32_t mode);
-extern "C" AXError _AXUIElementGetWindow(AXUIElementRef element, CGWindowID* windowId);
-
 // Offers the dragged file for copy or link -- what Finder and System
 // Settings' privacy lists accept from another app.
 @interface RudderFileDragSource : NSObject <NSDraggingSource>
@@ -1063,72 +1055,25 @@ void stopKeyCapture()
 
 namespace
 {
-// The window server marks the front switch as the user's own, so it is not
-// suppressed (yabai's kCPSUserGenerated).
-constexpr auto frontProcessUserGenerated = std::uint32_t {0x200};
-constexpr auto noWindowId = CGWindowID {0};
-
-// axQueue only. The window server's id for an AX window, or noWindowId.
-CGWindowID getWindowServerId(AXUIElementRef window)
+// axQueue only. The preview's activation: AXFrontmost plus a raise of the
+// cached front window.
+bool previewFrontWindow(pid_t pid, const std::string& name)
 {
-    auto windowId = noWindowId;
-
-    if (window == nullptr || _AXUIElementGetWindow(window, &windowId) != kAXErrorSuccess)
-        return noWindowId;
-
-    return windowId;
-}
-
-// axQueue only. Within-app ordering only: the window server call in
-// orderPreviewForwardKeepingPanelKey brings the app forward.
-bool raiseWindowWithinApp(AXUIElementRef window, const std::string& title)
-{
-    AXUIElementSetMessagingTimeout(window, axTimeoutSeconds);
-    AXUIElementSetAttributeValue(window, kAXMainAttribute, kCFBooleanTrue);
-    auto error = AXUIElementPerformAction(window, kAXRaiseAction);
+    auto appElement = AXUIElementCreateApplication(pid);
+    AXUIElementSetMessagingTimeout(appElement, axTimeoutSeconds);
+    auto error =
+        AXUIElementSetAttributeValue(appElement, kAXFrontmostAttribute, kCFBooleanTrue);
+    CFRelease(appElement);
 
     if (error != kAXErrorSuccess)
     {
-        NSLog(@"Rudder: raising window '%s' failed: AXError %d", title.c_str(), (int) error);
+        NSLog(@"Rudder: preview activation failed for %s: AXError %d",
+              name.c_str(),
+              (int) error);
         noteAXError(error);
     }
 
-    return error == kAXErrorSuccess;
-}
-
-// Main thread only. Fronts the previewed process showing that window, then at
-// once fronts Rudder showing the panel and makes the panel key again.
-// Activation leaves Rudder only between the two window-server calls.
-void orderPreviewForwardKeepingPanelKey(pid_t pid, CGWindowID windowId)
-{
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdeprecated-declarations"
-    auto targetProcess = ProcessSerialNumber {};
-    auto rudderProcess = ProcessSerialNumber {};
-    auto lookupError = GetProcessForPID(pid, &targetProcess);
-    GetCurrentProcess(&rudderProcess);
-#pragma clang diagnostic pop
-
-    if (lookupError != noErr)
-    {
-        logEvent("preview: no process serial number for pid " + std::to_string(pid));
-        return;
-    }
-
-    auto targetError =
-        _SLPSSetFrontProcessWithOptions(&targetProcess, windowId, frontProcessUserGenerated);
-
-    NSWindow* panel = capturePanel;
-    auto panelWindowId = panel != nil ? (std::uint32_t) panel.windowNumber : noWindowId;
-    auto rudderError =
-        _SLPSSetFrontProcessWithOptions(&rudderProcess, panelWindowId, frontProcessUserGenerated);
-    [panel makeKeyAndOrderFront:nil];
-
-    if (targetError != kCGErrorSuccess || rudderError != kCGErrorSuccess)
-        logEvent("preview: window server front failed: target window "
-                 + std::to_string(windowId) + " error " + std::to_string((int) targetError)
-                 + ", panel window " + std::to_string(panelWindowId) + " error "
-                 + std::to_string((int) rudderError));
+    return raiseFrontWindow(pid) && error == kAXErrorSuccess;
 }
 
 // axQueue only. That exact window to the front, its app frontmost.
@@ -1532,6 +1477,7 @@ void previewApp(const RunningApp& app,
         windowId.empty() ? nullptr : copyCachedWindow(app.pid, windowId, window);
     auto byWindow = !windowId.empty();
     auto pid = app.pid;
+    auto name = app.name;
     auto title = window.title;
     auto done = std::make_shared<std::function<void(PreviewResult)>>(std::move(onDone));
 
@@ -1548,29 +1494,16 @@ void previewApp(const RunningApp& app,
                      }
 
                      auto result = std::make_shared<PreviewResult>();
-                     auto shownWindowId = noWindowId;
 
                      if (byWindow)
-                     {
-                         if (element != nullptr)
-                         {
-                             result->raised = raiseWindowWithinApp(element, title);
-                             shownWindowId = getWindowServerId(element);
-                         }
-                     }
+                         result->raised =
+                             element != nullptr && raiseWindow(pid, element, false, title);
                      else
                      {
-                         result->raised = raiseFrontWindow(pid);
-                         shownWindowId = getWindowServerId(cachedFrontWindow(pid));
+                         result->raised = previewFrontWindow(pid, name);
 
                          if (restoreOrigin)
-                         {
                              raisePreviewOrigin();
-
-                             if (auto originWindowId = getWindowServerId(previewOrigin);
-                                 originWindowId != noWindowId)
-                                 shownWindowId = originWindowId;
-                         }
                      }
 
                      if (element != nullptr)
@@ -1580,8 +1513,6 @@ void previewApp(const RunningApp& app,
 
                      dispatch_async(dispatch_get_main_queue(),
                                     ^{
-                                      orderPreviewForwardKeepingPanelKey(pid, shownWindowId);
-
                                       if (*done)
                                           (*done)(std::move(*result));
                                     });

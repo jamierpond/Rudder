@@ -32,9 +32,8 @@ misbehaves, read it first, before asking Jamie anything.
 ## Product rules decided by Jamie
 
 - While the panel is up, Rudder keeps keyboard focus. A preview brings the
-  selected window forward behind the panel: on macOS it orders the window
-  forward through the window server (SkyLight) and gives activation straight
-  back to Rudder; the panel stays key. (2026-11-04)
+  selected window forward behind the panel; on macOS that needs the app
+  activated, so Rudder takes activation back at once. (2026-11-04)
 
 ## Code style
 

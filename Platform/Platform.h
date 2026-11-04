@@ -76,14 +76,14 @@ void stopKeyCapture();
 // chord is being recorded. At most four.
 void setKeyCapturePassThrough(const std::vector<CaptureKey>& passThrough);
 
-// The live preview. Off the main thread, so a hung app can't stall Rudder,
-// accessibility raises, within its app, the cached front window
-// (`windowId` empty) or that exact window. `restoreOrigin` raises the
+// The live preview, off the main thread so a hung app can't stall Rudder:
+// activates the app and raises its cached front window
+// (`windowId` empty), or of that exact window. `restoreOrigin` raises the
 // summon's origin window too (previewing the app the panel opened over).
 // `onDone` gets whether it raised and the app's window titles, front to back,
 // on the main thread. A newer preview supersedes one not yet started, which
-// then never reports. On macOS the window server then orders that window
-// forward and gives activation straight back to Rudder, with the panel key.
+// then never reports. On macOS the caller takes activation straight back
+// (quick_window::reclaimActivationForPanel), so the keyboard stays in the panel.
 struct PreviewResult
 {
     bool raised = false;
