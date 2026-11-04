@@ -224,7 +224,7 @@ auto tLatestOfFavouriteAndTab = test("Web/an address both a favourite and a tab 
 auto tWebNeverPreviews = test("Web/the web row is never previewed") = []
 {
     auto row = webRow("github.com", {});
-    check(previewActionFor(row, true, "") == PreviewAction::none);
+    check(!isPreviewable(row, true));
 };
 
 auto tConfigDefaults = test("Web/browser and searchUrl default when missing") = []

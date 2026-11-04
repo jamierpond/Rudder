@@ -31,9 +31,11 @@ misbehaves, read it first, before asking Jamie anything.
 
 ## Product rules decided by Jamie
 
-- While the panel is up, Rudder keeps keyboard focus. A preview brings the
-  selected window forward (the Accessibility raise action only) and never
-  activates its app. Only Enter activates. (2026-11-03)
+- Previews are snapshots. While the panel is up, Rudder never activates,
+  raises or focuses another app's window; only Enter does. A preview shows a
+  captured image of the selected window, drawn by Rudder at the window's real
+  on-screen place, behind the panel. Keyboard focus never leaves the panel.
+  Needs the one-time Screen Recording grant. (2026-11-04)
 
 ## Code style
 

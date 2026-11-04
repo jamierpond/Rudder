@@ -185,28 +185,23 @@ auto tPreviewNeverLaunches = test("Ranking/selecting a closed app doesn't launch
 {
     auto music = closed("com.apple.Music", "Music");
 
-    check(previewActionFor(music, false, "com.apple.Safari") == PreviewAction::none);
+    check(!isPreviewable(music, false));
 
     // Even if something claims it is running, a closed row is not previewed.
-    check(previewActionFor(music, true, "com.apple.Safari") == PreviewAction::none);
+    check(!isPreviewable(music, true));
 };
 
 auto tPreviewQuitApp =
     test("Ranking/an app that quit since listing isn't previewed") = []
 {
-    check(previewActionFor(
-              app("audio.pond.grazer", "Grazer"), false, "com.apple.Safari")
-          == PreviewAction::none);
+    check(!isPreviewable(app("audio.pond.grazer", "Grazer"), false));
 };
 
 auto tPreviewRunning =
-    test("Ranking/a running app previews; the origin restores") = []
+    test("Ranking/a running app previews, the origin app too") = []
 {
-    check(previewActionFor(
-              app("audio.pond.grazer", "Grazer"), true, "com.apple.Safari")
-          == PreviewAction::bringForward);
-    check(previewActionFor(app("com.apple.Safari", "Safari"), true, "com.apple.Safari")
-          == PreviewAction::restoreOrigin);
+    check(isPreviewable(app("audio.pond.grazer", "Grazer"), true));
+    check(isPreviewable(app("com.apple.Safari", "Safari"), true));
 };
 
 auto tWindowsMatchWithApp = test("Ranking/windows match on app name and title") = []
@@ -254,7 +249,7 @@ auto tUnopenedPlacesNotPreviewed = test("Ranking/a place that isn't open is neve
         return;
 
     check(!ranked.front().running);
-    check(previewActionFor(ranked.front(), true, "com.apple.Safari") == PreviewAction::none);
+    check(!isPreviewable(ranked.front(), true));
 };
 
 namespace
@@ -555,22 +550,21 @@ auto tBranchNotShown = test("Ranking/the provider names the row; Rudder doesn't 
 };
 
 auto tOriginContextsPreview =
-    test("Ranking/the origin app's contexts and windows preview; its row restores") = []
+    test("Ranking/the origin app, its contexts and its windows preview") = []
 {
     auto all = busyCowTerm();
     auto ranked = rankItems(all, "keychain");
     auto& pane = ranked[(std::size_t) rankOf(ranked, "pane:keychain")];
 
-    check(previewActionFor(pane, true, "com.eacp.cowterm") == PreviewAction::bringForward);
-    check(previewActionFor(all.front(), true, "com.eacp.cowterm")
-          == PreviewAction::restoreOrigin);
+    check(isPreviewable(pane, true));
+    check(isPreviewable(all.front(), true));
 
     auto window = RudderItem {};
     window.kind = "window";
     window.id = "com.eacp.cowterm/w1";
     window.appId = "com.eacp.cowterm";
     window.contextId = "w1";
-    check(previewActionFor(window, true, "com.eacp.cowterm") == PreviewAction::bringForward);
+    check(isPreviewable(window, true));
 };
 
 namespace

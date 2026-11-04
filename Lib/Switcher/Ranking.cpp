@@ -494,19 +494,9 @@ std::vector<ScoredItem> scoreItems(const std::vector<RudderItem>& all,
     return scored;
 }
 
-PreviewAction previewActionFor(const RudderItem& item,
-                               bool runningNow,
-                               const std::string& originAppId)
+bool isPreviewable(const RudderItem& item, bool runningNow)
 {
-    // A web row opens a page, so only Enter does it.
-    if (item.kind == "web" || !item.running || !runningNow)
-        return PreviewAction::none;
-
-    // Only the app row itself shows the screen as it was. Its windows and
-    // its contexts (a CowTerm pane while summoned over CowTerm) move it like
-    // any other app's: to that window, or to that pane or tab.
-    return item.kind == "app" && item.appId == originAppId ? PreviewAction::restoreOrigin
-                                                           : PreviewAction::bringForward;
+    return item.kind != "web" && item.running && runningNow;
 }
 
 int initialSelection(const std::vector<RudderItem>& items,

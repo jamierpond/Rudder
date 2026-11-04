@@ -5,6 +5,9 @@
 #import <ApplicationServices/ApplicationServices.h>
 #import <Carbon/Carbon.h>
 #import <CoreServices/CoreServices.h>
+#import <ScreenCaptureKit/ScreenCaptureKit.h>
+
+#include <SnapshotFrame.h>
 
 #include <libproc.h>
 #include <os/log.h>
@@ -17,6 +20,7 @@
 #include <cstdlib>
 #include <map>
 #include <memory>
+#include <optional>
 #include <set>
 #include <utility>
 
@@ -78,8 +82,7 @@ NSRunningApplication* lookUp(const RunningApp& app)
 constexpr auto axTimeoutSeconds = 0.25f;
 
 // Where the preview and activation AX work runs, in order, so a slow or hung
-// target app costs the panel nothing. The front window cache and the preview
-// origin belong to it.
+// target app costs the panel nothing. The front window cache belongs to it.
 dispatch_queue_t axQueue()
 {
     static auto* queue = dispatch_queue_create("rudder.ax", DISPATCH_QUEUE_SERIAL);
@@ -140,10 +143,7 @@ std::map<std::string, eacp::Graphics::Image>& iconCache()
     return cache;
 }
 
-// axQueue only.
-AXUIElementRef previewOrigin = nullptr;
-
-// axQueue only. Each app's front window element, so a preview raise is one
+// axQueue only. Each app's front window element, so a raise or a preview is one
 // AX call rather than a walk to find the window first. Refreshed when the app activates (its
 // front window may have changed) and when a raise reports the element stale.
 std::map<pid_t, AXUIElementRef>& frontWindows()
@@ -198,7 +198,7 @@ bool raiseFrontWindow(pid_t pid)
 
     if (window == nullptr)
     {
-        NSLog(@"Rudder: preview raise failed for pid %d: no window found "
+        NSLog(@"Rudder: raise failed for pid %d: no window found "
               @"(trusted: %d)",
               pid,
               AXIsProcessTrusted());
@@ -209,7 +209,7 @@ bool raiseFrontWindow(pid_t pid)
 
     if (error != kAXErrorSuccess)
     {
-        NSLog(@"Rudder: preview raise failed for pid %d: AXError %d", pid, (int) error);
+        NSLog(@"Rudder: raise failed for pid %d: AXError %d", pid, (int) error);
         noteAXError(error);
     }
 
@@ -1092,43 +1092,7 @@ std::vector<std::string> titlesOf(pid_t pid);
 std::atomic<std::uint64_t> latestPreview {0};
 } // namespace
 
-void rememberPreviewOrigin(const RunningApp& origin)
-{
-    auto pid = origin.pid;
-    auto trusted = pid != 0 && AXIsProcessTrusted();
-
-    dispatch_async(axQueue(),
-                   ^{
-                     if (previewOrigin != nullptr)
-                     {
-                         CFRelease(previewOrigin);
-                         previewOrigin = nullptr;
-                     }
-
-                     if (trusted)
-                     {
-                         previewOrigin = cachedFrontWindow(pid);
-
-                         if (previewOrigin != nullptr)
-                             CFRetain(previewOrigin);
-                     }
-                   });
-}
-
-namespace
-{
-// axQueue only.
-void raisePreviewOrigin()
-{
-    if (previewOrigin != nullptr)
-        AXUIElementPerformAction(previewOrigin, kAXRaiseAction);
-}
-} // namespace
-
-void restorePreviewOrigin()
-{
-    dispatch_async(axQueue(), ^{ raisePreviewOrigin(); });
-}
+extern "C" AXError _AXUIElementGetWindow(AXUIElementRef element, CGWindowID* windowId);
 
 namespace
 {
@@ -1452,9 +1416,243 @@ bool focusWindow(const RunningApp& app, const std::string& windowId, bool unmini
     return true;
 }
 
+namespace
+{
+// One below the panel's level: the snapshot sits behind the panel and above
+// every other app's windows.
+constexpr auto previewSnapshotLevelsBelowPanel = 1;
+
+// Read from NSScreen on the main thread, used on axQueue.
+struct ScreenWithScale
+{
+    rudder::ScreenRect frame;
+    double backingScale = 1.0;
+};
+
+NSPanel* previewSnapshotWindow = nil;
+NSImageView* previewSnapshotImageView = nil;
+
+std::vector<ScreenWithScale> getScreensWithScales()
+{
+    auto screens = std::vector<ScreenWithScale> {};
+
+    for (NSScreen* screen in NSScreen.screens)
+    {
+        auto frame = screen.frame;
+        screens.push_back({{frame.origin.x, frame.origin.y, frame.size.width, frame.size.height},
+                           screen.backingScaleFactor});
+    }
+
+    return screens;
+}
+
+std::optional<CGWindowID> findWindowNumber(AXUIElementRef window)
+{
+    auto windowNumber = CGWindowID {0};
+
+    if (window == nullptr || _AXUIElementGetWindow(window, &windowNumber) != kAXErrorSuccess
+        || windowNumber == 0)
+        return std::nullopt;
+
+    return windowNumber;
+}
+
+// axQueue only. The app's front window, looked up again once if the cached
+// element went stale.
+std::optional<CGWindowID> findFrontWindowNumber(pid_t pid)
+{
+    if (auto windowNumber = findWindowNumber(cachedFrontWindow(pid)))
+        return windowNumber;
+
+    return findWindowNumber(refreshFrontWindow(pid));
+}
+
+std::optional<rudder::ScreenRect> findWindowBounds(CGWindowID windowNumber)
+{
+    auto* info = (__bridge_transfer NSArray*) CGWindowListCopyWindowInfo(
+        kCGWindowListOptionIncludingWindow, windowNumber);
+
+    if (info.count == 0)
+        return std::nullopt;
+
+    auto* boundsDictionary = (__bridge CFDictionaryRef) info[0][(id) kCGWindowBounds];
+    auto bounds = CGRect {};
+
+    if (boundsDictionary == nullptr
+        || !CGRectMakeWithDictionaryRepresentation(boundsDictionary, &bounds)
+        || CGRectIsEmpty(bounds))
+        return std::nullopt;
+
+    return rudder::ScreenRect {bounds.origin.x, bounds.origin.y, bounds.size.width, bounds.size.height};
+}
+
+// The backing scale of the screen holding the frame's centre, else the first
+// screen's.
+double findBackingScaleFor(const rudder::ScreenRect& cocoaFrame,
+                           const std::vector<ScreenWithScale>& screens)
+{
+    auto centre = NSMakePoint(cocoaFrame.x + cocoaFrame.width / 2.0,
+                              cocoaFrame.y + cocoaFrame.height / 2.0);
+
+    for (auto& screen: screens)
+    {
+        auto frame = NSMakeRect(
+            screen.frame.x, screen.frame.y, screen.frame.width, screen.frame.height);
+
+        if (NSPointInRect(centre, frame))
+            return screen.backingScale;
+    }
+
+    return screens.empty() ? 1.0 : screens.front().backingScale;
+}
+
+using SnapshotCaptured = void (^)(NSImage* image, std::string path);
+
+void captureWithWindowList(CGWindowID windowNumber, NSSize pointSize, SnapshotCaptured onCaptured)
+{
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+    auto image = CGWindowListCreateImage(CGRectNull,
+                                         kCGWindowListOptionIncludingWindow,
+                                         windowNumber,
+                                         kCGWindowImageBoundsIgnoreFraming
+                                             | kCGWindowImageBestResolution);
+#pragma clang diagnostic pop
+
+    if (image == nullptr)
+    {
+        onCaptured(nil, "CGWindowListCreateImage failed");
+        return;
+    }
+
+    auto* snapshot = [[NSImage alloc] initWithCGImage:image size:pointSize];
+    CGImageRelease(image);
+    onCaptured(snapshot, "CGWindowListCreateImage");
+}
+
+// Calls `onCaptured` once, on any thread: ScreenCaptureKit on macOS 14 and
+// later, the window list capture where that is missing or fails.
+void captureWindowImage(CGWindowID windowNumber,
+                        NSSize pointSize,
+                        double backingScale,
+                        SnapshotCaptured onCaptured)
+{
+    if (@available(macOS 14.0, *))
+    {
+        [SCShareableContent
+            getShareableContentExcludingDesktopWindows:YES
+                                   onScreenWindowsOnly:YES
+                                     completionHandler:^(SCShareableContent* content,
+                                                         NSError* contentError) {
+                                       SCWindow* target = nil;
+
+                                       for (SCWindow* window in content.windows)
+                                           if (window.windowID == windowNumber)
+                                               target = window;
+
+                                       if (target == nil)
+                                       {
+                                           captureWithWindowList(
+                                               windowNumber, pointSize, onCaptured);
+                                           return;
+                                       }
+
+                                       auto* filter = [[SCContentFilter alloc]
+                                           initWithDesktopIndependentWindow:target];
+                                       auto* configuration =
+                                           [[SCStreamConfiguration alloc] init];
+                                       configuration.width =
+                                           (size_t) (pointSize.width * backingScale);
+                                       configuration.height =
+                                           (size_t) (pointSize.height * backingScale);
+                                       configuration.showsCursor = NO;
+
+                                       [SCScreenshotManager
+                                           captureImageWithFilter:filter
+                                                    configuration:configuration
+                                                completionHandler:^(CGImageRef image,
+                                                                    NSError* captureError) {
+                                                  if (image == nullptr)
+                                                  {
+                                                      captureWithWindowList(
+                                                          windowNumber,
+                                                          pointSize,
+                                                          onCaptured);
+                                                      return;
+                                                  }
+
+                                                  onCaptured([[NSImage alloc]
+                                                                 initWithCGImage:image
+                                                                            size:pointSize],
+                                                             "ScreenCaptureKit");
+                                                }];
+                                     }];
+        return;
+    }
+
+    captureWithWindowList(windowNumber, pointSize, onCaptured);
+}
+
+// Main thread. Rudder's own window, so ordering it front changes no app's
+// activation.
+void showPreviewSnapshot(NSImage* image, const rudder::ScreenRect& cocoaFrame)
+{
+    auto frame = NSMakeRect(cocoaFrame.x, cocoaFrame.y, cocoaFrame.width, cocoaFrame.height);
+
+    if (previewSnapshotWindow == nil)
+    {
+        previewSnapshotWindow = [[NSPanel alloc]
+            initWithContentRect:frame
+                      styleMask:NSWindowStyleMaskBorderless
+                                | NSWindowStyleMaskNonactivatingPanel
+                        backing:NSBackingStoreBuffered
+                          defer:NO];
+        previewSnapshotWindow.releasedWhenClosed = NO;
+        previewSnapshotWindow.hidesOnDeactivate = NO;
+        previewSnapshotWindow.ignoresMouseEvents = YES;
+        previewSnapshotWindow.hasShadow = YES;
+        previewSnapshotWindow.opaque = NO;
+        previewSnapshotWindow.backgroundColor = NSColor.clearColor;
+        previewSnapshotWindow.level = NSPopUpMenuWindowLevel - previewSnapshotLevelsBelowPanel;
+        previewSnapshotWindow.collectionBehavior =
+            NSWindowCollectionBehaviorCanJoinAllSpaces
+            | NSWindowCollectionBehaviorFullScreenAuxiliary
+            | NSWindowCollectionBehaviorStationary;
+
+        previewSnapshotImageView = [[NSImageView alloc] initWithFrame:frame];
+        previewSnapshotImageView.imageScaling = NSImageScaleAxesIndependently;
+        previewSnapshotWindow.contentView = previewSnapshotImageView;
+    }
+
+    previewSnapshotImageView.image = image;
+    [previewSnapshotWindow setFrame:frame display:YES];
+    [previewSnapshotWindow orderFrontRegardless];
+    [previewSnapshotWindow invalidateShadow];
+}
+} // namespace
+
+void hidePreviewSnapshot()
+{
+    ++latestPreview;
+    [previewSnapshotWindow orderOut:nil];
+}
+
+bool screenRecordingAllowedRequestingOnce()
+{
+    if (CGPreflightScreenCaptureAccess())
+        return true;
+
+    static auto requestedThisLaunch = false;
+
+    if (!std::exchange(requestedThisLaunch, true))
+        CGRequestScreenCaptureAccess();
+
+    return false;
+}
+
 void previewApp(const RunningApp& app,
                 const std::string& windowId,
-                bool restoreOrigin,
+                bool captureSnapshot,
                 std::function<void(PreviewResult)> onDone)
 {
     auto generation = ++latestPreview;
@@ -1463,9 +1661,24 @@ void previewApp(const RunningApp& app,
         windowId.empty() ? nullptr : copyCachedWindow(app.pid, windowId, window);
     auto byWindow = !windowId.empty();
     auto pid = app.pid;
-    auto name = app.name;
-    auto title = window.title;
+    auto screens = getScreensWithScales();
     auto done = std::make_shared<std::function<void(PreviewResult)>>(std::move(onDone));
+
+    auto report = ^(std::shared_ptr<PreviewResult> result, NSImage* image, rudder::ScreenRect frame) {
+      dispatch_async(dispatch_get_main_queue(),
+                     ^{
+                       if (generation != latestPreview)
+                           return;
+
+                       if (image != nil)
+                           showPreviewSnapshot(image, frame);
+                       else
+                           [previewSnapshotWindow orderOut:nil];
+
+                       if (*done)
+                           (*done)(std::move(*result));
+                     });
+    };
 
     dispatch_async(axQueue(),
                    ^{
@@ -1480,29 +1693,56 @@ void previewApp(const RunningApp& app,
                      }
 
                      auto result = std::make_shared<PreviewResult>();
+                     result->windowTitles = titlesOf(pid);
 
-                     if (byWindow)
-                         result->raised =
-                             element != nullptr
-                             && raiseWindowWithoutActivating(element, false, title);
-                     else
-                     {
-                         result->raised = raiseFrontWindow(pid);
-
-                         if (restoreOrigin)
-                             raisePreviewOrigin();
-                     }
+                     auto windowNumber =
+                         byWindow ? findWindowNumber(element) : findFrontWindowNumber(pid);
 
                      if (element != nullptr)
                          CFRelease(element);
 
-                     result->windowTitles = titlesOf(pid);
+                     if (!captureSnapshot)
+                     {
+                         result->snapshotPath = "not captured";
+                         report(result, nil, {});
+                         return;
+                     }
 
-                     dispatch_async(dispatch_get_main_queue(),
-                                    ^{
-                                      if (*done)
-                                          (*done)(std::move(*result));
-                                    });
+                     auto bounds = windowNumber ? findWindowBounds(*windowNumber)
+                                                : std::optional<rudder::ScreenRect> {};
+
+                     if (!bounds)
+                     {
+                         result->snapshotPath = "no window on screen";
+                         report(result, nil, {});
+                         return;
+                     }
+
+                     auto screenFrames = std::vector<rudder::ScreenRect> {};
+
+                     for (auto& screen: screens)
+                         screenFrames.push_back(screen.frame);
+
+                     auto frame = rudder::cocoaFrameForWindowBounds(*bounds, screenFrames);
+                     auto scale = findBackingScaleFor(frame, screens);
+                     auto pointSize = NSMakeSize(bounds->width, bounds->height);
+
+                     captureWindowImage(
+                         *windowNumber,
+                         pointSize,
+                         scale,
+                         ^(NSImage* image, std::string path) {
+                           result->snapshotPath = path;
+                           result->snapshotShown = image != nil;
+
+                           if (image != nil)
+                           {
+                               result->snapshotWidth = (int) (pointSize.width * scale);
+                               result->snapshotHeight = (int) (pointSize.height * scale);
+                           }
+
+                           report(result, image, frame);
+                         });
                    });
 }
 

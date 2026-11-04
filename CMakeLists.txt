@@ -71,6 +71,7 @@ add_library(RudderSwitcher STATIC
         Lib/Switcher/Providers.cpp
         Lib/Switcher/Ranking.cpp
         Lib/Switcher/Renames.cpp
+        Lib/Switcher/SnapshotFrame.cpp
         Lib/Switcher/TextFit.cpp
         Lib/Switcher/Url.cpp
         Lib/Switcher/Web.cpp)
@@ -89,7 +90,8 @@ if (APPLE)
     target_link_libraries(RudderPlatform PRIVATE
             "-framework AppKit"
             "-framework ApplicationServices"
-            "-framework Carbon")
+            "-framework Carbon"
+            "-weak_framework ScreenCaptureKit")
     # The tamber-web ports (QuickWindow, Permissions) keep their original
     # manual retain/release; Rudder's own platform code is ARC.
     set_source_files_properties(Platform/Platform-macOS.mm Platform/ContextServer-macOS.mm

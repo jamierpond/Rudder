@@ -772,10 +772,6 @@ void CALLBACK
         activeCapture.onMouseDownOutside();
 }
 
-// --- Preview origin ----------------------------------------------------------
-
-HWND previewOrigin = nullptr;
-
 // --- Installed apps ---------------------------------------------------------
 //
 // What the Start menu lists: every shortcut under the user's and everyone's
@@ -1095,15 +1091,16 @@ void setKeyCapturePassThrough(const std::vector<CaptureKey>&) {}
 
 void previewApp(const RunningApp& app,
                 const std::string& windowId,
-                bool restoreOrigin,
+                bool,
                 std::function<void(PreviewResult)> onDone)
 {
     auto result = PreviewResult {};
+    result.snapshotPath = "no snapshots on Windows";
 
     if (!windowId.empty())
     {
         auto row = AppWindow {};
-        result.raised = raiseBehindPanel(cachedWindow(app, windowId, row));
+        raiseBehindPanel(cachedWindow(app, windowId, row));
     }
     else
     {
@@ -1113,10 +1110,8 @@ void previewApp(const RunningApp& app,
                                   [](const WindowEntry& entry)
                                   { return !IsIconic(entry.window); });
 
-        result.raised = front != windows.end() && raiseBehindPanel(front->window);
-
-        if (restoreOrigin)
-            raiseBehindPanel(previewOrigin);
+        if (front != windows.end())
+            raiseBehindPanel(front->window);
     }
 
     result.windowTitles = titlesOf(app.id);
@@ -1127,31 +1122,16 @@ void previewApp(const RunningApp& app,
                              { onDone(std::move(*shared)); });
 }
 
+void hidePreviewSnapshot() {}
+
+bool screenRecordingAllowedRequestingOnce()
+{
+    return true;
+}
+
 std::vector<std::string> windowTitles(const RunningApp& app)
 {
     return titlesOf(app.id);
-}
-
-void rememberPreviewOrigin(const RunningApp& origin)
-{
-    previewOrigin = nullptr;
-
-    if (origin.id.empty())
-        return;
-
-    // Called before the panel shows, so the foreground window is still the
-    // exact one the user was in.
-    auto foreground = GetForegroundWindow();
-
-    for (auto& entry: windowsOf(origin.id))
-        if (entry.window == foreground)
-            previewOrigin = foreground;
-}
-
-void restorePreviewOrigin()
-{
-    if (previewOrigin != nullptr)
-        bringToFront(previewOrigin, false);
 }
 
 std::vector<AppWindow> cachedWindows(const RunningApp& app)

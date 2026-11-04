@@ -22,10 +22,10 @@ struct PanelModel
     std::vector<RudderItem> items;
     int selected = 0;
 
-    // The selection's window titles, front first, and whether its front window
-    // was actually raised behind the panel.
+    // The selection's window titles, front first, and whether a snapshot of
+    // its window shows behind the panel.
     std::vector<std::string> previewWindows;
-    bool previewRaised = false;
+    bool previewShown = false;
 };
 
 struct SettingsModel
@@ -101,7 +101,7 @@ public:
 
     void setPreview(const RudderItem* item,
                     std::vector<std::string> windows,
-                    bool raised,
+                    bool shown,
                     bool trusted);
 
     void paint(eacp::UI::Graphics& g) override;
@@ -114,7 +114,7 @@ private:
     std::string title;
     std::string appId;
     std::vector<std::string> windows;
-    bool raised = false;
+    bool shown = false;
 };
 
 class SwitcherPage final : public eacp::UI::Component
@@ -327,6 +327,10 @@ public:
     // A problem with ~/.config/rudder.json, shown in the footer until it's fixed.
     void setFooterError(const std::string& error);
 
+    // A dim line in place of the shortcuts until the next summon; an error
+    // still wins.
+    void setFooterHint(const std::string& hint);
+
     // The quit binding (⌃Q by default): quit the selected app (or close the
     // selected context, for an app that can), never Rudder.
     // ⌘Q does nothing in the panel.
@@ -368,6 +372,7 @@ private:
 
     SettingsModel settingsModel;
     std::string footerError;
+    std::string footerHint;
     std::string capturing;
     std::optional<Line> renaming;
     // A rename starts with the whole title selected: typing replaces it,

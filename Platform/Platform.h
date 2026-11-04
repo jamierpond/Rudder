@@ -46,7 +46,7 @@ bool activateApp(const RunningApp& app);
 // While the panel is up, the keyboard is Rudder's whichever app is active:
 // every key event system-wide is swallowed and handed to `onKey` on the main
 // thread, except the `passThrough` chords (the global hotkeys), so typing
-// carries on into the panel while a preview raises other apps' windows.
+// carries on into the panel.
 //
 // The tap runs on its own thread and decides in O(1) (CaptureGate.h); it never
 // waits for the main thread. If the main thread sits on a key for more than
@@ -76,33 +76,40 @@ void stopKeyCapture();
 // chord is being recorded. At most four.
 void setKeyCapturePassThrough(const std::vector<CaptureKey>& passThrough);
 
-// The live preview, off the main thread so a hung app can't stall Rudder:
-// raises the app's cached front window
-// (`windowId` empty), or of that exact window. `restoreOrigin` raises the
-// summon's origin window too (previewing the app the panel opened over).
-// `onDone` gets whether it raised and the app's window titles, front to back,
-// on the main thread. A newer preview supersedes one not yet started, which
-// then never reports. Never activates the app or moves keyboard focus: only
-// Enter does that.
+// The live preview, off the main thread so a hung app can't stall Rudder.
+// Reads the app's window titles, front to back, and with `captureSnapshot`
+// shows a captured image of its front window (`windowId` empty) or of that
+// exact window in a Rudder-owned window at the window's place, behind the
+// panel. Never activates, raises or focuses another app's window (on Windows
+// it still raises without activating, and shows no snapshot). `onDone` runs
+// on the main thread. A newer preview or hidePreviewSnapshot supersedes one
+// still in flight, which then never reports.
 struct PreviewResult
 {
-    bool raised = false;
+    bool snapshotShown = false;
+    int snapshotWidth = 0;
+    int snapshotHeight = 0;
+    // Which capture ran, or why there is no snapshot.
+    std::string snapshotPath;
     std::vector<std::string> windowTitles;
 };
 
 void previewApp(const RunningApp& app,
                 const std::string& windowId,
-                bool restoreOrigin,
+                bool captureSnapshot,
                 std::function<void(PreviewResult)> onDone);
+
+// Takes the snapshot off the screen and drops any capture in flight.
+void hidePreviewSnapshot();
+
+// Whether Rudder holds the Screen Recording grant the snapshots need. The
+// first call per launch that finds it missing asks macOS for it, which shows
+// the system dialog only the first time ever. Always true on Windows.
+bool screenRecordingAllowedRequestingOnce();
 
 // The app's window titles, front to back, synchronously (needs
 // accessibility). Only for --snapshot: the panel goes through previewApp.
 std::vector<std::string> windowTitles(const RunningApp& app);
-
-// Captured at summon, before any preview: `origin`'s front window. Esc raises
-// it again so the screen is exactly as it was. Both queue behind any preview.
-void rememberPreviewOrigin(const RunningApp& origin);
-void restorePreviewOrigin();
 
 // One of an app's windows, as a row the user can pick: titled standard
 // windows only (helpers and untitled panels are skipped), minimised ones

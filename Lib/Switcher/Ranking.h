@@ -160,22 +160,10 @@ std::vector<ScoredItem> scoreItems(const std::vector<RudderItem>& all,
                                    const std::string& query,
                                    const FrecencyFn& frecency = {});
 
-// What the live preview does for a selection. Only ever brings forward an
-// app that is running at the moment of the call; anything else -- a closed
-// app, an app that quit since the list was built, a web row -- is left alone. The
-// preview never launches, opens or activates something that isn't running.
-// restoreOrigin is only for the row of the app the panel was summoned over;
-// that app's windows and contexts preview like any other app's.
-enum class PreviewAction
-{
-    none,
-    bringForward,
-    restoreOrigin
-};
-
-PreviewAction previewActionFor(const RudderItem& item,
-                               bool runningNow,
-                               const std::string& originAppId);
+// Whether the live preview shows a snapshot of a selection: only an app that
+// is running at the moment of the call. A closed app, an app that quit since
+// the list was built, or a web row shows nothing.
+bool isPreviewable(const RudderItem& item, bool runningNow);
 
 // Where the selection starts. With no query the first row is normally the app
 // the panel was summoned over, so cmd-tab style it starts on the next one --

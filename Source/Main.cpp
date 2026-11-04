@@ -49,6 +49,8 @@ namespace
 constexpr auto maximumLogFileBytes = std::uintmax_t {10 * 1024 * 1024};
 constexpr auto monotonicMillisecondsWrap = 100000LL;
 constexpr auto millisecondsPerSecond = 1000LL;
+// How long a provider takes to draw the context a preview switched it to.
+constexpr auto contextSwitchRedrawMs = 150;
 
 std::filesystem::path getLogDirectory()
 {
@@ -867,7 +869,8 @@ struct RudderApp
         // BEFORE the panel takes key: that app gets focus back on the way out.
         quick_window::rememberFrontmostApp();
         origin = platform::frontmostApp();
-        platform::rememberPreviewOrigin(origin);
+        screenRecordingCheckedThisSummon = false;
+        panel.setFooterHint({});
         lateRaise.reset();
         focusedAtSummon = providers.focusedContexts();
         previewUndo.reset(focusedAtSummon);
@@ -910,6 +913,7 @@ struct RudderApp
         syncAccessibilityGate(false);
         stopKeyCapture();
         platform::stopWatchingWindows();
+        platform::hidePreviewSnapshot();
         previewedId.clear();
 
         // Deferred on macOS: hiding a key panel while the app is active
@@ -963,9 +967,7 @@ struct RudderApp
 
         logEvent("accessibility granted");
 
-        // Live preview works from here on: capture the origin window that
-        // couldn't be read without the grant, and lift the overlay.
-        platform::rememberPreviewOrigin(origin);
+        // Live preview works from here on: lift the overlay.
         syncAccessibilityGate(false);
         publishSettings();
         panel.focus();
@@ -1017,7 +1019,7 @@ struct RudderApp
         previewedId.clear();
         previewedAppId.clear();
         previewWindows.clear();
-        previewRaised = false;
+        previewShown = false;
         dumpReason = PanelDumpReason::summon;
         publishResults();
     }
@@ -1076,9 +1078,8 @@ struct RudderApp
     }
 
     // Grazer's palette preview, for windows: whenever the results change -- a
-    // keystroke or an arrow -- the selection comes to the front behind the
-    // panel at once. Skipped when the selection didn't change. The app the
-    // panel was summoned over previews as the screen was: its origin window.
+    // keystroke or an arrow -- a snapshot of the selection's window shows
+    // behind the panel at once. Skipped when the selection didn't change.
     void previewSelection()
     {
         if (filtered.empty())
@@ -1092,13 +1093,15 @@ struct RudderApp
         previewedId = item.id;
         previewedAppId = item.appId;
         previewWindows.clear();
-        previewRaised = false;
+        previewShown = false;
 
-        // A closed app has no window to show: whatever was previewed last
-        // stays where it is. Nothing is ever launched for a preview, and no
-        // page opened: a web row waits for Enter.
+        // A closed app has no window to show. Nothing is ever launched for a
+        // preview, and no page opened: a web row waits for Enter.
         if (!item.running || item.kind == "web")
+        {
+            platform::hidePreviewSnapshot();
             return;
+        }
 
         // A favourite previews only what is already open: the tab showing its
         // url, or its app if running. Anything else stays unopened.
@@ -1106,73 +1109,126 @@ struct RudderApp
                                                : std::optional<RudderItem> {item};
 
         if (!target)
+        {
+            platform::hidePreviewSnapshot();
             return;
+        }
 
         target->id = item.id;
         previewedAppId = target->appId;
 
         // After the next frame: the list shows the keystroke first, and the
-        // raise (an AX round trip to the target) follows at once.
+        // capture follows at once.
         pendingPreview = *target;
         panel.repaint();
     }
 
-    // The one place a preview touches another app.
+    // A preview never activates, raises or focuses another app's window; it
+    // shows a snapshot of it. Only a provider's context switch (CowTerm's pane)
+    // reaches into another app.
     void previewNow(const RudderItem& item)
     {
         if (!panelVisible || previewedId != item.id)
             return;
 
         auto app = findRunningNow(item.appId);
-        auto action = previewActionFor(item, app.has_value(), frontAppId);
 
-        if (action == PreviewAction::none)
+        if (!isPreviewable(item, app.has_value()))
+        {
+            platform::hidePreviewSnapshot();
             return;
+        }
 
-        // A preview raises windows but never activates their app; only Enter
-        // moves keyboard focus. Without key capture (no grant) nothing is
-        // raised: a provider focusing its pane (CowTerm) would take key and
-        // close us.
+        // Without key capture (no grant), a provider focusing its pane
+        // (CowTerm) would take key and close us.
         if (!capturingKeys)
             return;
 
-        auto start = uptime();
+        // The app only switches to the context, never raising itself: that
+        // would land late, over wherever the user went next.
+        auto switchedContext = false;
 
-        // A provider's context: the app only switches to it (never raising
-        // itself -- that would land late, over wherever the user went next),
-        // then the usual preview raises the app.
         if (auto request = contextRequestFor(item, ContextPhase::preview))
             if (providers.activate(item.appId, request->contextId, request->raise))
+            {
                 previewUndo.previewed(item.appId);
+                switchedContext = true;
+            }
 
-        // Whatever raises it -- the provider above, or the preview below --
-        // must not land after the panel has closed onto something else.
+        // A provider's switch must not land after the panel has closed onto
+        // something else.
         lateRaise.previewed(item.appId);
 
-        // Off the main thread: a hung app answers late, and only its own
-        // preview waits.
+        capturePreview(item, *app);
+
+        // The provider redraws its window after switching; capture it again
+        // once that has landed.
+        if (switchedContext)
+            Threads::callAfter(Time::MS {contextSwitchRedrawMs},
+                               [this, item]
+                               {
+                                   if (!panelVisible || previewedId != item.id)
+                                       return;
+
+                                   if (auto appNow = findRunningNow(item.appId))
+                                       capturePreview(item, *appNow);
+                               });
+    }
+
+    // Off the main thread: a hung app answers late, and only its own preview
+    // waits.
+    void capturePreview(const RudderItem& item, const platform::RunningApp& app)
+    {
+        auto start = uptime();
         auto id = item.id;
-        auto label = app->name + (item.kind == "window" ? " / " + item.title : std::string {});
+        auto label = app.name + (item.kind == "window" ? " / " + item.title : std::string {});
         auto windowId = item.kind == "window" ? item.contextId : std::string {};
 
         platform::previewApp(
-            *app,
+            app,
             windowId,
-            item.kind != "window" && action == PreviewAction::restoreOrigin,
+            isScreenRecordingAllowedThisSummon(),
             [this, id, label, start](platform::PreviewResult result)
             {
                 if (!panelVisible || previewedId != id)
                     return;
 
-                previewRaised = result.raised;
+                previewShown = result.snapshotShown;
                 previewWindows = std::move(result.windowTitles);
 
-                logEvent(("preview " + label + " " + millis(uptime() - start)
-                          + (previewRaised ? "" : " (not raised)"))
-                             .c_str());
+                if (previewShown)
+                    logEvent(("preview snapshot " + label + " "
+                              + std::to_string(result.snapshotWidth) + "x"
+                              + std::to_string(result.snapshotHeight) + " in "
+                              + millis(uptime() - start) + " (" + result.snapshotPath + ")")
+                                 .c_str());
+                else
+                    logEvent(("preview " + label + " " + millis(uptime() - start)
+                              + ", no snapshot: " + result.snapshotPath)
+                                 .c_str());
 
                 publishResults();
             });
+    }
+
+    // Checked at the first preview of each summon, so a grant given in System
+    // Settings counts from the next summon.
+    bool isScreenRecordingAllowedThisSummon()
+    {
+        if (screenRecordingCheckedThisSummon)
+            return screenRecordingAllowed;
+
+        screenRecordingCheckedThisSummon = true;
+        screenRecordingAllowed = platform::screenRecordingAllowedRequestingOnce();
+
+        if (!screenRecordingAllowed)
+        {
+            logEvent("preview: no screen recording grant");
+            panel.setFooterHint(
+                "Screen Recording lets Rudder preview windows (System Settings → Privacy)");
+        }
+
+        return screenRecordingAllowed;
     }
 
     // --- Favourites ---------------------------------------------------------------
@@ -1771,6 +1827,7 @@ struct RudderApp
 
         if (previewedAppId == appId)
         {
+            platform::hidePreviewSnapshot();
             previewedId.clear();
             previewedAppId.clear();
         }
@@ -1903,9 +1960,8 @@ struct RudderApp
 
         logEvent("cancel");
 
-        // A preview raised another app's window, or another window, pane or
-        // tab of this one (anything but its own app row); hand the screen back
-        // as it was.
+        // A preview showed another app, or another window, pane or tab of this
+        // one (anything but its own app row): hand focus back to the origin.
         auto previewed = !previewedId.empty() && previewedId != frontAppId;
         hidePanel();
 
@@ -1918,16 +1974,15 @@ struct RudderApp
 
         if (previewed && !origin.id.empty())
         {
-            // Rudder deactivating hands focus to the app owning the front
-            // window, which is now the previewed one, not the origin.
+            // Rudder is the active app while the panel is up; the origin
+            // gets activation back explicitly.
             platform::activateApp(origin);
-            platform::restorePreviewOrigin();
         }
     }
 
     void publishResults()
     {
-        panel.setModel({filtered, selected, previewWindows, previewRaised});
+        panel.setModel({filtered, selected, previewWindows, previewShown});
         dumpPanel(std::exchange(dumpReason, PanelDumpReason::refresh));
     }
 
@@ -2089,7 +2144,9 @@ struct RudderApp
     std::string previewedId;
     std::string previewedAppId;
     std::vector<std::string> previewWindows;
-    bool previewRaised = false;
+    bool previewShown = false;
+    bool screenRecordingCheckedThisSummon = false;
+    bool screenRecordingAllowed = false;
     std::vector<platform::RunningApp> running;
     std::vector<RudderItem> installedItems;
     std::map<std::string, std::string> installedPaths;

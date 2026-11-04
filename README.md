@@ -58,6 +58,12 @@ icon into System Settings › Privacy & Security › Accessibility and switch it
 on. Every dev build is ad-hoc signed with a new cdhash, so `just run` resets
 the grant first.
 
+On macOS, Screen Recording, for the preview snapshots: while the panel is up,
+Rudder shows a captured image of the selected window at its place behind the
+panel, and never brings the real window forward. macOS asks for the grant the
+first time a preview needs it. Without it the panel works the same with no
+snapshots, and its footer says so.
+
 ## Keys
 
 | macOS | Windows | |

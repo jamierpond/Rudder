@@ -244,13 +244,13 @@ PreviewPane::PreviewPane()
 
 void PreviewPane::setPreview(const RudderItem* item,
                              std::vector<std::string> windowsToShow,
-                             bool raisedToShow,
+                             bool snapshotShown,
                              bool trusted)
 {
     title = item != nullptr ? item->title : std::string {};
     appId = item != nullptr ? item->appId : std::string {};
     windows = std::move(windowsToShow);
-    raised = raisedToShow;
+    shown = snapshotShown;
     grant.setVisible(!trusted);
     repaint();
 }
@@ -287,7 +287,7 @@ void PreviewPane::paint(UI::Graphics& g)
 
     for (std::size_t i = 0; i < shown; ++i, y += 21.f)
     {
-        auto front = i == 0 && raised;
+        auto front = i == 0 && shown;
         auto line = Rect {16.f, y, width - 32.f, 20.f};
 
         if (front)
@@ -730,7 +730,7 @@ void PanelView::setModel(const PanelModel& model)
                      : nullptr;
 
     switcher.preview.setPreview(
-        item, model.previewWindows, model.previewRaised, trusted);
+        item, model.previewWindows, model.previewShown, trusted);
 }
 
 void PanelView::setSettings(const SettingsModel& model)
@@ -763,6 +763,12 @@ void PanelView::setFooterError(const std::string& error)
     updateFooter();
 }
 
+void PanelView::setFooterHint(const std::string& hint)
+{
+    footerHint = hint;
+    updateFooter();
+}
+
 void PanelView::updateFooter()
 {
     auto& footer = root.switcher.footer;
@@ -776,6 +782,13 @@ void PanelView::updateFooter()
     }
 
     footer.setColour(dimText);
+
+    if (!footerHint.empty())
+    {
+        footer.setText(footerHint);
+        return;
+    }
+
     footer.setText(model.summonLabel + " switch   ·   " + model.backLabel + " back   ·   "
                    + model.favouriteLabel + " favourite   ·   " + model.renameLabel
                    + " rename   ·   " + model.quitLabel + " quit app or close tab");
