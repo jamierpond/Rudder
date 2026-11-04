@@ -291,6 +291,42 @@ std::vector<RudderItem> mergeInstalled(std::vector<RudderItem> running,
     return running;
 }
 
+namespace
+{
+const RudderItem& itemOf(const RudderItem& item)
+{
+    return item;
+}
+
+const RudderItem& itemOf(const ScoredItem& scored)
+{
+    return scored.item;
+}
+
+bool isContextRow(const RudderItem& item)
+{
+    return item.kind == "context" || item.kind == "window";
+}
+
+// An app whose panes or tabs are listed is already there through them.
+template <typename Row>
+void dropAppRowsShadowedByTheirContexts(std::vector<Row>& rows)
+{
+    auto appsWithContexts = std::unordered_set<std::string> {};
+
+    for (auto& row: rows)
+        if (isContextRow(itemOf(row)))
+            appsWithContexts.insert(itemOf(row).appId);
+
+    std::erase_if(rows,
+                  [&](const Row& row)
+                  {
+                      return itemOf(row).kind == "app"
+                             && appsWithContexts.contains(itemOf(row).id);
+                  });
+}
+} // namespace
+
 std::vector<RudderItem> browseItems(const std::vector<RudderItem>& all,
                                     const Recency& recency)
 {
@@ -379,6 +415,7 @@ std::vector<RudderItem> browseItems(const std::vector<RudderItem>& all,
     for (auto& [at, row]: rows)
         browsing.push_back(std::move(row));
 
+    dropAppRowsShadowedByTheirContexts(browsing);
     return browsing;
 }
 
@@ -453,6 +490,7 @@ std::vector<ScoredItem> scoreItems(const std::vector<RudderItem>& all,
                          return a.item.running && !b.item.running;
                      });
 
+    dropAppRowsShadowedByTheirContexts(scored);
     return scored;
 }
 

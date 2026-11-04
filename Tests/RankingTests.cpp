@@ -3,6 +3,7 @@
 
 #include <NanoTest/NanoTest.h>
 
+#include <algorithm>
 #include <cmath>
 #include <map>
 
@@ -313,22 +314,23 @@ auto tProjectAloneFindsPane = test("Ranking/a project name finds its pane near t
 {
     auto ranked = rankItems(cowTermAndWim(), "wim");
 
-    // The Wim app itself first, then the pane in ~/projects/Wim -- ahead of
-    // the Wim tabs that only match on their app's name.
-    check(!ranked.empty() && ranked.front().id == "audio.pond.wim");
-    check(rankOf(ranked, "pane:5") == 1);
+    // The pane in ~/projects/Wim first, ahead of the Wim tabs that only
+    // match on their app's name; the Wim app row is shadowed by its tabs.
+    check(rankOf(ranked, "pane:5") == 0);
 
     // "w" of CowTerm + "im" of GameExperiments still matches, just lower.
     check(rankOf(ranked, "pane:3") > rankOf(ranked, "pane:5"));
 };
 
 auto tAppNameAloneListsContextsBelowApp
-    = test("Ranking/an app's name lists its contexts below the app") = []
+    = test("Ranking/an app's name lists its contexts, not the app again") = []
 {
     auto ranked = rankItems(cowTermAndWim(), "cowterm");
 
-    check(!ranked.empty() && ranked.front().id == "com.eacp.cowterm");
-    check(ranked.size() == 8);
+    check(std::none_of(ranked.begin(),
+                       ranked.end(),
+                       [](const RudderItem& item) { return item.kind == "app"; }));
+    check(ranked.size() == 7);
 };
 
 namespace
@@ -429,11 +431,10 @@ auto tProjectFindsRetitledPane =
 
     auto ranked = rankItems(all, "grazer");
 
-    // The Grazer app is a perfect title match; the pane is right under it,
-    // above Grazer's tabs (app name only) and every directory that merely
-    // has the letters (graphics-analyzer, grader, razor-blog).
-    check(!ranked.empty() && ranked.front().id == "audio.pond.grazer");
-    check(rankOf(ranked, "pane:keychain") == 1);
+    // The pane comes first, above Grazer's tabs (app name only) and every
+    // directory that merely has the letters (graphics-analyzer, grader,
+    // razor-blog); the Grazer app row is shadowed by its tabs.
+    check(rankOf(ranked, "pane:keychain") == 0);
     check(rankOf(ranked, "pane:graphics-analyzer") > rankOf(ranked, "tab-0"));
 };
 
@@ -780,9 +781,44 @@ auto tEmptyListSkipsWhereYouAre
 
     auto list = rankItems(workday(), "", {}, recencyOf(stamps, "com.eacp.cowterm"));
 
-    check(titles(list) == std::vector<std::string> {"CowTerm", "claude", "Grazer", "Safari"});
-    check(list[1].contextId == "pane:1");
-    check(initialSelection(list, "", "com.eacp.cowterm") == 1);
+    // CowTerm's "Current" row is shadowed by its other pane, so the
+    // selection starts on the first row.
+    check(titles(list) == std::vector<std::string> {"claude", "Grazer", "Safari"});
+    check(list[0].contextId == "pane:1");
+    check(initialSelection(list, "", "com.eacp.cowterm") == 0);
+};
+
+auto tEmptyListKeepsAppWithoutRecentContexts
+    = test("Ranking/no query keeps an app's row when none of its contexts is listed") = []
+{
+    auto stamps = std::map<std::string, std::int64_t> {
+        {"audio.pond.grazer", now - 3 * hour},
+        {"com.eacp.cowterm", now - 1 * hour},
+        {"com.eacp.cowterm/repo:/p#branch:old-work", now - 72 * hour}};
+
+    auto list = rankItems(workday(), "", {}, recencyOf(stamps, "com.apple.Safari"));
+
+    check(titles(list) == std::vector<std::string> {"Safari", "CowTerm", "Grazer"});
+    check(initialSelection(list, "", "com.apple.Safari") == 1);
+};
+
+auto tTypedQueryKeepsAppWithoutContexts
+    = test("Ranking/a typed query keeps the row of an app with no contexts") = []
+{
+    auto ranked = rankItems(workday(), "grazer");
+
+    check(!ranked.empty() && ranked.front().id == "audio.pond.grazer");
+};
+
+auto tTypedQueryDropsAppShadowedByContexts
+    = test("Ranking/a typed query drops an app's row when its contexts match") = []
+{
+    auto ranked = rankItems(workday(), "cowterm");
+
+    check(ranked.size() == 3);
+    check(std::all_of(ranked.begin(),
+                      ranked.end(),
+                      [](const RudderItem& item) { return item.kind == "context"; }));
 };
 
 auto tEmptyListLimited = test("Ranking/no query lists at most a handful of contexts, one per key")

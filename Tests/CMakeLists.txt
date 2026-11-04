@@ -4,6 +4,7 @@ add_executable(RudderTests
         DragHandleTests.cpp
         FavouritesTests.cpp
         FocusTests.cpp
+        ListedRowsTests.cpp
         FrecencySimulationTests.cpp
         FrecencyTests.cpp
         FuzzyMatchTests.cpp

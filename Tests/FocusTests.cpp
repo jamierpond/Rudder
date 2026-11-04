@@ -145,3 +145,20 @@ auto tPickReplacesStaleSpell
     check(focus.activated(cowTerm, 60000) == std::optional {rename});
     check(!focus.settle(cowTerm, 60000 + 10 * FocusTracker::dwellMs));
 };
+
+auto tFocusAtSummonKept
+    = test("Focus/a push while the panel is up keeps the focus it had at summon") = []
+{
+    // A preview moved CowTerm's focus to pane b; the panel still sees pane a.
+    auto contexts = withFocusAt(focusedOn("rename"), "pane:a");
+
+    check(contexts[0].focused);
+    check(!contexts[1].focused);
+};
+
+auto tNoFocusAtSummon
+    = test("Focus/an app that showed nothing focused at summon has no focused context") = []
+{
+    for (auto& context: withFocusAt(focusedOn("rename"), ""))
+        check(!context.focused);
+};
