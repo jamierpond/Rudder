@@ -6,6 +6,7 @@
 #include "ContextServer.h"
 #include "Icon.h"
 #include "Keybinding.h"
+#include "ListedRows.h"
 #include "Mru.h"
 #include "PanelDump.h"
 #include "PanelFrame.h"
@@ -438,8 +439,8 @@ struct RudderApp
     {
         auto events = platform::WorkspaceEvents {};
 
-        // Previews activate apps while the panel is up; only what the panel
-        // commits to counts (openItem records it).
+        // Apps can activate while the panel is up (a provider raising itself);
+        // only what the panel commits to counts (openItem records it).
         events.onActivated = [this](const platform::RunningApp& app)
         {
             if (panelVisible)
@@ -650,8 +651,7 @@ struct RudderApp
 
     // --- Key capture ------------------------------------------------------------
 
-    // While the panel is up the keyboard is ours, whichever app the preview
-    // has activated. The two hotkeys pass through so they still toggle and go
+    // While the panel is up the keyboard is ours. The two hotkeys pass through so they still toggle and go
     // back -- except while a new chord is being recorded.
     void startKeyCapture()
     {
@@ -782,7 +782,8 @@ struct RudderApp
         origin = platform::frontmostApp();
         platform::rememberPreviewOrigin(origin);
         lateRaise.reset();
-        previewUndo.reset(providers.focusedContexts());
+        focusedAtSummon = providers.focusedContexts();
+        previewUndo.reset(focusedAtSummon);
 
         panel.reset(showSettings);
         // A failed open's message lasts one summon; a bad favourites file's
@@ -1024,7 +1025,7 @@ struct RudderApp
         previewedAppId = target->appId;
 
         // After the next frame: the list shows the keystroke first, and the
-        // activation (an AX round trip to the target) follows at once.
+        // raise (an AX round trip to the target) follows at once.
         pendingPreview = *target;
         panel.repaint();
     }
@@ -1041,10 +1042,10 @@ struct RudderApp
         if (action == PreviewAction::none)
             return;
 
-        // Under key capture the preview can activate for real -- the only
-        // way the window gets above everything -- and typing still lands in
-        // the panel. Without it (no grant), nothing is raised or focused: a
-        // provider focusing its pane (CowTerm) would take key and close us.
+        // A preview raises windows but never activates their app; only Enter
+        // moves keyboard focus. Without key capture (no grant) nothing is
+        // raised: a provider focusing its pane (CowTerm) would take key and
+        // close us.
         if (!capturingKeys)
             return;
 
@@ -1253,7 +1254,7 @@ struct RudderApp
                 if (row.kind == "app" && row.running && row.appId == app.id)
                     row.contexts = contextsFor(app);
 
-        rerankKeepingSelection();
+        refreshListedRows();
     }
 
     // The favourite binding: star the selection, or unstar a favourite.
@@ -1562,7 +1563,7 @@ struct RudderApp
     // app's own windows as Rudder last saw them.
     std::vector<RudderContext> contextsFor(const platform::RunningApp& app)
     {
-        auto contexts = providers.contextsFor(app.id);
+        auto contexts = contextsFocusedAtSummon(app.id);
 
         for (auto& context: contexts)
             context.name = renames.nameFor(contextKey(app.id, context));
@@ -1578,6 +1579,16 @@ struct RudderApp
         }
 
         return contexts;
+    }
+
+    // A provider's contexts as it pushed them last, but focused where it was
+    // at summon: previews move the focus, and the list mustn't move with it.
+    std::vector<RudderContext> contextsFocusedAtSummon(const std::string& appId)
+    {
+        auto focused = focusedAtSummon.find(appId);
+        auto focusedContextId =
+            focused != focusedAtSummon.end() ? focused->second : std::string {};
+        return withFocusAt(providers.contextsFor(appId), focusedContextId);
     }
 
     // An app's windows changed while the panel is up (the first enumeration
@@ -1600,27 +1611,17 @@ struct RudderApp
             if (item.appId == appId && item.kind == "app" && item.running)
                 item.contexts = contextsFor(*app);
 
-        rerankKeepingSelection();
+        refreshListedRows();
     }
 
-    // The list again (the empty query's too: it lists recent contexts), the
-    // selection staying on the same row where it still exists.
-    void rerankKeepingSelection()
+    // A push, a window change or a rename while the panel is up: the listed
+    // rows take their live data in place. Which rows, their order and the
+    // selection change only on a keystroke or a summon; a row whose context
+    // closed stays listed.
+    void refreshListedRows()
     {
-        auto selectedId = filtered.empty() ? std::string {}
-                                           : filtered[(std::size_t) selected].id;
-        filtered = rankWithWeb(allItems, query, webSettings(), frecencyLookup(), recencyLookup());
-
-        auto again = std::find_if(filtered.begin(),
-                                  filtered.end(),
-                                  [&](const RudderItem& item) { return item.id == selectedId; });
-
-        // A row that went (a context just closed) leaves the selection where
-        // it was, on the row that took its place, so the next quit binding
-        // closes that one rather than whatever is on top.
-        selected = again != filtered.end()
-                       ? (int) (again - filtered.begin())
-                       : std::clamp(selected, 0, std::max((int) filtered.size() - 1, 0));
+        auto fresh = rankWithWeb(allItems, query, webSettings(), frecencyLookup(), recencyLookup());
+        filtered = refreshListedRowsInPlace(std::move(filtered), fresh);
         publishResults();
     }
 
@@ -1730,7 +1731,7 @@ struct RudderApp
         auto now = FrecencyStore::nowMs();
 
         if (item.kind != "web"
-            && pickMoves(item, frontAppId, providers.contextsFor(frontAppId)))
+            && pickMoves(item, frontAppId, contextsFocusedAtSummon(frontAppId)))
             frecency.touch(frecencyKey(item), now);
 
         // The focus tracker was fed nothing while the panel was up. A picked
@@ -1815,9 +1816,9 @@ struct RudderApp
 
         logEvent("cancel");
 
-        // A preview activated another app, or another window, pane or tab
-        // of this one (anything but its own app row); hand the screen back as
-        // it was.
+        // A preview raised another app's window, or another window, pane or
+        // tab of this one (anything but its own app row); hand the screen back
+        // as it was.
         auto previewed = !previewedId.empty() && previewedId != frontAppId;
         hidePanel();
 
@@ -1830,6 +1831,8 @@ struct RudderApp
 
         if (previewed && !origin.id.empty())
         {
+            // Rudder deactivating hands focus to the app owning the front
+            // window, which is now the previewed one, not the origin.
             platform::activateApp(origin);
             platform::restorePreviewOrigin();
         }
@@ -2013,6 +2016,7 @@ struct RudderApp
     std::optional<RudderItem> pendingPreview;
     LateRaiseGuard lateRaise;
     PreviewUndo previewUndo;
+    std::map<std::string, std::string> focusedAtSummon;
 
     platform::ContextServer contextServer;
     std::map<int, std::string> connectionApps;

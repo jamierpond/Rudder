@@ -727,8 +727,8 @@ std::vector<std::string> titlesOf(const std::string& appId)
 
 // --- Key capture ------------------------------------------------------------
 //
-// macOS needs a tap because a preview activates the app it shows, taking the
-// keyboard with it. Here a preview only reorders windows under the panel, so
+// macOS needs a tap because the panel there does not keep the keyboard on its
+// own. Here a preview only reorders windows under the panel, so
 // the panel keeps the keyboard and its own key events are all there is to
 // read. What is left of capture is noticing the user going elsewhere -- a
 // click in another window, Alt+Tab, the Start menu -- which is any other
