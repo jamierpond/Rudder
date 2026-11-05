@@ -18,8 +18,9 @@ using FrecencyFn = std::function<double(const std::string& key)>;
 
 // What a context is remembered by -- its frecency, its recency, its rename --
 // stable across shells and restarts, where a provider's id isn't (CowTerm's
-// pane ids are new for every shell): appId + "/repo:" + repo + "#branch:" +
-// branch when it has both, else appId + "/path:" + its directory, else
+// pane ids are new for every shell, Grazer's tab ids for every launch):
+// appId + "/repo:" + repo + "#branch:" + branch when it has both, else
+// appId + "/path:" + its directory, else appId + "/url:" + its url, else
 // appId + "/" + its id. A live pane and the unopened place on the same branch
 // of the same repository share it, so their uses add up.
 std::string contextKey(const std::string& appId, const RudderContext& context);
@@ -35,7 +36,7 @@ std::vector<std::string> goneContextKeys(const std::string& appId,
                                          const std::vector<RudderContext>& after);
 
 // The contextKeys among `contexts` that are only the provider's id (no
-// repository and branch, no path). Those ids mean nothing once the app's connection ends:
+// repository and branch, no path, no url). Those ids mean nothing once the app's connection ends:
 // Grazer numbers its tabs from 0 again each launch, so tab "3" after a
 // restart is another page.
 std::vector<std::string> idOnlyContextKeys(const std::string& appId,
@@ -156,9 +157,14 @@ struct ScoredItem
 };
 
 // rankItems for a non-empty query, keeping each row's scores, best first.
+// Where the user already is -- `frontAppId`'s row and its focused context,
+// which Enter can't move to (pickMoves) -- sinks below every other hit: it
+// earns the most frecency, so it would otherwise top every search for it.
+// An app with provider contexts doesn't list its windows.
 std::vector<ScoredItem> scoreItems(const std::vector<RudderItem>& all,
                                    const std::string& query,
-                                   const FrecencyFn& frecency = {});
+                                   const FrecencyFn& frecency = {},
+                                   const std::string& frontAppId = {});
 
 // What the live preview does for a selection. Only ever brings forward an
 // app that is running at the moment of the call; anything else -- a closed

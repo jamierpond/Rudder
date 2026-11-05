@@ -3,6 +3,7 @@
 
 #include <NanoTest/NanoTest.h>
 
+#include <algorithm>
 #include <cmath>
 #include <map>
 
@@ -172,8 +173,8 @@ auto tRunningWinsTies = test("Ranking/running beats closed on an equal match") =
 
 auto tBetterMatchWinsOverRunning = test("Ranking/a better match beats running") = []
 {
-    // Mid-word in the running app, a word start in the closed one.
-    auto apps = std::vector<RudderItem> {app("a", "Affinity"), closed("b", "Finder")};
+    // Scattered in the running app, a word start in the closed one.
+    auto apps = std::vector<RudderItem> {app("a", "Fontina"), closed("b", "Finder")};
     auto ranked = rankItems(apps, "fin");
 
     check(ranked.front().title == "Finder");
@@ -313,22 +314,23 @@ auto tProjectAloneFindsPane = test("Ranking/a project name finds its pane near t
 {
     auto ranked = rankItems(cowTermAndWim(), "wim");
 
-    // The Wim app itself first, then the pane in ~/projects/Wim -- ahead of
-    // the Wim tabs that only match on their app's name.
-    check(!ranked.empty() && ranked.front().id == "audio.pond.wim");
-    check(rankOf(ranked, "pane:5") == 1);
+    // The pane in ~/projects/Wim first, ahead of the Wim tabs that only
+    // match on their app's name; the Wim app row is shadowed by its tabs.
+    check(rankOf(ranked, "pane:5") == 0);
 
     // "w" of CowTerm + "im" of GameExperiments still matches, just lower.
     check(rankOf(ranked, "pane:3") > rankOf(ranked, "pane:5"));
 };
 
 auto tAppNameAloneListsContextsBelowApp
-    = test("Ranking/an app's name lists its contexts below the app") = []
+    = test("Ranking/an app's name lists its contexts, not the app again") = []
 {
     auto ranked = rankItems(cowTermAndWim(), "cowterm");
 
-    check(!ranked.empty() && ranked.front().id == "com.eacp.cowterm");
-    check(ranked.size() == 8);
+    check(std::none_of(ranked.begin(),
+                       ranked.end(),
+                       [](const RudderItem& item) { return item.kind == "app"; }));
+    check(ranked.size() == 7);
 };
 
 namespace
@@ -365,7 +367,7 @@ std::vector<RudderItem> busyCowTerm()
         "notebook", "scratch", "playground", "benchmarks", "perf-traces",
         "crash-reports", "bug-bash", "feature-flags", "auth-service",
         "billing-service", "search-service", "sync-engine", "file-watcher",
-        "image-cache", "video-encoder", "pdf-renderer", "markdown-parser",
+        "image-cache", "video-encoder", "csv-renderer", "markdown-parser",
         "json-schema", "proto-defs"};
 
     auto cowTerm = app("com.eacp.cowterm", "CowTerm");
@@ -429,11 +431,10 @@ auto tProjectFindsRetitledPane =
 
     auto ranked = rankItems(all, "grazer");
 
-    // The Grazer app is a perfect title match; the pane is right under it,
-    // above Grazer's tabs (app name only) and every directory that merely
-    // has the letters (graphics-analyzer, grader, razor-blog).
-    check(!ranked.empty() && ranked.front().id == "audio.pond.grazer");
-    check(rankOf(ranked, "pane:keychain") == 1);
+    // The pane comes first, above Grazer's tabs (app name only) and every
+    // directory that merely has the letters (graphics-analyzer, grader,
+    // razor-blog); the Grazer app row is shadowed by its tabs.
+    check(rankOf(ranked, "pane:keychain") == 0);
     check(rankOf(ranked, "pane:graphics-analyzer") > rankOf(ranked, "tab-0"));
 };
 
@@ -780,9 +781,44 @@ auto tEmptyListSkipsWhereYouAre
 
     auto list = rankItems(workday(), "", {}, recencyOf(stamps, "com.eacp.cowterm"));
 
-    check(titles(list) == std::vector<std::string> {"CowTerm", "claude", "Grazer", "Safari"});
-    check(list[1].contextId == "pane:1");
-    check(initialSelection(list, "", "com.eacp.cowterm") == 1);
+    // CowTerm's "Current" row is shadowed by its other pane, so the
+    // selection starts on the first row.
+    check(titles(list) == std::vector<std::string> {"claude", "Grazer", "Safari"});
+    check(list[0].contextId == "pane:1");
+    check(initialSelection(list, "", "com.eacp.cowterm") == 0);
+};
+
+auto tEmptyListKeepsAppWithoutRecentContexts
+    = test("Ranking/no query keeps an app's row when none of its contexts is listed") = []
+{
+    auto stamps = std::map<std::string, std::int64_t> {
+        {"audio.pond.grazer", now - 3 * hour},
+        {"com.eacp.cowterm", now - 1 * hour},
+        {"com.eacp.cowterm/repo:/p#branch:old-work", now - 72 * hour}};
+
+    auto list = rankItems(workday(), "", {}, recencyOf(stamps, "com.apple.Safari"));
+
+    check(titles(list) == std::vector<std::string> {"Safari", "CowTerm", "Grazer"});
+    check(initialSelection(list, "", "com.apple.Safari") == 1);
+};
+
+auto tTypedQueryKeepsAppWithoutContexts
+    = test("Ranking/a typed query keeps the row of an app with no contexts") = []
+{
+    auto ranked = rankItems(workday(), "grazer");
+
+    check(!ranked.empty() && ranked.front().id == "audio.pond.grazer");
+};
+
+auto tTypedQueryDropsAppShadowedByContexts
+    = test("Ranking/a typed query drops an app's row when its contexts match") = []
+{
+    auto ranked = rankItems(workday(), "cowterm");
+
+    check(ranked.size() == 3);
+    check(std::all_of(ranked.begin(),
+                      ranked.end(),
+                      [](const RudderItem& item) { return item.kind == "context"; }));
 };
 
 auto tEmptyListLimited = test("Ranking/no query lists at most a handful of contexts, one per key")
@@ -857,7 +893,7 @@ auto tClosedTabIsGone = test("Ranking/a tab missing from the next push is gone")
     auto after = std::vector<RudderContext> {{"4", "Gmail", "", "https://mail.google.com"}};
 
     check(goneContextKeys(grazer, before, after)
-          == std::vector<std::string> {"audio.pond.grazer/3"});
+          == std::vector<std::string> {"audio.pond.grazer/url:https://github.com"});
     check(goneContextKeys(grazer, before, before).empty());
     check(goneContextKeys(grazer, {}, after).empty());
 };
@@ -897,7 +933,7 @@ auto tMovedPaneIsntGone
     check(goneContextKeys(cowTerm, before, after).empty());
 };
 
-auto tIdOnlyKeys = test("Ranking/only contexts with no branch or path are keyed by id alone") = []
+auto tIdOnlyKeys = test("Ranking/only contexts with no branch, path or url are keyed by id alone") = []
 {
     auto grazer = "audio.pond.grazer";
     auto contexts = std::vector<RudderContext> {{"3", "GitHub", "", "https://github.com"},
@@ -946,4 +982,156 @@ auto tBonusSeparatesHeavyUse
 
     // Past the first few picks each doubling is worth about the same: k.
     check(std::abs(frecencyBonus(200) - frecencyBonus(100) - frecencyK) < 0.01);
+};
+
+// Jamie's report: the row he wants is the second one, for CowTerm panes and
+// Grazer tabs alike. The rows below are shaped like what CowTerm (bb0acbd)
+// and Grazer push, plus the windows Rudder finds itself.
+namespace
+{
+RudderContext grazerTab(const std::string& id, const std::string& title, const std::string& url)
+{
+    auto tab = RudderContext {id, title, url, url};
+    return tab;
+}
+
+RudderContext windowTitled(const std::string& id, const std::string& title)
+{
+    auto window = RudderContext {id, title, "", ""};
+    window.kind = "window";
+    return window;
+}
+
+RudderContext cowTermPane(const std::string& shellId,
+                          const std::string& repo,
+                          const std::string& branch,
+                          const std::string& title)
+{
+    auto pane = RudderContext {"pane:" + shellId, title, "Tab 1 · pane 1 · " + branch, ""};
+    pane.path = repo;
+    pane.repo = repo;
+    pane.branch = branch;
+    return pane;
+}
+
+} // namespace
+
+auto tGrazerWindowDoesNotShadowItsTab =
+    test("Ranking/a Grazer window doesn't beat the tab it shows") = []
+{
+    constexpr auto pickedWindowFrecency = 7.7;
+    auto grazer = app("audio.pond.grazer", "Grazer");
+    auto prTitle = std::string {"Coupon cart by jamierpond · Pull Request #61 · Tamber-Inc/tamber-mktg"};
+    grazer.contexts = {grazerTab("4", "Inbox (3) - jamie@tamber.ai - Gmail", "https://mail.google.com/mail/u/0/"),
+                       grazerTab("7", prTitle, "https://github.com/Tamber-Inc/tamber-mktg/pull/61"),
+                       windowTitled("6370538f", prTitle)};
+
+    auto ranked = rankItems({grazer},
+                            "coupon",
+                            frecencyFrom({{"audio.pond.grazer/6370538f", pickedWindowFrecency}}));
+
+    check(!ranked.empty());
+    check(ranked.front().kind == "context", "the tab, not the window showing it");
+    check(ranked.front().contextId == "7");
+    check(rankOf(ranked, "6370538f") == -1, "a provider app's windows aren't listed");
+};
+
+auto tWindowsStillListForAppsWithoutProviders =
+    test("Ranking/an app without a provider still lists its windows") = []
+{
+    auto finder = app("com.apple.finder", "Finder");
+    finder.contexts = {windowTitled("1", "Downloads")};
+
+    check(rankOf(rankItems({finder}, "downloads"), "1") == 0);
+};
+
+auto tCowTermWindowDoesNotShadowItsPane =
+    test("Ranking/a CowTerm window doesn't beat the pane it shows") = []
+{
+    constexpr auto pickedWindowFrecency = 34.1;
+    auto cowTerm = app("com.eacp.cowterm", "CowTerm");
+    cowTerm.contexts = {
+        cowTermPane("a", "/Users/jamiepond/projects/eacp", "jp/webview-ignore-cancelled-navigation", "jp/webview-ignore-cancelled-navigation · claude"),
+        windowTitled("636f7ebf", "jp/webview-ignore-cancelled-navigation · claude")};
+
+    auto ranked = rankItems({cowTerm},
+                            "webview",
+                            frecencyFrom({{"com.eacp.cowterm/636f7ebf", pickedWindowFrecency}}));
+
+    check(rankOf(ranked, "pane:a") == 0);
+};
+
+auto tWhereTheUserIsSinks =
+    test("Ranking/the pane the user is in sinks below the one they're looking for") = []
+{
+    constexpr auto livedInFrecency = 46.4;
+    constexpr auto sometimesFrecency = 2.0;
+    auto cowTerm = app("com.eacp.cowterm", "CowTerm");
+    auto here = cowTermPane("here", "/Users/jamiepond/projects/eacp", "main", "main · claude");
+    here.focused = true;
+    auto there = cowTermPane("there", "/Users/jamiepond/projects/eacp-crash-reporting-all", "jp/crash-reporting-all", "jp/crash-reporting-all · claude");
+    cowTerm.contexts = {here, there};
+
+    auto frecency = frecencyFrom({{contextKey("com.eacp.cowterm", here), livedInFrecency},
+                                  {contextKey("com.eacp.cowterm", there), sometimesFrecency}});
+    auto recency = Recency {};
+    recency.frontAppId = "com.eacp.cowterm";
+
+    auto ranked = rankItems({cowTerm}, "eacp", frecency, recency);
+
+    check(rankOf(ranked, "pane:there") == 0);
+    check(rankOf(ranked, "pane:here") == 1, "still listed, just last");
+
+    check(rankOf(rankItems({cowTerm}, "eacp", frecency), "pane:here") == 0,
+          "summoned over another app, the lived-in pane leads");
+};
+
+auto tGrazerTabKeyedByUrl =
+    test("Ranking/a Grazer tab is remembered by its url, not its per-launch id") = []
+{
+    auto tab = grazerTab("3", "Pull Request #61", "https://github.com/Tamber-Inc/tamber-mktg/pull/61");
+
+    check(contextKey("audio.pond.grazer", tab)
+          == "audio.pond.grazer/url:https://github.com/Tamber-Inc/tamber-mktg/pull/61");
+    check(idOnlyContextKeys("audio.pond.grazer", {tab}).empty(),
+          "its frecency outlives Grazer quitting");
+
+    auto grazer = app("audio.pond.grazer", "Grazer");
+    grazer.contexts = {tab};
+    auto row = rankItems({grazer}, "pull").front();
+    check(frecencyKey(row) == contextKey("audio.pond.grazer", tab));
+};
+
+auto tAppNameDoesNotLiftEveryPane =
+    test("Ranking/the app's name finds the pane in its project, not every pane") = []
+{
+    // Live CowTerm push, 2026-10-30: pane titles lead with the branch, so the
+    // project is only in the directory.
+    constexpr auto livedInFrecency = 18.5;
+    auto cowTerm = app("com.eacp.cowterm", "CowTerm");
+    auto grazerPane = cowTermPane("grazer", "/Users/jamiepond/projects/Grazer", "main", "main · tmux · 2.1.312");
+    auto cowTermPaneInItsRepo = cowTermPane("cowterm", "/Users/jamiepond/projects/CowTerm", "main", "main");
+    auto configPane = cowTermPane("config", "/Users/jamiepond/.config", "main", "main");
+    cowTerm.contexts = {grazerPane, configPane, cowTermPaneInItsRepo};
+
+    auto ranked = rankItems(
+        {cowTerm},
+        "cowterm",
+        frecencyFrom({{contextKey("com.eacp.cowterm", grazerPane), livedInFrecency}}));
+
+    check(rankOf(ranked, "pane:cowterm") == 0);
+};
+
+auto tRepositoryNameCountsLikeTheTitle =
+    test("Ranking/the repository's name finds its pane like a title would") = []
+{
+    // Live rows, 2026-10-30: "rudder" put this Grazer tab first.
+    auto grazer = app("audio.pond.grazer", "Grazer");
+    grazer.contexts = {grazerTab("12",
+                                 "Report checkout sales to ad platforms from the Paddle webhook through RudderStack by zwrenn · Pull Request #1419 · Tamber-Inc/tamber-web",
+                                 "https://github.com/Tamber-Inc/tamber-web/pull/1419")};
+    auto cowTerm = app("com.eacp.cowterm", "CowTerm");
+    cowTerm.contexts = {cowTermPane("rudder", "/Users/jamiepond/projects/Rudder", "main", "main")};
+
+    check(rankOf(rankItems({grazer, cowTerm}, "rudder"), "pane:rudder") == 0);
 };

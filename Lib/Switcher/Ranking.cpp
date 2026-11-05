@@ -65,6 +65,12 @@ constexpr auto branchBonus = 1;
 // path: branch > title > dirname = subtitle > path. The directory's name
 // (a worktree's, a project's) says little the title and branch don't.
 constexpr auto dirNamePenalty = 6;
+
+// The repository's folder is the project's name ("Rudder", or a worktree's
+// "Rudder-ranking-study"), and CowTerm's titles lead with the branch, so it
+// is often the only place the project is named: it counts like the title.
+// "rudder" found a Grazer tab about RudderStack above ~/projects/Rudder.
+constexpr auto repositoryNamePenalty = 0;
 constexpr auto subtitlePenalty = 6;
 constexpr auto pathPenalty = 12;
 
@@ -112,6 +118,7 @@ std::optional<int> ownScore(const std::string& query, const RudderContext& conte
 
     consider(context.branch, -branchBonus, false);
     consider(context.name, -branchBonus, false);
+    consider(lastComponent(context.repo), repositoryNamePenalty, false);
     consider(lastComponent(context.path), dirNamePenalty, true);
     consider(context.subtitle, subtitlePenalty, true);
     consider(context.path, pathPenalty, true);
@@ -125,11 +132,32 @@ std::optional<int> ownScore(const std::string& query, const RudderContext& conte
 // name), "wim" took the w of CowTerm and scored like any pane with a w, i and m
 // in it, and a project typed after the app name ("cowtermwim") ranked by where those
 // letters first turned up rather than by the directory that spells them.
-std::optional<int> contextScore(const std::string& query,
-                                const RudderItem& app,
-                                const RudderContext& context)
+constexpr auto minimumOwnLettersAfterAppName = 2;
+
+struct ContextMatch
 {
-    auto best = ownScore(query, context);
+    int score = 0;
+
+    // Found by its app's name, with at most a loose match on its own text:
+    // true of nearly every context of the app, so its frecency mustn't count
+    // ("cowterm" put every pane Jamie lives in above ~/projects/CowTerm's).
+    bool isByAppName = false;
+};
+
+std::optional<ContextMatch> contextScore(const std::string& query,
+                                         const RudderItem& app,
+                                         const RudderContext& context)
+{
+    auto best = std::optional<ContextMatch> {};
+
+    if (auto own = ownScore(query, context))
+        best = ContextMatch {*own, false};
+
+    auto consider = [&](int score, bool isByAppName)
+    {
+        if (!best || score > best->score)
+            best = ContextMatch {score, isByAppName};
+    };
 
     for (std::size_t split = 1; split <= query.size(); ++split)
     {
@@ -142,17 +170,22 @@ std::optional<int> contextScore(const std::string& query,
 
         if (rest.find_first_not_of(' ') == std::string::npos)
         {
-            auto score = *onApp - appNameOnlyPenalty;
-
-            if (!best || score > *best)
-                best = score;
-
+            consider(*onApp - appNameOnlyPenalty, true);
             continue;
         }
 
+        // "cowt" on CowTerm leaves "erm", loosely in every /Users/jamiepond
+        // path, and "cowter" leaves an "m" any "main" pane has: a rest that
+        // doesn't find the context tightly, with a few letters of its own,
+        // is the app's name doing the work.
         if (auto onContext = ownScore(rest, context))
-            if (!best || *onApp + *onContext > *best)
-                best = *onApp + *onContext;
+        {
+            if (letterCount(rest) >= minimumOwnLettersAfterAppName
+                && *onContext >= tightPerLetter * letterCount(rest))
+                consider(*onApp + *onContext, false);
+            else
+                consider(*onApp + *onContext - appNameOnlyPenalty, true);
+        }
     }
 
     return best;
@@ -165,6 +198,7 @@ std::string stableKey(const std::string& appId,
                       const std::string& repo,
                       const std::string& branch,
                       const std::string& path,
+                      const std::string& url,
                       const std::string& id)
 {
     if (!repo.empty() && !branch.empty())
@@ -173,13 +207,16 @@ std::string stableKey(const std::string& appId,
     if (!path.empty())
         return appId + "/path:" + path;
 
+    if (!url.empty())
+        return appId + "/url:" + url;
+
     return appId + "/" + id;
 }
 } // namespace
 
 std::string contextKey(const std::string& appId, const RudderContext& context)
 {
-    return stableKey(appId, context.repo, context.branch, context.path, context.id);
+    return stableKey(appId, context.repo, context.branch, context.path, context.url, context.id);
 }
 
 std::vector<std::string> goneContextKeys(const std::string& appId,
@@ -212,7 +249,8 @@ std::vector<std::string> idOnlyContextKeys(const std::string& appId,
     auto keys = std::vector<std::string> {};
 
     for (auto& context: contexts)
-        if (context.path.empty() && (context.repo.empty() || context.branch.empty()))
+        if (context.path.empty() && context.url.empty()
+            && (context.repo.empty() || context.branch.empty()))
             if (auto key = contextKey(appId, context); seen.insert(key).second)
                 keys.push_back(std::move(key));
 
@@ -222,7 +260,7 @@ std::vector<std::string> idOnlyContextKeys(const std::string& appId,
 std::string frecencyKey(const RudderItem& item)
 {
     if (item.kind == "context" || item.kind == "window")
-        return stableKey(item.appId, item.repo, item.branch, item.contextPath, item.contextId);
+        return stableKey(item.appId, item.repo, item.branch, item.contextPath, item.url, item.contextId);
 
     if (item.kind != "favourite")
         return item.id;
@@ -290,6 +328,64 @@ std::vector<RudderItem> mergeInstalled(std::vector<RudderItem> running,
 
     return running;
 }
+
+namespace
+{
+const RudderItem& itemOf(const RudderItem& item)
+{
+    return item;
+}
+
+const RudderItem& itemOf(const ScoredItem& scored)
+{
+    return scored.item;
+}
+
+// A provider's tabs or panes stand for its windows (a window shows one of
+// them), so its windows aren't listed beside them: they'd tie the context on
+// its title and win on frecency, and picking one only raises the window.
+bool hasProviderContexts(const RudderItem& app)
+{
+    return std::any_of(app.contexts.begin(),
+                       app.contexts.end(),
+                       [](const RudderContext& context) { return context.kind != "window"; });
+}
+
+const std::vector<RudderContext>& contextsOf(const std::vector<RudderItem>& all,
+                                             const std::string& appId)
+{
+    static const auto none = std::vector<RudderContext> {};
+
+    for (auto& item: all)
+        if (item.kind == "app" && item.id == appId)
+            return item.contexts;
+
+    return none;
+}
+
+bool isContextRow(const RudderItem& item)
+{
+    return item.kind == "context" || item.kind == "window";
+}
+
+// An app whose panes or tabs are listed is already there through them.
+template <typename Row>
+void dropAppRowsShadowedByTheirContexts(std::vector<Row>& rows)
+{
+    auto appsWithContexts = std::unordered_set<std::string> {};
+
+    for (auto& row: rows)
+        if (isContextRow(itemOf(row)))
+            appsWithContexts.insert(itemOf(row).appId);
+
+    std::erase_if(rows,
+                  [&](const Row& row)
+                  {
+                      return itemOf(row).kind == "app"
+                             && appsWithContexts.contains(itemOf(row).id);
+                  });
+}
+} // namespace
 
 std::vector<RudderItem> browseItems(const std::vector<RudderItem>& all,
                                     const Recency& recency)
@@ -379,6 +475,7 @@ std::vector<RudderItem> browseItems(const std::vector<RudderItem>& all,
     for (auto& [at, row]: rows)
         browsing.push_back(std::move(row));
 
+    dropAppRowsShadowedByTheirContexts(browsing);
     return browsing;
 }
 
@@ -403,7 +500,7 @@ std::vector<RudderItem> rankItems(const std::vector<RudderItem>& all,
 
     auto ranked = std::vector<RudderItem> {};
 
-    for (auto& scored: scoreItems(all, query, frecency))
+    for (auto& scored: scoreItems(all, query, frecency, recency.frontAppId))
         ranked.push_back(std::move(scored.item));
 
     return ranked;
@@ -411,13 +508,15 @@ std::vector<RudderItem> rankItems(const std::vector<RudderItem>& all,
 
 std::vector<ScoredItem> scoreItems(const std::vector<RudderItem>& all,
                                    const std::string& query,
-                                   const FrecencyFn& frecency)
+                                   const FrecencyFn& frecency,
+                                   const std::string& frontAppId)
 {
     auto scored = std::vector<ScoredItem> {};
 
-    auto add = [&](int match, RudderItem item)
+    auto add = [&](int match, RudderItem item, bool countsFrecency = true)
     {
-        auto bonus = frecency ? frecencyBonus(frecency(frecencyKey(item))) : 0.0;
+        auto bonus = frecency && countsFrecency ? frecencyBonus(frecency(frecencyKey(item)))
+                                                : 0.0;
         auto penalty = item.running ? 0.0 : closedPenalty;
         scored.push_back({match + bonus - penalty, match, std::move(item)});
     };
@@ -438,21 +537,35 @@ std::vector<ScoredItem> scoreItems(const std::vector<RudderItem>& all,
         // A context matches on its app's name, its title and url, its
         // directory and its subtitle, so "grazer github" finds the GitHub tab
         // in Grazer and "grazer" the pane sitting in ~/projects/Grazer.
+        const auto listsWindows = !hasProviderContexts(app);
+
         for (auto& context: app.contexts)
-            if (auto score = contextScore(query, app, context))
-                add(*score, contextRow(app, context));
+        {
+            if (context.kind == "window" && !listsWindows)
+                continue;
+
+            if (auto found = contextScore(query, app, context))
+                add(found->score, contextRow(app, context), !found->isByAppName);
+        }
     }
+
+    auto isWhereTheUserIs = [&](const ScoredItem& row)
+    { return !pickMoves(row.item, frontAppId, contextsOf(all, frontAppId)); };
 
     std::stable_sort(scored.begin(),
                      scored.end(),
-                     [](const auto& a, const auto& b)
+                     [&](const auto& a, const auto& b)
                      {
+                         if (isWhereTheUserIs(a) != isWhereTheUserIs(b))
+                             return isWhereTheUserIs(b);
+
                          if (a.score != b.score)
                              return a.score > b.score;
 
                          return a.item.running && !b.item.running;
                      });
 
+    dropAppRowsShadowedByTheirContexts(scored);
     return scored;
 }
 

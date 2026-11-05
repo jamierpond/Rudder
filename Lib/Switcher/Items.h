@@ -96,4 +96,13 @@ struct RudderItem
                  repo,
                  contextPath)
 };
+// What the panel would rank right now, saved on every push and summon so
+// RankingProbe can replay a query against the live rows.
+struct PanelRowsSnapshot
+{
+    std::string frontAppId;
+    std::vector<RudderItem> items;
+
+    MIRO_REFLECT(frontAppId, items)
+};
 } // namespace rudder

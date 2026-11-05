@@ -4,6 +4,7 @@ add_executable(RudderTests
         DragHandleTests.cpp
         FavouritesTests.cpp
         FocusTests.cpp
+        ListedRowsTests.cpp
         FrecencySimulationTests.cpp
         FrecencyTests.cpp
         FuzzyMatchTests.cpp
@@ -34,3 +35,7 @@ if (WIN32)
 endif ()
 
 nano_discover_tests(RudderTests)
+
+# just ranking-probe: queries against the live rows Rudder saved.
+add_executable(RankingProbe RankingProbe.cpp)
+target_link_libraries(RankingProbe PRIVATE RudderSwitcher)

@@ -3,6 +3,15 @@
 
 namespace rudder
 {
+std::vector<RudderContext> withFocusAt(std::vector<RudderContext> contexts,
+                                       const std::string& focusedContextId)
+{
+    for (auto& context: contexts)
+        context.focused = !focusedContextId.empty() && context.id == focusedContextId;
+
+    return contexts;
+}
+
 std::optional<std::string> FocusTracker::pushed(const std::string& appId,
                                                 const std::vector<RudderContext>& contexts,
                                                 bool frontmost,

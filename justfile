@@ -40,3 +40,7 @@ test:
 [doc('Print the live frecency store: each key decayed to now, its ranking bonus and when it was last used')]
 frecency-report *args:
     node Scripts/frecency-report.mjs {{args}}
+
+[doc('Rank queries against the rows Rudder last saved (live contexts, frecency, MRU): just ranking-probe cowterm grazer')]
+ranking-probe +queries:
+    node Scripts/ranking-probe.mjs {{queries}}

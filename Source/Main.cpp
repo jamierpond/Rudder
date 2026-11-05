@@ -6,6 +6,7 @@
 #include "ContextServer.h"
 #include "Icon.h"
 #include "Keybinding.h"
+#include "ListedRows.h"
 #include "Mru.h"
 #include "PanelFrame.h"
 #include "PanelView.h"
@@ -773,7 +774,8 @@ struct RudderApp
         origin = platform::frontmostApp();
         platform::rememberPreviewOrigin(origin);
         lateRaise.reset();
-        previewUndo.reset(providers.focusedContexts());
+        focusedAtSummon = providers.focusedContexts();
+        previewUndo.reset(focusedAtSummon);
 
         panel.reset(showSettings);
         // A failed open's message lasts one summon; a bad favourites file's
@@ -913,6 +915,7 @@ struct RudderApp
         }
 
         orderBaseList();
+        savePanelRowsSnapshot(frontAppId, allItems);
 
         filtered = rankWithWeb(allItems, query, webSettings(), frecencyLookup(), recencyLookup());
         selected = initialSelection(filtered, query, frontAppId);
@@ -1242,7 +1245,7 @@ struct RudderApp
                 if (row.kind == "app" && row.running && row.appId == app.id)
                     row.contexts = contextsFor(app);
 
-        rerankKeepingSelection();
+        refreshListedRows();
     }
 
     // The favourite binding: star the selection, or unstar a favourite.
@@ -1430,7 +1433,13 @@ struct RudderApp
             focus.forget(bundleId);
         };
 
-        providers.onChanged = [this] { refreshContexts(); };
+        providers.onChanged = [this]
+        {
+            refreshContexts();
+
+            if (!panelVisible)
+                saveRunningRowsSnapshot();
+        };
 
         if (!contextServer.start())
             logEvent("contexts socket unavailable");
@@ -1537,6 +1546,39 @@ struct RudderApp
 
     // A provider pushed or went away while the panel is up: every running
     // app's rows pick up their current contexts and windows.
+    void savePanelRowsSnapshot(const std::string& front, const std::vector<RudderItem>& items)
+    {
+        panelRowsSnapshot.doc("latest").set({front, items});
+    }
+
+    // Between summons: the running apps with what their providers last
+    // pushed and the windows Rudder last saw.
+    void saveRunningRowsSnapshot()
+    {
+        auto items = std::vector<RudderItem> {};
+
+        for (auto& app: platform::runningApps())
+        {
+            auto item = RudderItem {};
+            item.id = app.id;
+            item.title = app.name;
+            item.appId = app.id;
+            item.contexts = withFocusAt(contextsFor(app), liveFocusedContextId(app.id));
+            items.push_back(std::move(item));
+        }
+
+        savePanelRowsSnapshot(platform::frontmostApp().id, items);
+    }
+
+    std::string liveFocusedContextId(const std::string& appId)
+    {
+        for (auto& context: providers.contextsFor(appId))
+            if (context.focused)
+                return context.id;
+
+        return {};
+    }
+
     void refreshContexts()
     {
         if (!panelVisible)
@@ -1550,7 +1592,7 @@ struct RudderApp
     // app's own windows as Rudder last saw them.
     std::vector<RudderContext> contextsFor(const platform::RunningApp& app)
     {
-        auto contexts = providers.contextsFor(app.id);
+        auto contexts = contextsFocusedAtSummon(app.id);
 
         for (auto& context: contexts)
             context.name = renames.nameFor(contextKey(app.id, context));
@@ -1566,6 +1608,16 @@ struct RudderApp
         }
 
         return contexts;
+    }
+
+    // A provider's contexts as it pushed them last, but focused where it was
+    // at summon: previews move the focus, and the list mustn't move with it.
+    std::vector<RudderContext> contextsFocusedAtSummon(const std::string& appId)
+    {
+        auto focused = focusedAtSummon.find(appId);
+        auto focusedContextId =
+            focused != focusedAtSummon.end() ? focused->second : std::string {};
+        return withFocusAt(providers.contextsFor(appId), focusedContextId);
     }
 
     // An app's windows changed while the panel is up (the first enumeration
@@ -1588,27 +1640,17 @@ struct RudderApp
             if (item.appId == appId && item.kind == "app" && item.running)
                 item.contexts = contextsFor(*app);
 
-        rerankKeepingSelection();
+        refreshListedRows();
     }
 
-    // The list again (the empty query's too: it lists recent contexts), the
-    // selection staying on the same row where it still exists.
-    void rerankKeepingSelection()
+    // A push, a window change or a rename while the panel is up: the listed
+    // rows take their live data in place. Which rows, their order and the
+    // selection change only on a keystroke or a summon; a row whose context
+    // closed stays listed.
+    void refreshListedRows()
     {
-        auto selectedId = filtered.empty() ? std::string {}
-                                           : filtered[(std::size_t) selected].id;
-        filtered = rankWithWeb(allItems, query, webSettings(), frecencyLookup(), recencyLookup());
-
-        auto again = std::find_if(filtered.begin(),
-                                  filtered.end(),
-                                  [&](const RudderItem& item) { return item.id == selectedId; });
-
-        // A row that went (a context just closed) leaves the selection where
-        // it was, on the row that took its place, so the next quit binding
-        // closes that one rather than whatever is on top.
-        selected = again != filtered.end()
-                       ? (int) (again - filtered.begin())
-                       : std::clamp(selected, 0, std::max((int) filtered.size() - 1, 0));
+        auto fresh = rankWithWeb(allItems, query, webSettings(), frecencyLookup(), recencyLookup());
+        filtered = refreshListedRowsInPlace(std::move(filtered), fresh);
         publishResults();
     }
 
@@ -1718,7 +1760,7 @@ struct RudderApp
         auto now = FrecencyStore::nowMs();
 
         if (item.kind != "web"
-            && pickMoves(item, frontAppId, providers.contextsFor(frontAppId)))
+            && pickMoves(item, frontAppId, contextsFocusedAtSummon(frontAppId)))
             frecency.touch(frecencyKey(item), now);
 
         // The focus tracker was fed nothing while the panel was up. A picked
@@ -1941,6 +1983,8 @@ struct RudderApp
         durable.collection<Keybindings>("settings")};
     grazer::MruStore mru {atomic};
     FrecencyStore frecency {atomic};
+    emberstore::Collection<PanelRowsSnapshot> panelRowsSnapshot {
+        atomic.collection<PanelRowsSnapshot>("panel-rows")};
     RenameStore renames {durable};
     FocusTracker focus;
     emberstore::Document<FavouriteList> favouritesDocument {favouritesPath()};
@@ -1977,6 +2021,7 @@ struct RudderApp
     std::optional<RudderItem> pendingPreview;
     LateRaiseGuard lateRaise;
     PreviewUndo previewUndo;
+    std::map<std::string, std::string> focusedAtSummon;
 
     platform::ContextServer contextServer;
     std::map<int, std::string> connectionApps;

@@ -10,6 +10,10 @@
 
 namespace rudder
 {
+// `contexts` with only `focusedContextId` focused (none when it's empty).
+std::vector<RudderContext> withFocusAt(std::vector<RudderContext> contexts,
+                                       const std::string& focusedContextId);
+
 // What the user works on, learnt from focus rather than only from picks in
 // the panel: the context each provider says is focused (by contextKey), and
 // how long that has held while its app was in front. The caller stamps MRU

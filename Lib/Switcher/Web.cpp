@@ -308,7 +308,7 @@ std::vector<RudderItem> rankWithWeb(const std::vector<RudderItem>& all,
     if (trimmed(query).empty())
         return rankItems(all, query, frecency, recency);
 
-    auto scored = scoreItems(all, query, frecency);
+    auto scored = scoreItems(all, query, frecency, recency.frontAppId);
     auto ranked = std::vector<RudderItem> {};
     auto scores = std::vector<int> {};
 
