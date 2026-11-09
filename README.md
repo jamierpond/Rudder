@@ -167,11 +167,11 @@ newline-delimited JSON (see `Client/RudderProtocol.h`): on macOS on
 notification `rudder.started` when it starts; on Windows on a per-user named
 pipe (an eacp IPC channel), keeping the named event `Local\rudder.started` set
 while it runs. The `RudderClient` library does the client
-side; pull in just that with CPM:
+side; pull in just that with lockstep:
 
 ```cmake
-CPMAddPackage(NAME Rudder GIT_REPOSITORY <rudder repo> GIT_TAG main
-              OPTIONS "RUDDER_CLIENT_ONLY ON")
+lockstep_add_package(NAME Rudder GIT_REPOSITORY <rudder repo> GIT_TAG main
+                     OPTIONS "RUDDER_CLIENT_ONLY ON")
 target_link_libraries(MyApp PRIVATE RudderClient)
 ```
 

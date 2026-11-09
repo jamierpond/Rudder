@@ -1,7 +1,7 @@
 # The provider side of Rudder's contexts protocol, for apps that publish
 # contexts (Grazer, CowTerm): message encode/decode and a client that connects,
 # says hello, pushes contexts and hears activate. App-agnostic, no UI. Pull it
-# in with CPM and RUDDER_CLIENT_ONLY=ON to get this target and nothing else.
+# in with lockstep_add_package and RUDDER_CLIENT_ONLY=ON to get this target and nothing else.
 if (NOT TARGET Miro)
     message(FATAL_ERROR "RudderClient needs the Miro target (it comes with eacp)")
 endif ()

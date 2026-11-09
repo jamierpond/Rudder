@@ -5,7 +5,7 @@ set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "")
 
 project(Rudder VERSION 0.1.0 LANGUAGES C CXX)
 
-# An app that publishes contexts (Grazer, CowTerm) pulls Rudder in with CPMAddPackage for
+# An app that publishes contexts (Grazer, CowTerm) pulls Rudder in with lockstep_add_package for
 # the client library alone: no app, no tests, no extra dependencies -- it
 # brings eacp (and with it Miro) itself.
 option(RUDDER_CLIENT_ONLY "Build only the RudderClient library" OFF)
@@ -34,7 +34,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 # jp/windows-apps is develop plus two open PRs Rudder needs on Windows:
 # #141 (keys reach the focused view; charactersIgnoringModifiers on Windows)
 # and #143 (GlobalHotKey::isAvailable). Move back to develop once they merge.
-CPMAddPackage(
+lockstep_add_package(
         NAME eacp
         GITHUB_REPOSITORY eyalamirmusic/eacp
         GIT_TAG jp/windows-apps
@@ -42,7 +42,7 @@ CPMAddPackage(
 
 # Local persistence (Firestore-flavoured JSON documents). Must come after
 # eacp -- emberstore fetches its own copy only when no eacp targets exist.
-CPMAddPackage(
+lockstep_add_package(
         NAME emberstore
         GITHUB_REPOSITORY tamber-inc/emberstore
         GIT_TAG main
@@ -152,7 +152,7 @@ res_embed_add(Rudder FILES
         Assets/Icon/TrayWindows.png)
 
 if (NOT TARGET NanoTest)
-    CPMAddPackage(
+    lockstep_add_package(
             NAME NanoTest
             GITHUB_REPOSITORY eyalamirmusic/NanoTest
             GIT_TAG main)
