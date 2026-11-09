@@ -25,7 +25,7 @@ relaunch:
 install:
     node Scripts/install.mjs
 
-[doc('Refetch branch-pinned deps (eacp, emberstore, ...) in every configured build tree')]
+[doc('Move branch-pinned deps (eacp, emberstore, ...) to their branch heads and rewrite lockstep.lock')]
 update-deps:
     node Scripts/update-deps.mjs
 

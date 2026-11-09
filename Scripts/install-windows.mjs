@@ -9,12 +9,12 @@
 // start at login against its own path, which takes the Run key off whichever
 // build last claimed it.
 //
-// The Release tree is always reconfigured, so CPM refetches branch-pinned
-// packages (eacp, emberstore) and the install has the latest of them.
+// The Release tree is always reconfigured; deps stay at the commits in
+// lockstep.lock. `just update-deps` moves them to their branch heads.
 import { spawn } from 'node:child_process';
 import { copyFileSync, existsSync, mkdirSync, renameSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
-import { RELEASE_BUILD_DIR, cpmSourceArgs, main, run } from './lib.mjs';
+import { RELEASE_BUILD_DIR, lockstepSourceArgs, main, run } from './lib.mjs';
 
 const DIR = join(process.env.LOCALAPPDATA, 'Programs', 'Rudder');
 const EXE = join(DIR, 'Rudder.exe');
@@ -53,7 +53,7 @@ function startMenuShortcut() {
 }
 
 await main(async () => {
-  await run('cmake', ['-B', RELEASE_BUILD_DIR, ...cpmSourceArgs()]);
+  await run('cmake', ['-B', RELEASE_BUILD_DIR, ...lockstepSourceArgs()]);
   await run('cmake', ['--build', RELEASE_BUILD_DIR, '--config', 'Release', '--target', 'Rudder']);
 
   await run('taskkill', ['/IM', 'Rudder.exe', '/F'], { allowFail: true, stdio: 'ignore' });

@@ -15,8 +15,8 @@
 // reset only when the requirement changes (first install, a recreated
 // certificate, an ad-hoc copy installed before). No Apple certificate needed.
 //
-// The Release tree is always reconfigured, so CPM refetches branch-pinned
-// packages (eacp, emberstore) and the install has the latest of them.
+// The Release tree is always reconfigured; deps stay at the commits in
+// lockstep.lock. `just update-deps` moves them to their branch heads.
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import { rm, rename, writeFile } from 'node:fs/promises';
@@ -26,7 +26,7 @@ import {
   RELEASE_BUILD_DIR,
   ROOT,
   RUDDER,
-  cpmSourceArgs,
+  lockstepSourceArgs,
   main,
   resetDevPrivacyGrants,
   run,
@@ -198,7 +198,7 @@ await main(async () => {
 
   await run('cmake', [
     '-G', 'Ninja', '-B', RELEASE_BUILD_DIR, '-DCMAKE_BUILD_TYPE=Release',
-    ...cpmSourceArgs(),
+    ...lockstepSourceArgs(),
   ]);
 
   await run('cmake', ['--build', RELEASE_BUILD_DIR, '--target', 'Rudder']);

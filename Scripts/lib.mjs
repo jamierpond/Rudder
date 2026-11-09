@@ -6,11 +6,11 @@ export const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 export const BUILD_DIR = join(ROOT, 'build');
 export const RELEASE_BUILD_DIR = join(ROOT, 'build-release');
 
-// CPM source overrides from the environment, for a fresh configure: export
-// e.g. CPM_eacp_SOURCE=$HOME/projects/eacp to build against a local checkout.
-export function cpmSourceArgs() {
+// lockstep source overrides from the environment, for a fresh configure: export
+// e.g. LOCKSTEP_eacp_SOURCE=$HOME/projects/eacp to build against a local checkout.
+export function lockstepSourceArgs() {
   return Object.entries(process.env)
-    .filter(([name]) => /^CPM_\w+_SOURCE$/.test(name))
+    .filter(([name]) => /^LOCKSTEP_\w+_SOURCE$/.test(name))
     .map(([name, value]) => `-D${name}=${value}`);
 }
 

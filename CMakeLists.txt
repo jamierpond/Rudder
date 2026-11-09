@@ -1,10 +1,11 @@
 cmake_minimum_required(VERSION 3.31)
 
+set(CMAKE_PROJECT_TOP_LEVEL_INCLUDES ${CMAKE_CURRENT_LIST_DIR}/cmake/lockstep.cmake)
 set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "")
 
 project(Rudder VERSION 0.1.0 LANGUAGES C CXX)
 
-# An app that publishes contexts (Grazer, CowTerm) pulls Rudder in with CPM for
+# An app that publishes contexts (Grazer, CowTerm) pulls Rudder in with CPMAddPackage for
 # the client library alone: no app, no tests, no extra dependencies -- it
 # brings eacp (and with it Miro) itself.
 option(RUDDER_CLIENT_ONLY "Build only the RudderClient library" OFF)
@@ -27,10 +28,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-include(cmake/CPM.cmake)
-
 # Work against a local eacp checkout with:
-#   cmake -B build -DCPM_eacp_SOURCE=$HOME/projects/eacp
+#   cmake -B build -DLOCKSTEP_eacp_SOURCE=$HOME/projects/eacp
 #
 # jp/windows-apps is develop plus two open PRs Rudder needs on Windows:
 # #141 (keys reach the focused view; charactersIgnoringModifiers on Windows)

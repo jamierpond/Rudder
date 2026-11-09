@@ -16,13 +16,13 @@ Drawn with eacp's GPU component tier (one `ComponentHost`), no web view.
 ## Build and run
 
 ```sh
-just build   # configure + build (macOS: Ninja, Windows: the default Visual Studio generator; deps via CPM)
+just build   # configure + build (macOS: Ninja, Windows: the default Visual Studio generator; deps via lockstep, pinned in lockstep.lock)
 just run     # build, quit any running Rudder (macOS: and reset its dev Accessibility grant), open it
 just test    # unit tests
 just install # Release build into ~/.local/libexec/rudder/Rudder.app (macOS) or
              # %LOCALAPPDATA%\Programs\Rudder with a Start Menu shortcut
              # (Windows), then start it so it starts at login from there
-just update-deps  # refetch eacp and the other branch-pinned deps
+just update-deps  # move eacp and the other branch-pinned deps to their branch heads and rewrite lockstep.lock
 ```
 
 `just install` needs no Apple certificate on macOS: it signs with a

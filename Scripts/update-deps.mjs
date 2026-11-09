@@ -1,11 +1,10 @@
-// Refetch branch-pinned CPM packages (eacp, emberstore, ...) in
-// every configured build tree. Re-running configure is what makes
-// FetchContent's update step fetch and check out the branch's new head;
-// nothing is built, so a running Rudder isn't touched. The next `just build`
+// Move branch-pinned packages (eacp, emberstore, ...) to their branch heads:
+// configure each build tree in lockstep's update mode, which rewrites
+// lockstep.lock, then switch it back to locked mode. Nothing is built, so a running Rudder isn't touched. The next `just build`
 // / `just run` / `just install` compiles it.
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { ROOT, cpmSourceArgs, main, run } from './lib.mjs';
+import { ROOT, lockstepSourceArgs, main, run } from './lib.mjs';
 
 await main(async () => {
   // Only trees configured from this checkout: a tree left over from before a
@@ -29,6 +28,8 @@ await main(async () => {
 
   for (const tree of trees) {
     console.log(`[update-deps] reconfiguring ${tree}`);
-    await run('cmake', ['-B', join(ROOT, tree), ...cpmSourceArgs()]);
+    const buildTree = join(ROOT, tree);
+    await run('cmake', ['-B', buildTree, '-DLOCKSTEP_MODE=update', ...lockstepSourceArgs()]);
+    await run('cmake', ['-B', buildTree, '-DLOCKSTEP_MODE=locked']);
   }
 });
