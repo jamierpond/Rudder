@@ -1,7 +1,8 @@
 // Move branch-pinned packages (eacp, emberstore, ...) to their branch heads:
-// configure each build tree in lockstep's update mode, which rewrites
-// lockstep.lock, then switch it back to locked mode. Nothing is built, so a running Rudder isn't touched. The next `just build`
-// / `just run` / `just install` compiles it.
+// the first build tree configures in lockstep's update mode, which rewrites
+// lockstep.lock, then every tree reconfigures locked to pick it up. Nothing
+// is built, so a running Rudder isn't touched. The next `just build` /
+// `just run` / `just install` compiles it.
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { ROOT, lockstepSourceArgs, main, run } from './lib.mjs';
@@ -26,10 +27,12 @@ await main(async () => {
   const trees = readdirSync(ROOT)
     .filter((name) => name.startsWith('build') && ownTree(name));
 
+  if (trees.length === 0) {
+    throw new Error('No configured build tree; run `just build` first');
+  }
+  await run('cmake', ['-B', join(ROOT, trees[0]), '-DLOCKSTEP_MODE=update']);
   for (const tree of trees) {
     console.log(`[update-deps] reconfiguring ${tree}`);
-    const buildTree = join(ROOT, tree);
-    await run('cmake', ['-B', buildTree, '-DLOCKSTEP_MODE=update', ...lockstepSourceArgs()]);
-    await run('cmake', ['-B', buildTree, '-DLOCKSTEP_MODE=locked']);
+    await run('cmake', ['-B', join(ROOT, tree), '-DLOCKSTEP_MODE=locked', ...lockstepSourceArgs()]);
   }
 });
