@@ -40,6 +40,7 @@ lockstep_add_package(
         NAME eacp
         GITHUB_REPOSITORY eyalamirmusic/eacp
         GIT_TAG jp/windows-apps
+        SYSTEM YES
 )
 
 # Local persistence (Firestore-flavoured JSON documents). Must come after
@@ -48,6 +49,7 @@ lockstep_add_package(
         NAME emberstore
         GITHUB_REPOSITORY tamber-inc/emberstore
         GIT_TAG main
+        SYSTEM YES
 )
 
 list(APPEND CMAKE_MODULE_PATH "${eacp_SOURCE_DIR}/CMake")
@@ -157,7 +159,8 @@ if (NOT TARGET NanoTest)
     lockstep_add_package(
             NAME NanoTest
             GITHUB_REPOSITORY eyalamirmusic/NanoTest
-            GIT_TAG main)
+            GIT_TAG main
+            SYSTEM YES)
 endif ()
 
 enable_testing()
