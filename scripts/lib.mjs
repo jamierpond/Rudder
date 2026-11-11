@@ -16,11 +16,11 @@ export function lockstepSourceArgs() {
 
 const PLATFORMS = { darwin: 'macos', win32: 'windows' };
 
-// Resolve `Scripts/<name>-<platform>.mjs` for the current platform.
+// Resolve `scripts/<name>-<platform>.mjs` for the current platform.
 export function platformScript(name) {
   const platform = PLATFORMS[process.platform];
   if (!platform) throw new Error(`Unsupported platform: ${process.platform}`);
-  return join(ROOT, 'Scripts', `${name}-${platform}.mjs`);
+  return join(ROOT, 'scripts', `${name}-${platform}.mjs`);
 }
 
 export function run(command, args = [], { allowFail = false, ...options } = {}) {

@@ -20,7 +20,7 @@ await main(async () => {
   const relaunch = process.argv.includes('--relaunch');
 
   if (!relaunch)
-    await runNode(join(ROOT, 'Scripts', 'compile-macos.mjs'));
+    await runNode(join(ROOT, 'scripts', 'build-macos.mjs'));
 
   // A running Rudder would just be reactivated by `open`, old binary and all.
   await run('pkill', ['-x', 'Rudder'], { allowFail: true });

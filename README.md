@@ -144,7 +144,7 @@ Rudder rewrites the file only when a drag or resize ends, or on a reset.
 
 ## Icons
 
-`Assets/Icon/Source.png` is the art; `Scripts/make-icons.sh` (ImageMagick 7)
+`Assets/Icon/Source.png` is the art; `scripts/make-icons.sh` (ImageMagick 7)
 turns it into the macOS app icon (`Icon.png`, Apple's 824-on-1024 grid), the
 Windows `Icon.ico` (near full-bleed tile, plain silhouette at 16–48 px) and the
 tray glyphs (`Tray.png` template for the menu bar, `TrayWindows.png`). The

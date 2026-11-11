@@ -16,7 +16,7 @@ await main(async () => {
   await run('taskkill', ['/IM', 'Rudder.exe', '/F'], { allowFail: true, stdio: 'ignore' });
 
   if (!relaunch)
-    await runNode(join(ROOT, 'Scripts', 'compile-windows.mjs'));
+    await runNode(join(ROOT, 'scripts', 'build-windows.mjs'));
 
   const candidates = [join(BUILD_DIR, 'Debug', 'Rudder.exe'), join(BUILD_DIR, 'Rudder.exe')];
   const exe = candidates.find(existsSync);

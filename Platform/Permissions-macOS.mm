@@ -39,7 +39,7 @@ bool canResetPrivacyGrants()
 
 bool resetPrivacyGrants()
 {
-    // The services Scripts/lib.mjs resets for a dev launch (RUDDER.devResetsPrivacy).
+    // The services scripts/lib.mjs resets for a dev launch (RUDDER.devResetsPrivacy).
     static constexpr const char* services[] = {"Accessibility"};
 
     NSString* bundleId = NSBundle.mainBundle.bundleIdentifier;

@@ -140,7 +140,7 @@ set_target_properties(Rudder PROPERTIES
 
 eacp_set_gui_subsystem(Rudder)
 
-# Assets/Icon is made by Scripts/make-icons.sh. macOS builds its .icns from
+# Assets/Icon is made by scripts/make-icons.sh. macOS builds its .icns from
 # Icon.png; Windows takes a prebuilt .ico whose small frames are a plain
 # silhouette, which IMAGE (one picture downscaled to every size) can't express.
 if (WIN32)
