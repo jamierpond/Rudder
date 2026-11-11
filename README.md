@@ -15,6 +15,10 @@ Drawn with eacp's GPU component tier (one `ComponentHost`), no web view.
 
 ## Build and run
 
+Needs [just](https://github.com/casey/just), CMake 3.31+, Ninja and Node: each
+recipe runs a Node script in `scripts/`. On Windows also Visual Studio with
+the "Desktop development with C++" workload.
+
 ```sh
 just build   # configure + build (macOS: Ninja, Windows: the default Visual Studio generator; deps via lockstep, pinned in lockstep.lock)
 just run     # build, quit any running Rudder (macOS: and reset its dev Accessibility grant), open it
@@ -37,10 +41,8 @@ installed. The cycle must be extremely fast: write the change, `just test`,
 commit, push, `just install`, in that order, immediately, every time. Never
 leave a built change sitting in `build-release/`, and never wait to be asked
 to install. `just install` quits and relaunches the running Rudder; that is
-expected and wanted. (The `/Applications` path above is out of date: it
-installs to `~/.local/libexec/rudder/Rudder.app` with a `~/.local/bin/rudder`
-launcher.) The same goes for agents working in this repo: install as soon as
-the change is written.
+expected and wanted. The same goes for agents working in this repo: install as
+soon as the change is written.
 
 Rudder is an agent app: no Dock icon or taskbar button, a menu-bar / tray icon
 (Open, Settings…, Quit), and it registers itself to start at login (on Windows
