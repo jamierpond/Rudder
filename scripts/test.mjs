@@ -17,7 +17,6 @@ await main(async () => {
   await run('cmake', ['--build', TEST_DIR, '--target', 'RudderTests',
     ...(windows ? ['--config', 'Debug'] : [])]);
 
-  await run(windows
-    ? join(TEST_DIR, 'Tests', 'Debug', 'RudderTests.exe')
-    : join(TEST_DIR, 'Tests', 'RudderTests'));
+  await run('ctest', ['--test-dir', TEST_DIR, '--output-on-failure',
+    ...(windows ? ['-C', 'Debug'] : [])]);
 });
