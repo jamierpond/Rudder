@@ -20,7 +20,7 @@ recipe runs a Node script in `scripts/`. On Windows also Visual Studio with
 the "Desktop development with C++" workload.
 
 ```sh
-just build   # configure + build (macOS: Ninja, Windows: the default Visual Studio generator; deps via lockstep, pinned in lockstep.lock)
+just build   # configure + build with Ninja (deps via lockstep, pinned in lockstep.lock)
 just run     # build, quit any running Rudder (macOS: and reset its dev Accessibility grant), open it
 just test    # unit tests
 just install # Release build into ~/.local/libexec/rudder/Rudder.app (macOS) or

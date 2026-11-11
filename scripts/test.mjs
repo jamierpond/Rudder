@@ -6,17 +6,11 @@ import { join } from 'node:path';
 import { ROOT, main, run } from './lib.mjs';
 
 const TEST_DIR = join(ROOT, 'build-test');
-const windows = process.platform === 'win32';
 
 await main(async () => {
-  if (!existsSync(join(TEST_DIR, 'CMakeCache.txt')))
-    await run('cmake', windows
-      ? ['-B', TEST_DIR]
-      : ['-G', 'Ninja', '-B', TEST_DIR, '-DCMAKE_BUILD_TYPE=Debug']);
+  if (!existsSync(join(TEST_DIR, 'build.ninja')))
+    await run('cmake', ['-G', 'Ninja', '-B', TEST_DIR, '-DCMAKE_BUILD_TYPE=Debug']);
 
-  await run('cmake', ['--build', TEST_DIR, '--target', 'RudderTests',
-    ...(windows ? ['--config', 'Debug'] : [])]);
-
-  await run('ctest', ['--test-dir', TEST_DIR, '--output-on-failure',
-    ...(windows ? ['-C', 'Debug'] : [])]);
+  await run('cmake', ['--build', TEST_DIR, '--target', 'RudderTests']);
+  await run('ctest', ['--test-dir', TEST_DIR, '--output-on-failure']);
 });

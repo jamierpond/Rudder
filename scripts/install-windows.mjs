@@ -53,12 +53,15 @@ function startMenuShortcut() {
 }
 
 await main(async () => {
-  await run('cmake', ['-B', RELEASE_BUILD_DIR, ...lockstepSourceArgs()]);
-  await run('cmake', ['--build', RELEASE_BUILD_DIR, '--config', 'Release', '--target', 'Rudder']);
+  await run('cmake', [
+    '-G', 'Ninja', '-B', RELEASE_BUILD_DIR, '-DCMAKE_BUILD_TYPE=Release',
+    ...lockstepSourceArgs(),
+  ]);
+  await run('cmake', ['--build', RELEASE_BUILD_DIR, '--target', 'Rudder']);
 
   await run('taskkill', ['/IM', 'Rudder.exe', '/F'], { allowFail: true, stdio: 'ignore' });
 
-  install(join(RELEASE_BUILD_DIR, 'Release', 'Rudder.exe'));
+  install(join(RELEASE_BUILD_DIR, 'Rudder.exe'));
   await startMenuShortcut();
   console.log('Added a Start Menu shortcut');
 

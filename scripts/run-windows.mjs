@@ -1,5 +1,5 @@
-// Build, then launch Rudder.exe (multi-config VS layout, single-config
-// fallback). `--relaunch` restarts the current build instead, no compile.
+// Build, then launch Rudder.exe. `--relaunch` restarts the current build
+// instead, no compile.
 //
 // A running Rudder goes first: the linker can't replace an exe that is
 // running, and a second Rudder would only hand the running one a reopen and
@@ -18,9 +18,8 @@ await main(async () => {
   if (!relaunch)
     await runNode(join(ROOT, 'scripts', 'build-windows.mjs'));
 
-  const candidates = [join(BUILD_DIR, 'Debug', 'Rudder.exe'), join(BUILD_DIR, 'Rudder.exe')];
-  const exe = candidates.find(existsSync);
-  if (!exe) throw new Error(`Rudder.exe not found in ${BUILD_DIR}`);
+  const exe = join(BUILD_DIR, 'Rudder.exe');
+  if (!existsSync(exe)) throw new Error(`Rudder.exe not found in ${BUILD_DIR}`);
 
   let stderr = 'ignore';
 
