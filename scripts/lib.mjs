@@ -23,12 +23,29 @@ export function platformScript(name) {
   return join(ROOT, 'scripts', `${name}-${platform}.mjs`);
 }
 
-export function run(command, args = [], { allowFail = false, ...options } = {}) {
+// cmd.exe hands a quoted argument to the program whole, spaces included.
+const quoteForShell = (argument) => `"${String(argument).replace(/"/g, '\\"')}"`;
+
+// Node deprecates passing args alongside shell: true (DEP0190), so a shell run
+// is one command string, as tamber-web's scripts/lib/core.mjs does it.
+function describeSpawn(command, args, shell) {
+  if (!shell)
+    return { target: command, args };
+
+  return { target: [command, ...args.map(quoteForShell)].join(' '), args: [] };
+}
+
+// Run a command with inherited stdio, through cmd.exe on Windows. Rejects
+// when it exits non-zero, unless `allowFail`.
+export function run(command, args = [],
+  { allowFail = false, shell = process.platform === 'win32', ...options } = {}) {
+  const spawned = describeSpawn(command, args, shell);
+
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, {
+    const child = spawn(spawned.target, spawned.args, {
       cwd: ROOT,
       stdio: 'inherit',
-      shell: process.platform === 'win32',
+      shell,
       ...options,
     });
     child.on('exit', (code) =>
@@ -40,8 +57,10 @@ export function run(command, args = [], { allowFail = false, ...options } = {}) 
   });
 }
 
+// Node itself, never through a shell: its path may hold spaces
+// (C:\Program Files\nodejs\node.exe).
 export function runNode(script, args = []) {
-  return run(process.execPath, [script, ...args]);
+  return run(process.execPath, [script, ...args], { shell: false });
 }
 
 // Entry-point wrapper: run `fn`, exit non-zero on failure.
