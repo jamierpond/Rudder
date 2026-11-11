@@ -3,3 +3,4 @@ cmake-build-*/
 .cache/
 .idea/
 .DS_Store
+.lockstep-cache/

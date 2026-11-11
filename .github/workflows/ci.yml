@@ -2,9 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
   pull_request:
-  workflow_dispatch:
 
 jobs:
   build:
@@ -12,49 +10,46 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: macOS
+          - name: macOS arm64
             os: macos-latest
-            cache-key: macos
-          - name: Windows MSVC
+          - name: Windows x64
             os: windows-latest
-            cache-key: windows-msvc-x64
-            msvc-arch: x64
-
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
-
     env:
-      CCACHE_DEPEND: '1'
-
+      LOCKSTEP_CACHE: ${{ github.workspace }}/.lockstep-cache
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
 
-      - name: Set up the compiler cache
+      # lockstep's cache holds the package sources, so a run with an unchanged
+      # lock downloads none of them again. With a lockstep that has the library
+      # cache (after 0.4.3) it also holds the compiled package libraries, except
+      # Windows Debug ones, whose debug information sits in .pdb files.
+      - uses: actions/cache@v4
+        with:
+          path: .lockstep-cache
+          key: lockstep-${{ matrix.os }}-${{ hashFiles('lockstep.lock', 'cmake/lockstep.cmake') }}
+
+      - uses: extractions/setup-just@v2
+
+      # ccache on macOS only: a Windows Debug build writes its debug
+      # information to .pdb files, which ccache cannot cache. CMake reads the
+      # launchers from the environment, so the recipes run unchanged.
+      - name: Set up ccache for the Debug builds in build/ and build-test/
+        if: runner.os == 'macOS'
         uses: hendrikmuhs/ccache-action@f09c25b45002a07be2955cbe52e8cee55643f89d # v1.2.24
         with:
-          key: ${{ matrix.cache-key }}
+          key: ${{ matrix.os }}
           max-size: 1G
           evict-old-files: job
-          install: ${{ runner.os == 'Windows' && 'binary' || 'detect' }}
 
-      - name: Set up MSVC environment
-        if: runner.os == 'Windows'
-        uses: egor-tensin/vs-shell@54e4148eac794e4580591c2e0b7750f14b7891fc # v2
-        with:
-          arch: ${{ matrix.msvc-arch }}
+      - name: Hand ccache to CMake as the compiler launcher
+        if: runner.os == 'macOS'
+        run: |
+          echo "CCACHE_DEPEND=1" >> "$GITHUB_ENV"
+          echo "CMAKE_C_COMPILER_LAUNCHER=ccache" >> "$GITHUB_ENV"
+          echo "CMAKE_CXX_COMPILER_LAUNCHER=ccache" >> "$GITHUB_ENV"
+          echo "CMAKE_OBJCXX_COMPILER_LAUNCHER=ccache" >> "$GITHUB_ENV"
 
-      # Ninja on both platforms so ccache can launch every compile; the dev
-      # scripts' Visual Studio generator on Windows has no launcher hook.
-      # /Z7 (Embedded) on Windows: one PDB per target can't be cached per object.
-      - name: Configure
-        run: >
-          cmake -G Ninja -B build -DCMAKE_BUILD_TYPE=Debug -DEACP_CI_BUILD=ON
-          -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
-          ${{ runner.os == 'macOS' && '-DCMAKE_OBJCXX_COMPILER_LAUNCHER=ccache' || '' }}
-          ${{ runner.os == 'Windows' && '-DCMAKE_MSVC_DEBUG_INFORMATION_FORMAT=Embedded' || '' }}
-
-      - name: Build
-        run: cmake --build build
-
-      - name: Test
-        run: ${{ runner.os == 'Windows' && 'build/Tests/RudderTests.exe' || 'build/Tests/RudderTests' }}
+      - run: just build
+      - run: just test
