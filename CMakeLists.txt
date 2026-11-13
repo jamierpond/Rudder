@@ -49,6 +49,17 @@ lockstep_add_package(
         GIT_TAG main
         SYSTEM YES)
 
+if (NOT TARGET NanoTest)
+    lockstep_add_package(
+            NAME NanoTest
+            GITHUB_REPOSITORY eyalamirmusic/NanoTest
+            GIT_TAG main
+            SYSTEM YES)
+endif ()
+
+# Set after the packages, so only this project's own targets build with -Werror.
+set(CMAKE_COMPILE_WARNING_AS_ERROR ON)
+
 list(APPEND CMAKE_MODULE_PATH "${eacp_SOURCE_DIR}/CMake")
 
 add_subdirectory(Client)
@@ -151,14 +162,6 @@ res_embed_add(Rudder FILES
         Assets/Icon/Icon.png
         Assets/Icon/Tray.png
         Assets/Icon/TrayWindows.png)
-
-if (NOT TARGET NanoTest)
-    lockstep_add_package(
-            NAME NanoTest
-            GITHUB_REPOSITORY eyalamirmusic/NanoTest
-            GIT_TAG main
-            SYSTEM YES)
-endif ()
 
 if (PROJECT_IS_TOP_LEVEL)
     enable_testing()
