@@ -1,3 +1,5 @@
+> This is a vibe-coded app for my personal productivity, it is not intended for other people or to represent great engineering work. Use at your own risk!
+
 <p align="center">
   <img src="Assets/Icon/Icon.png" width="160" alt="Rudder icon: a cow-spotted jet on a black tile">
 </p>
