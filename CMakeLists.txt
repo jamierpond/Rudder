@@ -25,6 +25,14 @@ add_library(SearchKeys STATIC Lib/SearchKeys/SearchKeys.cpp)
 target_include_directories(SearchKeys PUBLIC Lib)
 target_compile_features(SearchKeys PUBLIC cxx_std_20)
 
+# Per-launch log files (<logs>/<startEpochMs>.log, oldest pruned) and one
+# `<event> key=value ...` line format, so every app's usage reads the same way.
+add_library(SessionLog STATIC
+        Lib/SessionLog/EventLine.cpp
+        Lib/SessionLog/SessionLog.cpp)
+target_include_directories(SessionLog PUBLIC Lib)
+target_compile_features(SessionLog PUBLIC cxx_std_20)
+
 if (RUDDER_CLIENT_ONLY)
     if (APPLE)
         enable_language(OBJCXX)
