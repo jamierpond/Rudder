@@ -48,15 +48,9 @@ std::string searchUrlFor(std::string_view query, std::string_view searchUrl);
 // else "" -- the system default.
 std::string browserFor(std::string_view openWith, std::string_view browser);
 
-// Under this many points per typed character (spaces aside) a match is weak:
-// a run of prefix letters scores about 9 per character, a single leading
-// letter 5, while letters scattered across a long name score 0-2 per
-// character.
-constexpr auto weakScorePerChar = 4;
-
-// Whether the best of `scores` -- raw match scores, no frecency bonus -- is
-// weak for `query`. No scores at all is weak.
-bool weakMatch(std::string_view query, const std::vector<int>& scores);
+// Whether the best match is weak: nothing matched, or letters only
+// scattered through a name.
+bool isWeakMatch(const std::vector<MatchedItem>& matched);
 
 // The row Enter turns into a page: "Open github.com" or
 // "Search Google for “query”". Kind "web", never previewed.
@@ -69,6 +63,6 @@ RudderItem webRow(std::string_view query, const WebSettings& settings);
 std::vector<RudderItem> rankWithWeb(const std::vector<RudderItem>& all,
                                     const std::string& query,
                                     const WebSettings& settings,
-                                    const FrecencyFn& frecency = {},
+                                    const SearchUsage& usage = {},
                                     const Recency& recency = {});
 } // namespace rudder

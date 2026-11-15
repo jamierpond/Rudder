@@ -42,6 +42,6 @@ relaunch:
 icon:
     bash scripts/make-icons.sh
 
-[doc('Print the live frecency store: each key decayed to now, its ranking bonus and when it was last used')]
+[doc('Print the live frecency store: each key usage decayed to now and when it was last used')]
 frecency-report *args:
     node scripts/frecency-report.mjs {{args}}

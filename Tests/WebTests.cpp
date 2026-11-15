@@ -1,5 +1,4 @@
 #include <Favourites.h>
-#include <FuzzyMatch.h>
 #include <Ranking.h>
 #include <Web.h>
 
@@ -127,17 +126,20 @@ auto tBrowserOrder =
 
 auto tWeakThreshold = test("Web/scattered letters are weak, a prefix isn't") = []
 {
-    check(weakMatch("abc", {}));
+    check(isWeakMatch({}));
 
-    // Real scores from the fuzzy matcher.
-    auto score = [](const std::string& query, const std::string& title)
-    { return *grazer::fuzzyScore(query, title); };
+    auto matchOne = [](const std::string& query, const std::string& title)
+    {
+        auto item = RudderItem {};
+        item.id = item.appId = item.title = title;
+        return matchItems({item}, query);
+    };
 
-    check(weakMatch("gh", {score("gh", "TestFlight")}));
-    check(weakMatch("sfr", {score("sfr", "Safari")}));
-    check(!weakMatch("s", {score("s", "Safari")}));
-    check(!weakMatch("sla", {score("sla", "Slack")}));
-    check(!weakMatch("weather", {score("weather", "Weather")}));
+    check(isWeakMatch(matchOne("tsf", "TestFlight")));
+    check(isWeakMatch(matchOne("sfr", "Safari")));
+    check(!isWeakMatch(matchOne("s", "Safari")));
+    check(!isWeakMatch(matchOne("sla", "Slack")));
+    check(!isWeakMatch(matchOne("weather", "Weather")));
 };
 
 auto tNoResultsSearchFirst = test("Web/no results: the search row is the only row") = []
@@ -151,7 +153,7 @@ auto tNoResultsSearchFirst = test("Web/no results: the search row is the only ro
 
 auto tWeakSearchFirst = test("Web/weak results: the search row comes first") = []
 {
-    auto ranked = rankWithWeb(someApps(), "gh", {});
+    auto ranked = rankWithWeb(someApps(), "tsf", {});
 
     check(kinds(ranked) == std::vector<std::string> {"web", "app"});
 };

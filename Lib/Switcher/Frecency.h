@@ -1,5 +1,6 @@
 #pragma once
 
+#include <FrecencySearch/LearnedPicks.h>
 #include <Miro/Reflect.h>
 #include <emberstore/Emberstore.h>
 
@@ -42,12 +43,7 @@ struct FrecencyStore
     // `score` decayed from `fromMs` to `toMs`.
     static double decayed(double score, std::int64_t fromMs, std::int64_t toMs);
 
-    // Three days: what the user works on now, not last week. Branches and
-    // panes come and go within days: a pane picked 25 times a day for two
-    // days and then left falls below one picked 5 times every day 4 days
-    // later (FrecencySimulationTests), where at seven days it took almost 6.
-    // An app used every working day still keeps 63% over a weekend.
-    static constexpr std::int64_t halfLifeMs = 3LL * 24 * 60 * 60 * 1000;
+    static constexpr std::int64_t halfLifeMs = frecencysearch::usageHalfLifeMs;
     static constexpr std::size_t maxEntries = 500;
 
     emberstore::Collection<FrecencyEntry> entries;

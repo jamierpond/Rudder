@@ -268,13 +268,13 @@ std::string browserFor(std::string_view openWith, std::string_view browser)
     return std::string {!openWith.empty() ? openWith : browser};
 }
 
-bool weakMatch(std::string_view query, const std::vector<int>& scores)
+bool isWeakMatch(const std::vector<MatchedItem>& matched)
 {
-    if (scores.empty())
+    if (matched.empty())
         return true;
 
-    auto typed = (int) std::count_if(query.begin(), query.end(), [](char c) { return c != ' '; });
-    return *std::max_element(scores.begin(), scores.end()) < weakScorePerChar * typed;
+    auto bestLevel = matched.front().level;
+    return bestLevel == frecencysearch::MatchLevel::nameHasQueryLettersInOrder;
 }
 
 RudderItem webRow(std::string_view query, const WebSettings& settings)
@@ -302,21 +302,17 @@ RudderItem webRow(std::string_view query, const WebSettings& settings)
 std::vector<RudderItem> rankWithWeb(const std::vector<RudderItem>& all,
                                     const std::string& query,
                                     const WebSettings& settings,
-                                    const FrecencyFn& frecency,
+                                    const SearchUsage& usage,
                                     const Recency& recency)
 {
     if (trimmed(query).empty())
-        return rankItems(all, query, frecency, recency);
+        return rankItems(all, query, usage, recency);
 
-    auto scored = scoreItems(all, query, frecency);
+    auto matched = matchItems(all, query, usage);
     auto ranked = std::vector<RudderItem> {};
-    auto scores = std::vector<int> {};
 
-    for (auto& row: scored)
-    {
-        scores.push_back(row.match);
-        ranked.push_back(std::move(row.item));
-    }
+    for (auto& row: matched)
+        ranked.push_back(row.item);
 
     if (looksLikeAddress(query))
     {
@@ -358,7 +354,7 @@ std::vector<RudderItem> rankWithWeb(const std::vector<RudderItem>& all,
         return ranked;
     }
 
-    if (weakMatch(query, scores))
+    if (isWeakMatch(matched))
         ranked.insert(ranked.begin(), webRow(query, settings));
     else
         ranked.push_back(webRow(query, settings));

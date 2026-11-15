@@ -1,8 +1,8 @@
 #include "Ranking.h"
-#include "FuzzyMatch.h"
+
+#include <FrecencySearch/RowOrder.h>
 
 #include <algorithm>
-#include <cmath>
 #include <optional>
 #include <unordered_set>
 #include <utility>
@@ -41,121 +41,17 @@ RudderItem contextRow(const RudderItem& app, const RudderContext& context)
     return row;
 }
 
-// What a favourite is found by: its title, its keywords and its target.
-std::string favouriteText(const RudderItem& item)
-{
-    auto text = item.title;
-
-    for (auto& keyword: item.keywords)
-        text += " " + keyword;
-
-    return text + " " + item.subtitle;
-}
-
-// A context matched by its app's name alone ("grazer" against every Grazer
-// tab) sits below the app row and below contexts whose own text matched.
-constexpr auto appNameOnlyPenalty = 8;
-
-// A context's git branch is its most telling name: a match on it gets this
-// on top, so it beats an equal match on the title.
-constexpr auto branchBonus = 1;
-
-// Taken off a match on a context's other fields, so on an equal match the
-// title wins, then the directory's name and the subtitle, then the full
-// path: branch > title > dirname = subtitle > path. The directory's name
-// (a worktree's, a project's) says little the title and branch don't.
-constexpr auto dirNamePenalty = 6;
-constexpr auto subtitlePenalty = 6;
-constexpr auto pathPenalty = 12;
-
-// The directory's name, the subtitle and the full path are alike from row to
-// row ("Tab 3 · pane 1 · main", "/Users/me/projects/..."), so letters
-// scattered through them match almost anything. They count only for a tight match: at least
-// this much score per letter typed, about half of what a run of consecutive
-// letters earns.
-constexpr auto tightPerLetter = 4;
-
-int letterCount(const std::string& query)
-{
-    return (int) std::count_if(query.begin(), query.end(), [](char c) { return c != ' '; });
-}
-
 std::string lastComponent(std::string path)
 {
     while (path.size() > 1 && path.back() == '/')
         path.pop_back();
 
     auto slash = path.find_last_of('/');
-    return slash == std::string::npos ? path : path.substr(slash + 1);
-}
 
-// How well `query` finds a context by its own text: its git branch and the
-// name the user gave it best, then the (provider's) title and url as they read, then the name of its directory and
-// the subtitle, then the full path, those three only on a tight match.
-std::optional<int> ownScore(const std::string& query, const RudderContext& context)
-{
-    auto best = grazer::fuzzyScore(query, context.title + " " + context.url);
+    if (slash == std::string::npos)
+        return path;
 
-    auto consider = [&](const std::string& text, int penalty, bool tightOnly)
-    {
-        if (text.empty())
-            return;
-
-        auto score = grazer::fuzzyScore(query, text);
-
-        if (!score || (tightOnly && *score < tightPerLetter * letterCount(query)))
-            return;
-
-        if (!best || *score - penalty > *best)
-            best = *score - penalty;
-    };
-
-    consider(context.branch, -branchBonus, false);
-    consider(context.name, -branchBonus, false);
-    consider(lastComponent(context.path), dirNamePenalty, true);
-    consider(context.subtitle, subtitlePenalty, true);
-    consider(context.path, pathPenalty, true);
-    return best;
-}
-
-// How well `query` finds a context: some leading part of the query on the
-// app's name and the rest on the context's own text (ownScore), best split
-// wins. Scoring the halves separately keeps app-name letters from stealing
-// the query: matched greedily against "CowTerm ~/projects/Wim" (Grazer's old
-// name), "wim" took the w of CowTerm and scored like any pane with a w, i and m
-// in it, and a project typed after the app name ("cowtermwim") ranked by where those
-// letters first turned up rather than by the directory that spells them.
-std::optional<int> contextScore(const std::string& query,
-                                const RudderItem& app,
-                                const RudderContext& context)
-{
-    auto best = ownScore(query, context);
-
-    for (std::size_t split = 1; split <= query.size(); ++split)
-    {
-        auto onApp = grazer::fuzzyScore(query.substr(0, split), app.title);
-
-        if (!onApp)
-            break;
-
-        const auto rest = query.substr(split);
-
-        if (rest.find_first_not_of(' ') == std::string::npos)
-        {
-            auto score = *onApp - appNameOnlyPenalty;
-
-            if (!best || score > *best)
-                best = score;
-
-            continue;
-        }
-
-        if (auto onContext = ownScore(rest, context))
-            if (!best || *onApp + *onContext > *best)
-                best = *onApp + *onContext;
-    }
-
-    return best;
+    return path.substr(slash + 1);
 }
 } // namespace
 
@@ -234,14 +130,6 @@ std::string frecencyKey(const RudderItem& item)
     return "fav:" + target;
 }
 
-double frecencyBonus(double frecency)
-{
-    if (frecency <= 0)
-        return 0;
-
-    return std::min(frecencyCap, frecencyK * std::log2(1 + frecencyScale * frecency));
-}
-
 bool pickMoves(const RudderItem& item,
                const std::string& frontAppId,
                const std::vector<RudderContext>& frontContexts)
@@ -293,15 +181,6 @@ std::vector<RudderItem> mergeInstalled(std::vector<RudderItem> running,
 
 namespace
 {
-const RudderItem& itemOf(const RudderItem& item)
-{
-    return item;
-}
-
-const RudderItem& itemOf(const ScoredItem& scored)
-{
-    return scored.item;
-}
 
 bool isContextRow(const RudderItem& item)
 {
@@ -309,20 +188,19 @@ bool isContextRow(const RudderItem& item)
 }
 
 // An app whose panes or tabs are listed is already there through them.
-template <typename Row>
-void dropAppRowsShadowedByTheirContexts(std::vector<Row>& rows)
+void dropAppRowsShadowedByTheirContexts(std::vector<RudderItem>& rows)
 {
     auto appsWithContexts = std::unordered_set<std::string> {};
 
     for (auto& row: rows)
-        if (isContextRow(itemOf(row)))
-            appsWithContexts.insert(itemOf(row).appId);
+        if (isContextRow(row))
+            appsWithContexts.insert(row.appId);
 
     std::erase_if(rows,
-                  [&](const Row& row)
+                  [&](const RudderItem& row)
                   {
-                      return itemOf(row).kind == "app"
-                             && appsWithContexts.contains(itemOf(row).id);
+                      return row.kind == "app"
+                             && appsWithContexts.contains(row.id);
                   });
 }
 } // namespace
@@ -419,9 +297,194 @@ std::vector<RudderItem> browseItems(const std::vector<RudderItem>& all,
     return browsing;
 }
 
+namespace
+{
+using frecencysearch::MatchLevel;
+
+frecencysearch::SearchableTexts favouriteTexts(const RudderItem& favourite)
+{
+    auto texts = frecencysearch::SearchableTexts {};
+    texts.names.push_back(favourite.title);
+    texts.names.insert(texts.names.end(), favourite.keywords.begin(), favourite.keywords.end());
+    texts.details = {favourite.subtitle, frecencysearch::removeUrlScheme(favourite.url)};
+    return texts;
+}
+
+frecencysearch::SearchableTexts contextTexts(const RudderContext& context)
+{
+    auto texts = frecencysearch::SearchableTexts {};
+    texts.names = {context.name, context.title, context.branch, lastComponent(context.path)};
+    texts.details = {context.subtitle, context.path, frecencysearch::removeUrlScheme(context.url)};
+    return texts;
+}
+
+// The query after the app's name, when it starts with it, or with its first
+// word starting the name, and has more: "grazer github" and "iterm readme"
+// leave "github" and "readme" for the app's tabs and windows.
+std::optional<std::string> findQueryAfterAppName(const std::string& normalisedQuery,
+                                                 const RudderItem& app)
+{
+    auto appName = frecencysearch::normaliseQuery(app.title);
+    auto firstSpace = normalisedQuery.find(' ');
+    auto firstWord = normalisedQuery.substr(0, firstSpace);
+    auto namePrefixLength = std::size_t {0};
+
+    if (!appName.empty() && normalisedQuery.starts_with(appName))
+        namePrefixLength = appName.size();
+    else if (firstSpace != std::string::npos && appName.starts_with(firstWord))
+        namePrefixLength = firstWord.size();
+
+    if (namePrefixLength == 0)
+        return std::nullopt;
+
+    auto rest = frecencysearch::normaliseQuery(normalisedQuery.substr(namePrefixLength));
+
+    if (rest.empty())
+        return std::nullopt;
+
+    return rest;
+}
+
+std::optional<MatchLevel> findContextMatchLevel(const std::string& normalisedQuery,
+                                                const RudderItem& app,
+                                                const RudderContext& context)
+{
+    auto texts = contextTexts(context);
+    auto level = frecencysearch::findMatchLevel(normalisedQuery, texts);
+
+    if (auto rest = findQueryAfterAppName(normalisedQuery, app))
+    {
+        auto levelAfterAppName = frecencysearch::findMatchLevel(*rest, texts);
+
+        if (frecencysearch::isBetterMatchLevel(levelAfterAppName, level))
+            level = levelAfterAppName;
+    }
+
+    return level;
+}
+
+bool isWindowNamedOtherThanItsApp(const RudderItem& app, const RudderContext& context)
+{
+    return context.kind == "window"
+           && frecencysearch::normaliseQuery(context.title)
+                  != frecencysearch::normaliseQuery(app.title);
+}
+
+constexpr std::size_t windowsNeededToListThem = 2;
+
+bool shouldListWindows(const RudderItem& app)
+{
+    auto namedWindows = std::count_if(app.contexts.begin(),
+                                      app.contexts.end(),
+                                      [&](const RudderContext& context)
+                                      { return isWindowNamedOtherThanItsApp(app, context); });
+    return (std::size_t) namedWindows >= windowsNeededToListThem;
+}
+
+bool isListedContext(const RudderItem& app, const RudderContext& context)
+{
+    if (context.kind != "window")
+        return true;
+
+    return isWindowNamedOtherThanItsApp(app, context) && shouldListWindows(app);
+}
+
+struct CandidateRow
+{
+    MatchLevel level = MatchLevel::nameHasQueryLettersInOrder;
+    RudderItem item;
+    bool isFocused = false;
+};
+
+// Of two rows for one destination (panes on the same branch), the one to
+// open: the focused one, else an open one.
+bool isBetterRowForDestination(const CandidateRow& candidate, const CandidateRow& current)
+{
+    if (candidate.isFocused != current.isFocused)
+        return candidate.isFocused;
+
+    return candidate.item.running && !current.item.running;
+}
+
+void addCandidateRow(std::vector<CandidateRow>& rows, CandidateRow candidate)
+{
+    auto key = frecencyKey(candidate.item);
+    auto same = std::find_if(rows.begin(),
+                             rows.end(),
+                             [&](const CandidateRow& row) { return frecencyKey(row.item) == key; });
+
+    if (same == rows.end())
+    {
+        rows.push_back(std::move(candidate));
+        return;
+    }
+
+    auto bestLevel = std::min(same->level, candidate.level);
+
+    if (isBetterRowForDestination(candidate, *same))
+        *same = std::move(candidate);
+
+    same->level = bestLevel;
+}
+
+std::vector<CandidateRow> findCandidateRows(const std::vector<RudderItem>& all,
+                                            const std::string& normalisedQuery)
+{
+    auto rows = std::vector<CandidateRow> {};
+
+    for (auto& app: all)
+    {
+        if (app.kind == "favourite")
+        {
+            if (auto level = frecencysearch::findMatchLevel(normalisedQuery, favouriteTexts(app)))
+                addCandidateRow(rows, {*level, app});
+
+            continue;
+        }
+
+        if (auto level = frecencysearch::findNameMatchLevel(normalisedQuery, app.title))
+            addCandidateRow(rows, {*level, app});
+
+        for (auto& context: app.contexts)
+        {
+            if (!isListedContext(app, context))
+                continue;
+
+            if (auto level = findContextMatchLevel(normalisedQuery, app, context))
+                addCandidateRow(rows, {*level, contextRow(app, context), context.focused});
+        }
+    }
+
+    return rows;
+}
+
+frecencysearch::RowRankingFacts calculateRankingFacts(const CandidateRow& row,
+                                                      const SearchUsage& usage)
+{
+    auto key = frecencyKey(row.item);
+    auto facts = frecencysearch::RowRankingFacts {};
+    facts.level = row.level;
+    facts.isOpen = row.item.running;
+
+    if (usage.usage)
+        facts.usage = usage.usage(key);
+
+    for (auto& pick: usage.learnedPicks)
+    {
+        if (pick.destinationKey != key)
+            continue;
+
+        facts.learnedPicks = pick.count;
+        facts.learnedAtMs = pick.atMs;
+    }
+
+    return facts;
+}
+} // namespace
+
 std::vector<RudderItem> rankItems(const std::vector<RudderItem>& all,
                                   const std::string& query,
-                                  const FrecencyFn& frecency,
+                                  const SearchUsage& usage,
                                   const Recency& recency)
 {
     if (query.empty() && recency.lastUsed)
@@ -440,58 +503,43 @@ std::vector<RudderItem> rankItems(const std::vector<RudderItem>& all,
 
     auto ranked = std::vector<RudderItem> {};
 
-    for (auto& scored: scoreItems(all, query, frecency))
-        ranked.push_back(std::move(scored.item));
+    for (auto& matched: matchItems(all, query, usage))
+        ranked.push_back(std::move(matched.item));
 
     return ranked;
 }
 
-std::vector<ScoredItem> scoreItems(const std::vector<RudderItem>& all,
-                                   const std::string& query,
-                                   const FrecencyFn& frecency)
+std::vector<MatchedItem> matchItems(const std::vector<RudderItem>& all,
+                                    const std::string& query,
+                                    const SearchUsage& usage)
 {
-    auto scored = std::vector<ScoredItem> {};
+    auto normalisedQuery = frecencysearch::normaliseQuery(query);
 
-    auto add = [&](int match, RudderItem item)
+    if (normalisedQuery.empty())
+        return {};
+
+    struct RankedRow
     {
-        auto bonus = frecency ? frecencyBonus(frecency(frecencyKey(item))) : 0.0;
-        auto penalty = item.running ? 0.0 : closedPenalty;
-        scored.push_back({match + bonus - penalty, match, std::move(item)});
+        frecencysearch::RowRankingFacts facts;
+        CandidateRow row;
     };
 
-    for (auto& app: all)
-    {
-        if (app.kind == "favourite")
-        {
-            if (auto score = grazer::fuzzyScore(query, favouriteText(app)))
-                add(*score, app);
+    auto rankedRows = std::vector<RankedRow> {};
 
-            continue;
-        }
+    for (auto& row: findCandidateRows(all, normalisedQuery))
+        rankedRows.push_back({calculateRankingFacts(row, usage), std::move(row)});
 
-        if (auto score = grazer::fuzzyScore(query, app.title))
-            add(*score, app);
+    std::stable_sort(rankedRows.begin(),
+                     rankedRows.end(),
+                     [](const RankedRow& first, const RankedRow& second)
+                     { return frecencysearch::shouldRankBefore(first.facts, second.facts); });
 
-        // A context matches on its app's name, its title and url, its
-        // directory and its subtitle, so "grazer github" finds the GitHub tab
-        // in Grazer and "grazer" the pane sitting in ~/projects/Grazer.
-        for (auto& context: app.contexts)
-            if (auto score = contextScore(query, app, context))
-                add(*score, contextRow(app, context));
-    }
+    auto matched = std::vector<MatchedItem> {};
 
-    std::stable_sort(scored.begin(),
-                     scored.end(),
-                     [](const auto& a, const auto& b)
-                     {
-                         if (a.score != b.score)
-                             return a.score > b.score;
+    for (auto& ranked: rankedRows)
+        matched.push_back({ranked.row.level, std::move(ranked.row.item)});
 
-                         return a.item.running && !b.item.running;
-                     });
-
-    dropAppRowsShadowedByTheirContexts(scored);
-    return scored;
+    return matched;
 }
 
 bool isPreviewable(const RudderItem& item, bool runningNow)

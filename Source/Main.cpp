@@ -3,6 +3,7 @@
 #include "Favourites.h"
 #include "Focus.h"
 #include "Frecency.h"
+#include "LearnedPickStore.h"
 #include "ContextServer.h"
 #include "Icon.h"
 #include "Keybinding.h"
@@ -1066,7 +1067,7 @@ struct RudderApp
 
         orderBaseList();
 
-        filtered = rankWithWeb(allItems, query, webSettings(), frecencyLookup(), recencyLookup());
+        filtered = rankWithWeb(allItems, query, webSettings(), searchUsageFor(query), recencyLookup());
         selected = initialSelection(filtered, query, frontAppId);
         pendingPreview.reset();
         previewedId.clear();
@@ -1114,7 +1115,7 @@ struct RudderApp
         query = text;
         logEvent(("query '" + query + "'").c_str());
         logEvent(("line edit: " + std::to_string(query.size()) + " chars").c_str());
-        filtered = rankWithWeb(allItems, query, webSettings(), frecencyLookup(), recencyLookup());
+        filtered = rankWithWeb(allItems, query, webSettings(), searchUsageFor(query), recencyLookup());
         selected = initialSelection(filtered, query, frontAppId);
         previewSelection();
         dumpReason = PanelDumpReason::query;
@@ -1410,7 +1411,7 @@ struct RudderApp
     void rebuildFavouriteRows()
     {
         orderBaseList();
-        filtered = rankWithWeb(allItems, query, webSettings(), frecencyLookup(), recencyLookup());
+        filtered = rankWithWeb(allItems, query, webSettings(), searchUsageFor(query), recencyLookup());
         selected = std::clamp(selected, 0, std::max((int) filtered.size() - 1, 0));
         publishResults();
     }
@@ -1817,7 +1818,7 @@ struct RudderApp
     // closed stays listed.
     void refreshListedRows()
     {
-        auto fresh = rankWithWeb(allItems, query, webSettings(), frecencyLookup(), recencyLookup());
+        auto fresh = rankWithWeb(allItems, query, webSettings(), searchUsageFor(query), recencyLookup());
         filtered = refreshListedRowsInPlace(std::move(filtered), fresh);
         publishResults();
     }
@@ -1901,11 +1902,13 @@ struct RudderApp
         pickItem(filtered[(std::size_t) selected]);
     }
 
-    // Each row's frecency, all decayed to the same moment.
-    FrecencyFn frecencyLookup()
+    // Each row's frecency, all decayed to the same moment, and the picks
+    // learned for `typed`.
+    SearchUsage searchUsageFor(const std::string& typed)
     {
-        return [this, now = FrecencyStore::nowMs()](const std::string& key)
-        { return frecency.frecency(key, now); };
+        auto now = FrecencyStore::nowMs();
+        auto usage = [this, now](const std::string& key) { return frecency.frecency(key, now); };
+        return {usage, learnedPicks.findPicksForQuery(typed, now)};
     }
 
     // The empty query's recency: the app summoned over on top, then by stamp.
@@ -1928,9 +1931,7 @@ struct RudderApp
 
         auto now = FrecencyStore::nowMs();
 
-        if (item.kind != "web"
-            && pickMoves(item, frontAppId, contextsFocusedAtSummon(frontAppId)))
-            frecency.touch(frecencyKey(item), now);
+        recordPickUsage(item, now);
 
         // The focus tracker was fed nothing while the panel was up. A picked
         // context is where the app's focus goes (already counted); an app or
@@ -1948,6 +1949,18 @@ struct RudderApp
             mru.touch(frecencyKey(item));
 
         openItem(item);
+    }
+
+    // A web row is a fresh query each time, so it counts for nothing.
+    void recordPickUsage(const RudderItem& item, std::int64_t now)
+    {
+        if (item.kind == "web")
+            return;
+
+        if (pickMoves(item, frontAppId, contextsFocusedAtSummon(frontAppId)))
+            frecency.touch(frecencyKey(item), now);
+
+        learnedPicks.recordPick(query, frecencyKey(item), now);
     }
 
     void openItem(const RudderItem& item)
@@ -2176,6 +2189,7 @@ struct RudderApp
         durable.collection<Keybindings>("settings")};
     grazer::MruStore mru {atomic};
     FrecencyStore frecency {atomic};
+    LearnedPickStore learnedPicks {atomic};
     RenameStore renames {durable};
     FocusTracker focus;
     emberstore::Document<FavouriteList> favouritesDocument {favouritesPath()};

@@ -6,8 +6,8 @@ add_executable(RudderTests
         FocusTests.cpp
         ListedRowsTests.cpp
         FrecencySimulationTests.cpp
+        FrecencySearchTests.cpp
         FrecencyTests.cpp
-        FuzzyMatchTests.cpp
         KeybindingTests.cpp
         LineEditTests.cpp
         MruTests.cpp
@@ -16,6 +16,7 @@ add_executable(RudderTests
         ProvidersTests.cpp
         RankingTests.cpp
         RenamesTests.cpp
+        SearchOrderTests.cpp
         SnapshotFrameTests.cpp
         TextFitTests.cpp
         UrlTests.cpp

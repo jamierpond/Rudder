@@ -6,19 +6,15 @@
 #include <NanoTest/NanoTest.h>
 
 #include <algorithm>
-#include <cmath>
-#include <cstdio>
-#include <map>
 #include <string>
 #include <vector>
 
 using namespace nano;
 using namespace rudder;
 
-// A week of a heavy user's picks, run through FrecencyStore and scoreItems:
+// A week of a heavy user's picks, run through FrecencyStore and rankItems:
 // does the order come out the way a person would expect it to? Deterministic
-// -- every pick is at a fixed time -- and it prints the table it checks, so
-// `just test` shows the numbers (the same columns as `just frecency-report`).
+// -- every pick is at a fixed time --.
 
 namespace
 {
@@ -90,24 +86,6 @@ void play(FrecencyStore& store, std::int64_t untilMs)
             store.touch(key, at);
 }
 
-// The old curve (k = 2, cap 8, 7-day half-life), for the comparison column.
-double oldFrecency(const std::string& key, std::int64_t atMs)
-{
-    constexpr auto oldHalfLife = 7.0 * dayMs;
-    auto total = 0.0;
-
-    for (auto& [at, picked]: schedule(week()))
-        if (picked == key && at <= atMs)
-            total += std::exp2(-(double) (atMs - at) / oldHalfLife);
-
-    return total;
-}
-
-double oldBonus(double frecency)
-{
-    return frecency <= 0 ? 0 : std::min(8.0, 2.0 * std::log2(1 + frecency));
-}
-
 RudderItem app(const std::string& id, const std::string& title)
 {
     auto item = RudderItem {};
@@ -143,12 +121,11 @@ std::vector<std::string> claudeOrder(FrecencyStore& store, std::int64_t atMs)
 {
     auto order = std::vector<std::string> {};
 
-    for (auto& scored:
-         scoreItems({cowTerm()},
-                    "claude",
-                    [&](const std::string& key) { return store.frecency(key, atMs); }))
-        if (!scored.item.contextId.empty())
-            order.push_back(scored.item.contextId);
+    auto usage = [&](const std::string& key) { return store.frecency(key, atMs); };
+
+    for (auto& item: rankItems({cowTerm()}, "claude", {usage}))
+        if (!item.contextId.empty())
+            order.push_back(item.contextId);
 
     return order;
 }
@@ -158,64 +135,7 @@ int rankOf(const std::vector<std::string>& order, const std::string& id)
     return (int) (std::find(order.begin(), order.end(), id) - order.begin());
 }
 
-void printTable(FrecencyStore& store, std::int64_t atMs, const char* when)
-{
-    std::printf("\n  frecency after the simulated week, %s\n", when);
-    std::printf("  %-42s %8s %6s   %8s %6s\n", "key", "f", "bonus", "old f", "old");
-
-    auto rows = std::vector<std::pair<double, std::string>> {};
-
-    for (auto& use: week())
-        rows.push_back({store.frecency(use.key, atMs), use.key});
-
-    std::sort(rows.rbegin(), rows.rend());
-
-    for (auto& [f, key]: rows)
-    {
-        auto old = oldFrecency(key, atMs);
-        std::printf("  %-42s %8.1f %6.2f   %8.1f %6.2f\n",
-                    key.c_str(),
-                    f,
-                    frecencyBonus(f),
-                    old,
-                    oldBonus(old));
-    }
-
-    std::printf("\n");
-}
 } // namespace
-
-auto tSimulatedWeekOrder
-    = test("FrecencySim/a heavy week: busy and recent first, and no two tie at the cap") = []
-{
-    auto db = testing::freshDatabase("frecency-sim-week");
-    auto store = FrecencyStore {db};
-    auto sunday = monday + 6 * dayMs + 18 * hourMs;
-
-    play(store, sunday);
-    printTable(store, sunday, "Sunday 18:00");
-
-    auto bonus = [&](const std::string& key) { return frecencyBonus(store.frecency(key, sunday)); };
-
-    // Used more, ranked higher -- every step strictly, none at the cap.
-    auto apps = std::vector<std::string> {"com.tinyspeck.slackmacgap",
-                                          cowTermId,
-                                          "company.thebrowser.Browser",
-                                          "net.whatsapp.WhatsApp",
-                                          "com.hnc.Discord",
-                                          "com.apple.Notes",
-                                          "com.apple.mail"};
-
-    for (std::size_t i = 0; i + 1 < apps.size(); ++i)
-        check(bonus(apps[i]) > bonus(apps[i + 1]));
-
-    check(bonus(apps.front()) < frecencyCap);
-
-    // Under the old curve the four busiest apps all sat at the cap: frecency
-    // couldn't tell Slack from WhatsApp.
-    for (std::size_t i = 0; i < 4; ++i)
-        check(oldBonus(oldFrecency(apps[i], sunday)) == 8.0);
-};
 
 auto tAbandonedFallsBelowSteady
     = test("FrecencySim/a pane worked in hard then left falls below a steady one within days")
@@ -253,19 +173,11 @@ auto tAbandonedFallsBelowSteady
     check(passedAt > 0);
 
     auto daysAfter = (double) (passedAt - tuesdayEvening) / (double) dayMs;
-    std::printf("\n  steady pane passes the abandoned one %.1f days after it was left"
-                " (old curve: %s)\n\n",
-                daysAfter,
-                oldFrecency(branchKey("rename"), monday + 7 * dayMs)
-                        > oldFrecency(branchKey("fix-login"), monday + 7 * dayMs)
-                    ? "within the week"
-                    : "not within the week");
-
     check(daysAfter < 5.0);
 };
 
-auto tClosedBelowOpenAtEqualMatch
-    = test("FrecencySim/an unopened place ranks below an open pane at an equal match") = []
+auto tUsageBeforeOpenness
+    = test("FrecencySim/a picked place ranks above an open pane never picked, below one picked as often") = []
 {
     auto db = testing::freshDatabase("frecency-sim-closed");
     auto store = FrecencyStore {db};
@@ -276,8 +188,7 @@ auto tClosedBelowOpenAtEqualMatch
     auto order = claudeOrder(store, sunday);
 
     // deploy is picked as often as rename but has no pane: rename, open,
-    // stays above it -- and so does triage, open and never picked.
+    // stays above it; triage, open and never picked, goes below it.
     check(rankOf(order, "pane:rename") < rankOf(order, "place:deploy"));
-    check(rankOf(order, "pane:triage") < rankOf(order, "place:deploy"));
-    check(store.frecency(branchKey("deploy"), sunday) > 0);
+    check(rankOf(order, "place:deploy") < rankOf(order, "pane:triage"));
 };

@@ -286,7 +286,7 @@ auto tFavouritesRankByMatch
 
     // ...but not by much, so a favourite picked a few times comes first.
     auto key = frecencyKey(favourites.front());
-    ranked = rankItems(all, "prs", [&](const std::string& k) { return k == key ? 3.0 : 0.0; });
+    ranked = rankItems(all, "prs", {[&](const std::string& k) { return k == key ? 3.0 : 0.0; }});
     check(ranked.size() == 2 && ranked.front().kind == "favourite");
 };
 

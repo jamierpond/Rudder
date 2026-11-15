@@ -2,6 +2,9 @@
 
 #include "Items.h"
 
+#include <FrecencySearch/LearnedPicks.h>
+#include <FrecencySearch/MatchLevel.h>
+
 #include <cstdint>
 #include <functional>
 #include <string>
@@ -46,38 +49,6 @@ std::vector<std::string> idOnlyContextKeys(const std::string& appId,
 // edited -- a favourite is keyed by what it opens instead -- and a context
 // row's, which is its contextKey.
 std::string frecencyKey(const RudderItem& item);
-
-// Added to a row's match score for how often and how lately it was picked:
-// k * log2(1 + frecencyScale * frecency), at most frecencyCap. The cap is
-// one consecutive letter's worth in fuzzyScore (8, against 1 for a scattered
-// one), so frecency reorders matches that are about as good but never lifts
-// a weak match over a clearly better one.
-//
-// Rudder is the app switcher, so heavy use is hundreds of picks a day (the
-// live store showed one every ~80 s), and a row picked n times a day settles
-// near n / (1 - 2^(-1/3)) = 4.85 n frecency (FrecencyStore::halfLifeMs, 3
-// days). The old curve, 2 * log2(1 + frecency), hit the cap at frecency 15
-// -- three picks a day -- so every row the user actually lives in tied at 8
-// and frecency told them apart no more.
-//
-// This one keeps the low end and stretches the top: k = 2/3 and scale 8
-// make it about 2 + (2/3) log2(frecency) once frecency is past 1. One pick
-// is worth 2.1 (as before: a near-tie flips on a single pick), three 3.1; a
-// pick a day settles at 3.5, five a day 5.1, twenty 6.4, fifty 7.3, and the
-// cap comes only at frecency 512, about 105 picks a day. Every doubling of use
-// is worth the same 2/3 of a point, so the busiest rows keep their order at
-// any volume a person reaches.
-constexpr auto frecencyK = 2.0 / 3.0;
-constexpr auto frecencyScale = 8.0;
-constexpr auto frecencyCap = 8.0;
-
-double frecencyBonus(double frecency);
-
-// Taken off a row that isn't open -- an app that isn't running, a place
-// (a branch with no pane on it yet) -- so an open row wins on an about-equal
-// match. The same one letter run as frecencyCap: a much better match on a
-// closed row still wins, and a closed row picked often only evens out.
-constexpr auto closedPenalty = 8.0;
 
 // Whether picking `item` takes the user anywhere: not when it is the app
 // the panel was summoned over (`frontAppId`), or the context that app is
@@ -128,37 +99,37 @@ constexpr std::size_t recentContextLimit = 6;
 std::vector<RudderItem> browseItems(const std::vector<RudderItem>& all,
                                     const Recency& recency);
 
+// What orders a typed query's rows besides the match: each row's decayed
+// usage by its frecencyKey, and the picks learned for the typed text
+// (LearnedPickStore::findPicksForQuery).
+struct SearchUsage
+{
+    FrecencyFn usage;
+    std::vector<frecencysearch::LearnedPick> learnedPicks;
+};
+
 // The list for the current query. Empty query: browseItems with `recency`,
-// or without it the running apps and the favourites in `all`'s order (by
-// recency) -- the switcher, not a launcher of hundreds. Otherwise fuzzy-rank the app titles
-// together with every app's contexts (the start of the query may name the
-// app, the rest matches the context's branch and the name the user gave it,
-// then its title and url, then its directory's
-// name, subtitle and path; a context matched by its app's name alone ranks
-// below the app), plus each row's frecencyBonus, each
-// context flattened into a row of its own (kind "context" or "window") so a
-// tab, a session or a window is one Enter away. Only real
-// hits are kept; on equal scores running apps beat closed ones, and ties
-// after that keep the recency order.
-// No `frecency` ranks by match alone.
+// or without it the running apps and the favourites in `all`'s order.
+// Otherwise every app, favourite and context that matches, one row per
+// frecencyKey, in frecencysearch::shouldRankBefore order; ties keep `all`'s
+// order. A context also matches on the rest of a query that starts with its
+// app's name ("grazer github"). An app's windows are rows only when at least
+// two are titled other than the app.
 std::vector<RudderItem> rankItems(const std::vector<RudderItem>& all,
                                   const std::string& query,
-                                  const FrecencyFn& frecency = {},
+                                  const SearchUsage& usage = {},
                                   const Recency& recency = {});
 
-struct ScoredItem
+struct MatchedItem
 {
-    // match plus the row's frecencyBonus: what the rows are sorted by.
-    double score = 0;
-    // The fuzzy match alone.
-    int match = 0;
+    frecencysearch::MatchLevel level = frecencysearch::MatchLevel::nameHasQueryLettersInOrder;
     RudderItem item;
 };
 
-// rankItems for a non-empty query, keeping each row's scores, best first.
-std::vector<ScoredItem> scoreItems(const std::vector<RudderItem>& all,
-                                   const std::string& query,
-                                   const FrecencyFn& frecency = {});
+// rankItems for a non-empty query, keeping each row's match level.
+std::vector<MatchedItem> matchItems(const std::vector<RudderItem>& all,
+                                    const std::string& query,
+                                    const SearchUsage& usage = {});
 
 // Whether the live preview shows a snapshot of a selection: only an app that
 // is running at the moment of the call. A closed app, an app that quit since

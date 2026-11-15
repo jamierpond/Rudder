@@ -61,8 +61,6 @@ std::int64_t FrecencyStore::nowMs()
 
 double FrecencyStore::decayed(double score, std::int64_t fromMs, std::int64_t toMs)
 {
-    // A stamp from the future (clock moved back) doesn't grow the score.
-    auto elapsed = std::max<std::int64_t>(toMs - fromMs, 0);
-    return score * std::exp2(-(double) elapsed / (double) halfLifeMs);
+    return frecencysearch::calculateDecayedUsage(score, fromMs, toMs);
 }
 } // namespace rudder

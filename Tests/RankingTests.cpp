@@ -1,10 +1,8 @@
-#include <FuzzyMatch.h>
 #include <Ranking.h>
 
 #include <NanoTest/NanoTest.h>
 
 #include <algorithm>
-#include <cmath>
 #include <map>
 
 using namespace nano;
@@ -209,7 +207,9 @@ auto tWindowsMatchWithApp = test("Ranking/windows match on app name and title") 
     auto apps = someApps();
     auto window = RudderContext {"w1", "Rudder — README.md", "", ""};
     window.kind = "window";
-    apps[2].contexts = {window};
+    auto otherWindow = RudderContext {"w2", "Grazer — main.cpp", "", ""};
+    otherWindow.kind = "window";
+    apps[2].contexts = {window, otherWindow};
 
     auto ranked = rankItems(apps, "iterm readme");
 
@@ -293,40 +293,6 @@ int rankOf(const std::vector<RudderItem>& ranked, const std::string& contextId)
     return -1;
 }
 } // namespace
-
-auto tAppThenProject = test("Ranking/app name then project finds that pane first") = []
-{
-    for (auto query: {"cowtermwim", "cowterm wim", "cowtwim", "termwim"})
-    {
-        auto ranked = rankItems(cowTermAndWim(), query);
-
-        check(rankOf(ranked, "pane:5") == 0);
-    }
-};
-
-auto tProjectAloneFindsPane = test("Ranking/a project name finds its pane near the top")
-    = []
-{
-    auto ranked = rankItems(cowTermAndWim(), "wim");
-
-    // The pane in ~/projects/Wim first, ahead of the Wim tabs that only
-    // match on their app's name; the Wim app row is shadowed by its tabs.
-    check(rankOf(ranked, "pane:5") == 0);
-
-    // "w" of CowTerm + "im" of GameExperiments still matches, just lower.
-    check(rankOf(ranked, "pane:3") > rankOf(ranked, "pane:5"));
-};
-
-auto tAppNameAloneListsContextsBelowApp
-    = test("Ranking/an app's name lists its contexts, not the app again") = []
-{
-    auto ranked = rankItems(cowTermAndWim(), "cowterm");
-
-    check(std::none_of(ranked.begin(),
-                       ranked.end(),
-                       [](const RudderItem& item) { return item.kind == "app"; }));
-    check(ranked.size() == 7);
-};
 
 namespace
 {
@@ -461,80 +427,6 @@ auto tScatteredPathsDontFlood =
     check(countFrom(rankItems(busyCowTerm(), "b1n"), "com.eacp.cowterm") == 0);
 };
 
-auto tTitleBeatsSubtitle = test("Ranking/a title match beats the same on a subtitle") = []
-{
-    auto cowTerm = app("com.eacp.cowterm", "CowTerm");
-    auto onTitle = RudderContext {"pane:site", "~/projects/main-site", "Tab 1 · pane 1 · dev", ""};
-    onTitle.path = "/Users/jamiepond/projects/main-site";
-    cowTerm.contexts = {keychainPane(), onTitle};
-
-    auto ranked = rankItems({cowTerm}, "main");
-
-    check(rankOf(ranked, "pane:site") == 0);
-    check(rankOf(ranked, "pane:keychain") == 1, "the subtitle's branch still finds it");
-};
-
-auto tDirNameBeatsSubtitleAndPath =
-    test("Ranking/a directory's name beats its subtitle and full path") = []
-{
-    auto cowTerm = app("com.eacp.cowterm", "CowTerm");
-
-    auto byDir = RudderContext {"pane:dir", "claude", "", ""};
-    byDir.path = "/Users/j/projects/sonic";
-
-    auto bySubtitle = RudderContext {"pane:sub", "claude", "Tab 2 · pane 1 · sonic", ""};
-
-    auto byPath = RudderContext {"pane:path", "claude", "", ""};
-    byPath.path = "/Users/j/sonic/lib";
-
-    cowTerm.contexts = {byPath, bySubtitle, byDir};
-
-    auto ranked = rankItems({cowTerm}, "sonic");
-
-    check(rankOf(ranked, "pane:dir") == 0);
-    check(rankOf(ranked, "pane:sub") == 1);
-    check(rankOf(ranked, "pane:path") == 2);
-};
-
-auto tBranchBeatsTitle = test("Ranking/a branch match beats a title match") = []
-{
-    auto cowTerm = app("com.eacp.cowterm", "CowTerm");
-
-    auto onBranch = RudderContext {"pane:branch", "claude", "", ""};
-    onBranch.branch = "frecency";
-
-    // The same word in a title: equal match, the branch still wins.
-    auto onTitle = RudderContext {"pane:title", "frecency", "", ""};
-
-    // Scattered through a title: weaker.
-    auto weak = RudderContext {"pane:weak", "fresh recency notes", "", ""};
-
-    cowTerm.contexts = {weak, onTitle, onBranch};
-
-    auto ranked = rankItems({cowTerm}, "frecency");
-
-    check(rankOf(ranked, "pane:branch") == 0);
-    check(rankOf(ranked, "pane:title") == 1);
-    check(rankOf(ranked, "pane:weak") == 2);
-};
-
-auto tTitleBeatsDirName = test("Ranking/a title match beats a directory-name match") = []
-{
-    auto cowTerm = app("com.eacp.cowterm", "CowTerm");
-
-    auto byDir = RudderContext {"pane:dir", "claude", "", ""};
-    byDir.path = "/Users/j/projects/sonic";
-
-    auto byTitle = RudderContext {"pane:title", "sonic", "", ""};
-
-    cowTerm.contexts = {byDir, byTitle};
-
-    auto ranked = rankItems({cowTerm}, "sonic");
-
-    check(rankOf(ranked, "pane:title") == 0);
-    check(rankOf(ranked, "pane:dir") == 1);
-};
-
 auto tBranchNotShown = test("Ranking/the provider names the row; Rudder doesn't add the branch") = []
 {
     auto cowTerm = app("com.eacp.cowterm", "CowTerm");
@@ -565,55 +457,6 @@ auto tOriginContextsPreview =
     window.appId = "com.eacp.cowterm";
     window.contextId = "w1";
     check(isPreviewable(window, true));
-};
-
-namespace
-{
-FrecencyFn frecencyFrom(std::map<std::string, double> scores)
-{
-    return [scores = std::move(scores)](const std::string& key)
-    {
-        auto it = scores.find(key);
-        return it != scores.end() ? it->second : 0.0;
-    };
-}
-} // namespace
-
-auto tFrecencyBonusCurve = test("Ranking/the frecency bonus grows by log and stops at the cap")
-    = []
-{
-    check(frecencyBonus(0) == 0);
-    check(frecencyBonus(1) == frecencyK * std::log2(9));
-    check(frecencyBonus(3) > 3);
-    check(frecencyBonus(500) < frecencyCap);
-    check(frecencyBonus(520) == frecencyCap);
-    check(frecencyBonus(1e9) == frecencyCap);
-};
-
-auto tFrecencyBreaksNearTies = test("Ranking/frecency reorders matches about as good") = []
-{
-    auto apps = std::vector<RudderItem> {app("com.tinyspeck.slackmacgap", "Slack"),
-                                         app("com.apple.slides", "Slides")};
-
-    check(titles(rankItems(apps, "sl")) == std::vector<std::string> {"Slack", "Slides"});
-    check(titles(rankItems(apps, "sl", frecencyFrom({{"com.apple.slides", 1}})))
-          == std::vector<std::string> {"Slides", "Slack"});
-};
-
-auto tFrecencyCapped = test("Ranking/frecency never lifts a weak match over a clear one") = []
-{
-    auto apps = std::vector<RudderItem> {app("com.apple.Safari", "Safari"),
-                                         app("com.example.archive", "Stocks Archive Folder")};
-
-    auto clear = *grazer::fuzzyScore("saf", "Safari");
-    auto weak = *grazer::fuzzyScore("saf", "Stocks Archive Folder");
-    check(clear - weak > frecencyCap);
-
-    auto ranked = scoreItems(apps, "saf", frecencyFrom({{"com.example.archive", 1e9}}));
-
-    check(ranked.front().item.title == "Safari");
-    check(ranked.back().score == weak + frecencyCap);
-    check(ranked.back().match == weak);
 };
 
 auto tFavouriteKeyedByTarget = test("Ranking/a favourite's frecency is keyed by what it opens")
@@ -708,12 +551,15 @@ auto tPaneAndPlaceShareKey
                         pane("pane:222", "claude", "fix-login", "/p/web-fix", "/p/web-fix"),
                         place};
 
-    auto ranked = rankItems({cowTerm}, "claude");
-    auto key = frecencyKey(rowFor(ranked, "pane:111"));
+    auto key = std::string {"com.eacp.cowterm/repo:/p/web-fix#branch:fix-login"};
 
-    check(key == "com.eacp.cowterm/repo:/p/web-fix#branch:fix-login");
-    check(frecencyKey(rowFor(ranked, "pane:222")) == key);
-    check(frecencyKey(rowFor(rankItems({cowTerm}, "web-fix"), "place:/p/web-fix")) == key);
+    for (auto query: {"claude", "web-fix"})
+    {
+        auto ranked = rankItems({cowTerm}, query);
+
+        check(ranked.size() == 1);
+        check(!ranked.empty() && frecencyKey(ranked.front()) == key);
+    }
 };
 
 namespace
@@ -804,17 +650,6 @@ auto tTypedQueryKeepsAppWithoutContexts
     check(!ranked.empty() && ranked.front().id == "audio.pond.grazer");
 };
 
-auto tTypedQueryDropsAppShadowedByContexts
-    = test("Ranking/a typed query drops an app's row when its contexts match") = []
-{
-    auto ranked = rankItems(workday(), "cowterm");
-
-    check(ranked.size() == 3);
-    check(std::all_of(ranked.begin(),
-                      ranked.end(),
-                      [](const RudderItem& item) { return item.kind == "context"; }));
-};
-
 auto tEmptyListLimited = test("Ranking/no query lists at most a handful of contexts, one per key")
     = []
 {
@@ -857,24 +692,6 @@ auto tRenamedRowShowsName = test("Ranking/a renamed context shows its name, the 
 
     check(row.title == "Login bug");
     check(row.subtitle == "claude · CowTerm · Tab 1");
-};
-
-auto tRenameMatches = test("Ranking/a rename matches as well as a branch, the old title still finds it")
-    = []
-{
-    auto cowTerm = app("com.eacp.cowterm", "CowTerm");
-
-    auto named = pane("pane:named", "claude", "", "");
-    named.name = "keychain";
-    auto onBranch = pane("pane:branch", "zsh", "keychain", "");
-    auto onTitle = pane("pane:title", "keychain", "", "");
-    cowTerm.contexts = {onTitle, onBranch, named};
-
-    auto ranked = rankItems({cowTerm}, "keychain");
-
-    check(rankOf(ranked, "pane:named") < rankOf(ranked, "pane:title"));
-    check(rankOf(ranked, "pane:branch") < rankOf(ranked, "pane:title"));
-    check(rowFor(rankItems({cowTerm}, "claude"), "pane:named").title == "keychain");
 };
 
 // --- Gone contexts ---------------------------------------------------------
@@ -950,30 +767,16 @@ auto tPickWhereYouAre
     auto other = pane("pane:2", "zsh", "rename", "/p/rudder");
     cowTerm.contexts = {shown, other};
 
-    auto ranked = rankItems({cowTerm, app("com.apple.Safari", "Safari")}, "cowterm");
+    auto shownRow = rowFor(rankItems({cowTerm}, "claude"), "pane:1");
+    auto otherRow = rowFor(rankItems({cowTerm}, "zsh"), "pane:2");
 
     check(!pickMoves(cowTerm, "com.eacp.cowterm", cowTerm.contexts));
-    check(!pickMoves(rowFor(ranked, "pane:1"), "com.eacp.cowterm", cowTerm.contexts));
-    check(pickMoves(rowFor(ranked, "pane:2"), "com.eacp.cowterm", cowTerm.contexts));
+    check(!pickMoves(shownRow, "com.eacp.cowterm", cowTerm.contexts));
+    check(pickMoves(otherRow, "com.eacp.cowterm", cowTerm.contexts));
     check(pickMoves(app("com.apple.Safari", "Safari"), "com.eacp.cowterm", cowTerm.contexts));
 
     // Summoned over another app, every CowTerm row goes somewhere.
     check(pickMoves(cowTerm, "com.apple.Safari", {}));
-    check(pickMoves(rowFor(ranked, "pane:1"), "com.apple.Safari", {}));
+    check(pickMoves(shownRow, "com.apple.Safari", {}));
 };
 
-auto tBonusSeparatesHeavyUse
-    = test("Ranking/the frecency bonus still orders rows used dozens of times a day") = []
-{
-    // Steady frecency for n picks a day at a 3-day half-life: about 4.85 n.
-    auto perDay = [](double n) { return frecencyBonus(n / (1 - std::exp2(-1.0 / 3))); };
-
-    check(perDay(1) < perDay(5));
-    check(perDay(5) < perDay(20));
-    check(perDay(20) < perDay(50));
-    check(perDay(50) < perDay(90));
-    check(perDay(90) < frecencyCap);
-
-    // Past the first few picks each doubling is worth about the same: k.
-    check(std::abs(frecencyBonus(200) - frecencyBonus(100) - frecencyK) < 0.01);
-};

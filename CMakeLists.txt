@@ -10,6 +10,15 @@ project(Rudder VERSION 0.1.0 LANGUAGES C CXX)
 # brings eacp (and with it Miro) itself.
 option(RUDDER_CLIENT_ONLY "Build only the RudderClient library" OFF)
 
+# Matching and usage ordering for search lists: plain functions on strings
+# and times, no storage, no dependencies, so the client-only build has it.
+add_library(FrecencySearch STATIC
+        Lib/FrecencySearch/LearnedPicks.cpp
+        Lib/FrecencySearch/MatchLevel.cpp
+        Lib/FrecencySearch/RowOrder.cpp)
+target_include_directories(FrecencySearch PUBLIC Lib)
+target_compile_features(FrecencySearch PUBLIC cxx_std_20)
+
 if (RUDDER_CLIENT_ONLY)
     if (APPLE)
         enable_language(OBJCXX)
@@ -75,6 +84,7 @@ add_library(RudderSwitcher STATIC
         Lib/Switcher/Focus.cpp
         Lib/Switcher/Frecency.cpp
         Lib/Switcher/Keybinding.cpp
+        Lib/Switcher/LearnedPickStore.cpp
         Lib/Switcher/LineEdit.cpp
         Lib/Switcher/ListedRows.cpp
         Lib/Switcher/Mru.cpp
@@ -88,7 +98,7 @@ add_library(RudderSwitcher STATIC
         Lib/Switcher/Web.cpp)
 
 target_include_directories(RudderSwitcher PUBLIC Lib/Switcher)
-target_link_libraries(RudderSwitcher PUBLIC emberstore RudderProtocol)
+target_link_libraries(RudderSwitcher PUBLIC emberstore FrecencySearch RudderProtocol)
 
 # The OS seam: running apps, activation, preview and the quick-panel window
 # tricks, one file per feature and platform behind the headers in Platform/.
