@@ -1,5 +1,8 @@
 #include "SearchKeys.h"
 
+#include <array>
+#include <string_view>
+
 namespace searchkeys
 {
 namespace
@@ -69,36 +72,43 @@ Result handleSpecialInNormal(const State& state, const Key& key)
     return stay(state, Action::none);
 }
 
+using NormalCommand = Result (*)(const State&);
+
+struct NormalBinding
+{
+    std::string_view typed;
+    NormalCommand command;
+};
+
+constexpr auto normalBindings = std::array {
+    NormalBinding {"j", [](const State& s) { return stay(s, Action::moveHighlightDown); }},
+    NormalBinding {"k", [](const State& s) { return stay(s, Action::moveHighlightUp); }},
+    NormalBinding {"G", [](const State& s) { return stay(s, Action::moveHighlightToLast); }},
+    NormalBinding {"x", [](const State& s) { return stay(s, Action::closeHighlighted); }},
+    NormalBinding {"s", [](const State& s) { return stay(s, Action::starHighlighted); }},
+    NormalBinding {"i", [](const State& s) { return enterInsert(s, s.caret); }},
+    NormalBinding {"a", [](const State& s) { return enterInsert(s, s.caret); }},
+    NormalBinding {"/", [](const State& s) { return enterInsert(s, s.caret); }},
+    NormalBinding {"A", [](const State& s) { return enterInsert(s, (int) s.text.size()); }},
+    NormalBinding {"I", [](const State& s) { return enterInsert(s, 0); }},
+    NormalBinding {"S", [](const State& s) { return clearAndEnterInsert(s); }},
+    NormalBinding {"d", [](const State& s) { return waitFor(s, PendingOperator::deleteRow); }},
+    NormalBinding {"g", [](const State& s) { return waitFor(s, PendingOperator::goToFirst); }},
+    NormalBinding {"c", [](const State& s) { return waitFor(s, PendingOperator::changeText); }},
+};
+
 Result handleTypedInNormal(const State& state, const std::string& typed)
 {
-    auto end = (int) state.text.size();
-
-    if (typed == "j")
-        return stay(state, Action::moveHighlightDown);
-    if (typed == "k")
-        return stay(state, Action::moveHighlightUp);
-    if (typed == "G")
-        return stay(state, Action::moveHighlightToLast);
-    if (typed == "x")
-        return stay(state, Action::closeHighlighted);
-    if (typed == "s")
-        return stay(state, Action::starHighlighted);
-    if (typed == "i" || typed == "a" || typed == "/")
-        return enterInsert(state, state.caret);
-    if (typed == "A")
-        return enterInsert(state, end);
-    if (typed == "I")
-        return enterInsert(state, 0);
-    if (typed == "S")
-        return clearAndEnterInsert(state);
-    if (typed == "d")
-        return waitFor(state, PendingOperator::deleteRow);
-    if (typed == "g")
-        return waitFor(state, PendingOperator::goToFirst);
-    if (typed == "c")
-        return waitFor(state, PendingOperator::changeText);
+    for (auto& binding: normalBindings)
+        if (binding.typed == typed)
+            return binding.command(state);
 
     return stay(state, Action::none);
+}
+
+bool hasModifier(const Key& key)
+{
+    return key.command || key.control || key.alt;
 }
 
 Result handleKeyInNormal(const State& state, const Key& key)
@@ -135,7 +145,7 @@ Result handleKey(const State& state, const Key& key)
     if (isNormalMode(state))
         return handleKeyInNormal(state, key);
 
-    if (key.special == SpecialKey::escape && !key.command && !key.control && !key.alt)
+    if (key.special == SpecialKey::escape && !hasModifier(key))
     {
         auto normal = state;
         normal.mode = Mode::normal;
