@@ -107,6 +107,28 @@ auto tSearchKeysEscapeInNormalCloses = test("SearchKeys/Esc in normal closes the
     check(pressEscape(box) == Action::closeSearch);
 };
 
+auto tSearchKeysEscapeWithEmptyTextCloses = test("SearchKeys/Esc in insert with no text closes the search") = []
+{
+    auto box = SearchBox {};
+    check(pressEscape(box) == Action::closeSearch);
+};
+
+auto tSearchKeysEscapeWithTextGoesToNormal = test("SearchKeys/Esc in insert with text goes to normal mode") = []
+{
+    auto box = SearchBox {};
+    pressKeys(box, {"g"});
+    check(pressEscape(box) == Action::none);
+    check(box.isNormalMode());
+};
+
+auto tSearchKeysEscapeInEmptyNormalCloses = test("SearchKeys/Esc in normal with no text closes the search") = []
+{
+    auto box = makeNormalBox("g");
+    pressKeys(box, {"x"});
+    check(box.getText().empty());
+    check(pressEscape(box) == Action::closeSearch);
+};
+
 auto tSearchKeysEscapeCancelsOperator = test("SearchKeys/Esc after an operator cancels it, not the search") = []
 {
     auto box = makeNormalBox("git");

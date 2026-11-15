@@ -111,6 +111,14 @@ Action SearchBox::handleKey(const Key& key)
     if (isNormalMode())
         return handleKeyInNormal(key);
 
+    return handleKeyInInsert(key);
+}
+
+Action SearchBox::handleKeyInInsert(const Key& key)
+{
+    if (key.special == SpecialKey::escape && getText().empty())
+        return Action::closeSearch;
+
     if (key.special == SpecialKey::none && key.characters.empty())
         return Action::passThrough;
 

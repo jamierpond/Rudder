@@ -71,6 +71,7 @@ public:
 
 private:
     Action handleChord(const Key& key);
+    Action handleKeyInInsert(const Key& key);
     Action handleKeyInNormal(const Key& key);
     Action handleTypedInNormal(const std::string& typed);
     void feedEditorKeepingOneLine(const std::string& editorKey);
