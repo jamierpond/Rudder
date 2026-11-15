@@ -1,46 +1,24 @@
 #pragma once
 
+#include <VimEditor.h>
+
 #include <string>
 
 namespace searchkeys
 {
-// Vim-style modes for a search box over a list of rows. Pure: the app hands
-// in its key and the box's text and caret, applies the state it gets back
-// and turns the action into its own effect.
-
-enum class Mode
-{
-    insert,
-    normal
-};
-
-// The first key of a two-key command (dd, gg, cc), waiting for the second.
-enum class PendingOperator
-{
-    none,
-    deleteRow,
-    goToFirst,
-    changeText
-};
-
-struct State
-{
-    Mode mode = Mode::insert;
-    PendingOperator pending = PendingOperator::none;
-    std::string text;
-    // A byte offset into `text`.
-    int caret = 0;
-
-    bool operator==(const State&) const = default;
-};
-
 enum class SpecialKey
 {
     none,
     escape,
     enter,
     upArrow,
-    downArrow
+    downArrow,
+    leftArrow,
+    rightArrow,
+    backspace,
+    forwardDelete,
+    home,
+    end
 };
 
 struct Key
@@ -55,9 +33,9 @@ struct Key
 
 enum class Action
 {
-    // The app handles the key as it did before modes existed: typing,
-    // editing keys, ctrl-n/p, its own chords.
+    // The app handles the key itself: its control and command chords, Tab.
     passThrough,
+    // The box took the key; the app shows the box's new text, caret and mode.
     none,
     moveHighlightDown,
     moveHighlightUp,
@@ -65,23 +43,38 @@ enum class Action
     moveHighlightToLast,
     openHighlighted,
     openHighlightedInNewTab,
-    closeHighlighted,
     starHighlighted,
     closeSearch
 };
 
-struct Result
+// A one-line vim search box over a list of rows. Text editing is the vim
+// editor's; this adds the list's keys on top: Enter opens, arrows and j/k
+// move the highlight, gg/G jump to the ends, s stars, Esc in normal closes.
+class SearchBox
 {
-    State state;
-    Action action = Action::none;
+public:
+    // Insert mode, empty text.
+    SearchBox();
 
-    bool operator==(const Result&) const = default;
+    Action handleKey(const Key& key);
+
+    // For the app's own edits (emacs chords, completion, a click); the mode stays.
+    void setTextAndCaret(const std::string& text, int caret);
+
+    std::string getText() const;
+
+    // A byte offset into the text; on the last character at most in normal mode.
+    int getCaret() const;
+
+    bool isNormalMode() const;
+
+private:
+    Action handleKeyInNormal(const Key& key);
+    Action handleTypedInNormal(const std::string& typed);
+    void feedEditorKeepingOneLine(const std::string& editorKey);
+    void feedEditor(const Key& key);
+
+    vim::Editor editor;
+    bool isWaitingForSecondG = false;
 };
-
-// A fresh search box: insert mode, empty text.
-State getOpeningState();
-
-Result handleKey(const State& state, const Key& key);
-
-bool isNormalMode(const State& state);
 } // namespace searchkeys

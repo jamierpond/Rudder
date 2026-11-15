@@ -2,6 +2,8 @@
 
 #include <NanoTest/NanoTest.h>
 
+#include <initializer_list>
+
 using namespace nano;
 using namespace searchkeys;
 
@@ -21,164 +23,179 @@ Key makeSpecialKey(SpecialKey special)
     return key;
 }
 
-State makeNormalState(const std::string& text, int caret)
+Action pressKeys(SearchBox& box, std::initializer_list<std::string> keys)
 {
-    auto state = State {};
-    state.mode = Mode::normal;
-    state.text = text;
-    state.caret = caret;
-    return state;
-}
-
-Action pressInNormal(const std::string& characters)
-{
-    return handleKey(makeNormalState("git", 1), makeTypedKey(characters)).action;
-}
-
-Result pressSequence(State state, const std::vector<std::string>& keys)
-{
-    auto result = Result {state, Action::none};
+    auto last = Action::none;
 
     for (auto& characters: keys)
-        result = handleKey(result.state, makeTypedKey(characters));
+        last = box.handleKey(makeTypedKey(characters));
 
-    return result;
+    return last;
+}
+
+Action pressEscape(SearchBox& box)
+{
+    return box.handleKey(makeSpecialKey(SpecialKey::escape));
+}
+
+// Typed in insert mode, then Esc: normal mode with the caret on the last character.
+SearchBox makeNormalBox(const std::string& text)
+{
+    auto box = SearchBox {};
+    box.handleKey(makeTypedKey(text));
+    pressEscape(box);
+    return box;
 }
 } // namespace
 
-auto tSearchKeysOpensInInsert = test("SearchKeys/opens in insert mode, typing passes through") = []
+auto tSearchKeysOpensInInsert = test("SearchKeys/opens in insert mode, typing edits the text") = []
 {
-    auto state = getOpeningState();
-    check(state.mode == Mode::insert);
-    check(handleKey(state, makeTypedKey("j")).action == Action::passThrough);
-    check(handleKey(state, makeSpecialKey(SpecialKey::enter)).action == Action::passThrough);
+    auto box = SearchBox {};
+    check(!box.isNormalMode());
+
+    check(pressKeys(box, {"g", "i", "t"}) == Action::none);
+    check(box.getText() == "git");
+    check(box.getCaret() == 3);
 };
 
-auto tSearchKeysEscapeToNormal = test("SearchKeys/Esc in insert enters normal, text and caret kept") = []
+auto tSearchKeysEscapeOnLastCharacter = test("SearchKeys/Esc in insert puts the caret on the last character") = []
 {
-    auto state = getOpeningState();
-    state.text = "git";
-    state.caret = 2;
+    auto box = makeNormalBox("hello");
+    check(box.isNormalMode());
+    check(box.getText() == "hello");
+    check(box.getCaret() == 4);
+};
 
-    auto result = handleKey(state, makeSpecialKey(SpecialKey::escape));
-    check(result.action == Action::none);
-    check(result.state == makeNormalState("git", 2));
+auto tSearchKeysWordBack = test("SearchKeys/b from the end of hello world goes to world") = []
+{
+    constexpr auto startOfWorld = 6;
+    auto box = makeNormalBox("hello world");
+
+    pressKeys(box, {"b"});
+    check(box.getCaret() == startOfWorld);
+
+    pressKeys(box, {"b"});
+    check(box.getCaret() == 0);
+};
+
+auto tSearchKeysEditing = test("SearchKeys/x, dw, ciw, dd and u edit the text") = []
+{
+    auto box = makeNormalBox("hello world");
+
+    pressKeys(box, {"0", "x"});
+    check(box.getText() == "ello world");
+
+    pressKeys(box, {"d", "w"});
+    check(box.getText() == "world");
+
+    pressKeys(box, {"u"});
+    check(box.getText() == "ello world");
+
+    pressKeys(box, {"c", "i", "w"});
+    check(!box.isNormalMode());
+    pressKeys(box, {"h", "i"});
+    check(box.getText() == "hi world");
+
+    pressEscape(box);
+    pressKeys(box, {"d", "d"});
+    check(box.getText().empty());
 };
 
 auto tSearchKeysEscapeInNormalCloses = test("SearchKeys/Esc in normal closes the search") = []
 {
-    auto result = handleKey(makeNormalState("git", 1), makeSpecialKey(SpecialKey::escape));
-    check(result.action == Action::closeSearch);
+    auto box = makeNormalBox("git");
+    check(pressEscape(box) == Action::closeSearch);
+};
+
+auto tSearchKeysEscapeCancelsOperator = test("SearchKeys/Esc after an operator cancels it, not the search") = []
+{
+    auto box = makeNormalBox("git");
+    pressKeys(box, {"d"});
+    check(pressEscape(box) == Action::none);
+    check(pressEscape(box) == Action::closeSearch);
 };
 
 auto tSearchKeysMoves = test("SearchKeys/j, k, arrows, gg and G move the highlight") = []
 {
-    check(pressInNormal("j") == Action::moveHighlightDown);
-    check(pressInNormal("k") == Action::moveHighlightUp);
-    check(pressInNormal("G") == Action::moveHighlightToLast);
-    check(pressSequence(makeNormalState("", 0), {"g", "g"}).action
-          == Action::moveHighlightToFirst);
+    auto box = makeNormalBox("git");
 
-    auto normal = makeNormalState("", 0);
-    check(handleKey(normal, makeSpecialKey(SpecialKey::downArrow)).action
-          == Action::moveHighlightDown);
-    check(handleKey(normal, makeSpecialKey(SpecialKey::upArrow)).action
-          == Action::moveHighlightUp);
+    check(pressKeys(box, {"j"}) == Action::moveHighlightDown);
+    check(pressKeys(box, {"k"}) == Action::moveHighlightUp);
+    check(pressKeys(box, {"G"}) == Action::moveHighlightToLast);
+    check(pressKeys(box, {"g", "g"}) == Action::moveHighlightToFirst);
+    check(box.handleKey(makeSpecialKey(SpecialKey::downArrow)) == Action::moveHighlightDown);
+    check(box.handleKey(makeSpecialKey(SpecialKey::upArrow)) == Action::moveHighlightUp);
+    check(box.getText() == "git");
+};
+
+auto tSearchKeysArrowsInInsert = test("SearchKeys/up and down arrows move the highlight in insert too") = []
+{
+    auto box = SearchBox {};
+    check(box.handleKey(makeSpecialKey(SpecialKey::downArrow)) == Action::moveHighlightDown);
+    check(!box.isNormalMode());
+};
+
+auto tSearchKeysOperatorWithMotion = test("SearchKeys/after an operator, j is its motion, not a highlight move") = []
+{
+    auto box = makeNormalBox("git");
+    pressKeys(box, {"d"});
+    check(pressKeys(box, {"j"}) == Action::none);
 };
 
 auto tSearchKeysEnterOpens = test("SearchKeys/Enter opens, command-Enter opens in a new tab") = []
 {
-    auto normal = makeNormalState("git", 1);
-    auto enter = makeSpecialKey(SpecialKey::enter);
-    check(handleKey(normal, enter).action == Action::openHighlighted);
+    auto box = makeNormalBox("git");
+    check(box.handleKey(makeSpecialKey(SpecialKey::enter)) == Action::openHighlighted);
 
-    enter.command = true;
-    check(handleKey(normal, enter).action == Action::openHighlightedInNewTab);
-};
+    auto commandEnter = makeSpecialKey(SpecialKey::enter);
+    commandEnter.command = true;
+    check(box.handleKey(commandEnter) == Action::openHighlightedInNewTab);
 
-auto tSearchKeysBackToInsert = test("SearchKeys/i, a and / insert at the caret, A at the end, I at the start") = []
-{
-    for (auto characters: {"i", "a", "/"})
-    {
-        auto result = handleKey(makeNormalState("git", 1), makeTypedKey(characters));
-        check(result.state.mode == Mode::insert);
-        check(result.state.caret == 1);
-        check(result.state.text == "git");
-    }
-
-    check(handleKey(makeNormalState("git", 1), makeTypedKey("A")).state.caret == 3);
-    check(handleKey(makeNormalState("git", 1), makeTypedKey("I")).state.caret == 0);
-};
-
-auto tSearchKeysCloseRow = test("SearchKeys/dd and x close the highlighted row") = []
-{
-    check(pressInNormal("x") == Action::closeHighlighted);
-
-    auto afterFirst = handleKey(makeNormalState("git", 1), makeTypedKey("d"));
-    check(afterFirst.action == Action::none);
-    check(afterFirst.state.pending == PendingOperator::deleteRow);
-
-    auto afterSecond = handleKey(afterFirst.state, makeTypedKey("d"));
-    check(afterSecond.action == Action::closeHighlighted);
-    check(afterSecond.state.pending == PendingOperator::none);
+    auto insertBox = SearchBox {};
+    check(insertBox.handleKey(makeSpecialKey(SpecialKey::enter)) == Action::openHighlighted);
 };
 
 auto tSearchKeysStar = test("SearchKeys/s stars the highlighted row") = []
 {
-    check(pressInNormal("s") == Action::starHighlighted);
+    auto box = makeNormalBox("git");
+    check(pressKeys(box, {"s"}) == Action::starHighlighted);
+    check(box.getText() == "git");
 };
 
-auto tSearchKeysChange = test("SearchKeys/cc and S clear the text and enter insert") = []
+auto tSearchKeysStaysOneLine = test("SearchKeys/o and yyp never make a second line") = []
 {
-    auto expected = getOpeningState();
+    auto box = makeNormalBox("git");
 
-    check(pressSequence(makeNormalState("git", 1), {"c", "c"}).state == expected);
-    check(handleKey(makeNormalState("git", 1), makeTypedKey("S")).state == expected);
+    pressKeys(box, {"o"});
+    check(box.getText() == "git");
+
+    pressKeys(box, {"y", "y", "p"});
+    check(box.getText() == "git");
 };
 
-auto tSearchKeysOperatorCancels = test("SearchKeys/an operator followed by another key does nothing") = []
+auto tSearchKeysChordsPassThrough = test("SearchKeys/control and command chords stay the app's") = []
 {
-    auto start = makeNormalState("git", 1);
+    auto box = makeNormalBox("git");
 
-    for (auto sequence: std::vector<std::vector<std::string>> {
-             {"d", "j"}, {"g", "k"}, {"c", "x"}, {"d", "g"}})
-    {
-        auto result = pressSequence(start, sequence);
-        check(result.action == Action::none);
-        check(result.state == start);
-    }
-
-    auto pending = handleKey(start, makeTypedKey("d")).state;
-    auto escaped = handleKey(pending, makeSpecialKey(SpecialKey::escape));
-    check(escaped.action == Action::none);
-    check(escaped.state == start);
-};
-
-auto tSearchKeysUnknownKeys = test("SearchKeys/unknown keys in normal do nothing and never type") = []
-{
-    auto start = makeNormalState("git", 1);
-
-    for (auto characters: {"q", "z", "1", " ", "é"})
-    {
-        auto result = handleKey(start, makeTypedKey(characters));
-        check(result.action == Action::none);
-        check(result.state == start);
-    }
-
-    auto alted = makeTypedKey("j");
-    alted.alt = true;
-    check(handleKey(start, alted).action == Action::none);
-};
-
-auto tSearchKeysChordsPassThrough = test("SearchKeys/control and command chords stay the app's in normal") = []
-{
-    auto start = makeNormalState("git", 1);
-
-    auto controlN = makeTypedKey("n");
-    controlN.control = true;
-    check(handleKey(start, controlN) == Result {start, Action::passThrough});
+    auto controlW = makeTypedKey("w");
+    controlW.control = true;
+    check(box.handleKey(controlW) == Action::passThrough);
 
     auto commandD = makeTypedKey("d");
     commandD.command = true;
-    check(handleKey(start, commandD).action == Action::passThrough);
+    check(box.handleKey(commandD) == Action::passThrough);
+    check(box.getText() == "git");
+};
+
+auto tSearchKeysAppEditsKeepMode = test("SearchKeys/the app's own edits keep the mode") = []
+{
+    auto box = SearchBox {};
+    box.setTextAndCaret("github", 3);
+    check(!box.isNormalMode());
+    check(box.getCaret() == 3);
+
+    pressEscape(box);
+    box.setTextAndCaret("git", 3);
+    check(box.isNormalMode());
+    check(box.getCaret() == 2);
 };

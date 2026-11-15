@@ -19,11 +19,23 @@ add_library(FrecencySearch STATIC
 target_include_directories(FrecencySearch PUBLIC Lib)
 target_compile_features(FrecencySearch PUBLIC cxx_std_20)
 
-# Vim-style insert and normal modes for a search box: key in, state and
-# action out, so Rudder, Grazer and CowTerm share one set of keys.
+# The vim editor (TextBuffer, VimEditor) the search box is built on.
+# Work against a local checkout with:
+#   cmake -B build -DLOCKSTEP_text-buffer_SOURCE=$HOME/projects/text-buffer
+if (NOT TARGET VimEditor)
+    lockstep_add_package(
+            NAME text-buffer
+            GITHUB_REPOSITORY jamierpond/text-buffer
+            GIT_TAG main
+            SYSTEM YES)
+endif ()
+
+# A one-line vim search box over a list of rows, so Rudder, Grazer and
+# CowTerm share one set of keys.
 add_library(SearchKeys STATIC Lib/SearchKeys/SearchKeys.cpp)
 target_include_directories(SearchKeys PUBLIC Lib)
 target_compile_features(SearchKeys PUBLIC cxx_std_20)
+target_link_libraries(SearchKeys PUBLIC VimEditor)
 
 # Per-launch log files (<logs>/<startEpochMs>.log, oldest pruned) and one
 # `<event> key=value ...` line format, so every app's usage reads the same way.

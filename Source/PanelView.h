@@ -373,14 +373,14 @@ private:
     // fzf's emacs keys on the query field. True when the key was one.
     bool editQuery(const eacp::Graphics::KeyEvent& event);
 
-    // Vim insert and normal modes on the query field (Lib/SearchKeys). True
-    // when the key was the mode model's and nothing else should see it.
+    // The query field as a one-line vim editor (Lib/SearchKeys). True when
+    // the search box took the key and nothing else should see it.
     bool handleSearchKey(const eacp::Graphics::KeyEvent& event);
     void performSearchAction(searchkeys::Action action);
-    void applySearchState(const searchkeys::State& state);
+    void showSearchBox();
 
-    // The switcher's keys when the mode model passed: chords, emacs editing,
-    // arrows, Enter, Esc, then the text field.
+    // The keys the search box passed on: the switcher's chords, emacs
+    // editing, ctrl-n/p, then the text field.
     void handleSwitcherKey(const eacp::Graphics::KeyEvent& event);
 
     // A key while renaming: every key is the editor's.
@@ -399,7 +399,7 @@ private:
     std::string footerHint;
     std::string capturing;
     std::optional<Line> renaming;
-    searchkeys::State searchKeysState = searchkeys::getOpeningState();
+    searchkeys::SearchBox searchBox;
     // A rename starts with the whole title selected: typing replaces it,
     // deleting clears it, moving the cursor keeps it.
     bool renameAllSelected = false;

@@ -793,7 +793,8 @@ void PanelView::reset(bool showSettings)
     capturing.clear();
     stopRenaming();
     root.switcher.query.setText({});
-    applySearchState(searchkeys::getOpeningState());
+    searchBox = {};
+    showSearchBox();
     showPage(showSettings);
 }
 
@@ -1031,21 +1032,29 @@ namespace
 // Far enough past either end of any list that moveSelection clamps to it.
 constexpr auto pastEveryRow = 1'000'000;
 
+struct KeyCodeSpecialKey
+{
+    uint16_t keyCode;
+    searchkeys::SpecialKey special;
+};
+
+constexpr auto specialKeysByCode = std::array {
+    KeyCodeSpecialKey {Graphics::KeyCode::Escape, searchkeys::SpecialKey::escape},
+    KeyCodeSpecialKey {Graphics::KeyCode::Return, searchkeys::SpecialKey::enter},
+    KeyCodeSpecialKey {Graphics::KeyCode::UpArrow, searchkeys::SpecialKey::upArrow},
+    KeyCodeSpecialKey {Graphics::KeyCode::DownArrow, searchkeys::SpecialKey::downArrow},
+    KeyCodeSpecialKey {Graphics::KeyCode::LeftArrow, searchkeys::SpecialKey::leftArrow},
+    KeyCodeSpecialKey {Graphics::KeyCode::RightArrow, searchkeys::SpecialKey::rightArrow},
+    KeyCodeSpecialKey {Graphics::KeyCode::Delete, searchkeys::SpecialKey::backspace},
+    KeyCodeSpecialKey {Graphics::KeyCode::ForwardDelete, searchkeys::SpecialKey::forwardDelete},
+    KeyCodeSpecialKey {Graphics::KeyCode::Home, searchkeys::SpecialKey::home},
+    KeyCodeSpecialKey {Graphics::KeyCode::End, searchkeys::SpecialKey::end},
+};
+
 searchkeys::SpecialKey getSpecialKey(const Graphics::KeyEvent& event)
 {
-    using searchkeys::SpecialKey;
-    namespace KeyCode = Graphics::KeyCode;
-
-    if (event.keyCode == KeyCode::Escape)
-        return SpecialKey::escape;
-    if (event.keyCode == KeyCode::Return)
-        return SpecialKey::enter;
-    if (event.keyCode == KeyCode::UpArrow)
-        return SpecialKey::upArrow;
-    if (event.keyCode == KeyCode::DownArrow)
-        return SpecialKey::downArrow;
-
-    return SpecialKey::none;
+    auto found = std::ranges::find(specialKeysByCode, event.keyCode, &KeyCodeSpecialKey::keyCode);
+    return found == specialKeysByCode.end() ? searchkeys::SpecialKey::none : found->special;
 }
 
 searchkeys::Key makeSearchKey(const Graphics::KeyEvent& event)
@@ -1062,32 +1071,29 @@ searchkeys::Key makeSearchKey(const Graphics::KeyEvent& event)
 
 bool PanelView::handleSearchKey(const Graphics::KeyEvent& event)
 {
-    auto& query = root.switcher.query;
-    auto current = searchKeysState;
-    current.text = query.getText();
-    current.caret = query.getCaretPosition();
+    // The field may have changed under the box: emacs chords, completion, a click.
+    searchBox.setTextAndCaret(root.switcher.query.getText(), root.switcher.query.getCaretPosition());
 
-    auto result = searchkeys::handleKey(current, makeSearchKey(event));
+    auto action = searchBox.handleKey(makeSearchKey(event));
 
-    if (result.action == searchkeys::Action::passThrough)
+    if (action == searchkeys::Action::passThrough)
         return false;
 
-    applySearchState(result.state);
-    performSearchAction(result.action);
+    showSearchBox();
+    performSearchAction(action);
     return true;
 }
 
-void PanelView::applySearchState(const searchkeys::State& state)
+void PanelView::showSearchBox()
 {
     auto& query = root.switcher.query;
 
     // A text change re-filters and re-previews exactly as typing does.
-    if (state.text != query.getText())
-        query.setText(state.text, true);
+    if (searchBox.getText() != query.getText())
+        query.setText(searchBox.getText(), true);
 
-    query.setCaretPosition(state.caret);
-    root.switcher.setNormalMode(searchkeys::isNormalMode(state));
-    searchKeysState = state;
+    query.setCaretPosition(searchBox.getCaret());
+    root.switcher.setNormalMode(searchBox.isNormalMode());
 }
 
 void PanelView::performSearchAction(searchkeys::Action action)
@@ -1109,7 +1115,6 @@ void PanelView::performSearchAction(searchkeys::Action action)
         ActionEffect {Action::openHighlighted, [](PanelView& p) { p.onAccept(); }},
         // Rudder has no tabs to open into: ⌘Enter opens like Enter.
         ActionEffect {Action::openHighlightedInNewTab, [](PanelView& p) { p.onAccept(); }},
-        ActionEffect {Action::closeHighlighted, [](PanelView& p) { p.onQuitSelected(); }},
         ActionEffect {Action::starHighlighted, [](PanelView& p) { p.onToggleFavourite(); }},
         ActionEffect {Action::closeSearch, [](PanelView& p) { p.onCancel(); }},
     };
@@ -1254,14 +1259,10 @@ void PanelView::handleSwitcherKey(const Graphics::KeyEvent& event)
         onToggleFavourite();
     else if (editQuery(event))
         return;
-    else if (key == KeyCode::DownArrow || (ctrl && key == KeyCode::N))
+    else if (ctrl && key == KeyCode::N)
         onMove(1);
-    else if (key == KeyCode::UpArrow || (ctrl && key == KeyCode::P))
+    else if (ctrl && key == KeyCode::P)
         onMove(-1);
-    else if (key == KeyCode::Return)
-        onAccept();
-    else if (key == KeyCode::Escape)
-        onCancel();
     else
         ComponentHost::keyDown(event);
 }

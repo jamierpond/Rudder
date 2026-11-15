@@ -34,8 +34,8 @@
       "usesGitLfs": false
     },
     {
-      "commit": "e6fc9b9acd899fbafc9431637a98198d484f6fd5",
-      "hash": "3128bcecc5b61f1e9af0b788a09221c7fd90333ce3dafd38438a5431f603ed5a",
+      "commit": "47dc6d5d34d1fc08a70e3bab7683d415e6f3fd77",
+      "hash": "3444464da7091e313480a0a2ad63692e4e0e091ca10dd098d9b363ede62e0835",
       "kind": "git",
       "name": "Miro",
       "patches": [],
@@ -162,6 +162,22 @@
       "usesGitLfs": false
     },
     {
+      "commit": "299e80aeb95024efcd2b316a5623c4ae45934150",
+      "hash": "4faf6ea54d4603f0df060f0498a1763c5f483ed3b9dc9af97d846abfcdaf9a24",
+      "kind": "git",
+      "name": "text-buffer",
+      "patches": [],
+      "requestedRef": "main",
+      "submoduleSelection": {
+        "isRecursive": true,
+        "isRestricted": false,
+        "paths": []
+      },
+      "submodules": [],
+      "url": "https://github.com/jamierpond/text-buffer.git",
+      "usesGitLfs": false
+    },
+    {
       "commit": "43c29e655cb8117fd9cfb65ad9cefe2d40965102",
       "hash": "be3c2defada9b5bb6aec7837e15406762bccfc7e3ab29741c5e14d7d91a806cd",
       "kind": "git",
@@ -178,6 +194,6 @@
       "usesGitLfs": false
     }
   ],
-  "root": "949dfcc2d7a76d2fec23b72caa42627c3acc81ef97b6afade7f48938adcf393d",
+  "root": "a4a235e5d2ee9e2507f13ccf4564ca93004d57af3a52f6f46f0f1b785f84f567",
   "version": 1
 }
