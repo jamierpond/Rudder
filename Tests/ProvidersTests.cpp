@@ -155,15 +155,15 @@ auto tLateRaiseUndone = test("Providers/a previewed app raising after Enter is u
     auto guard = LateRaiseGuard {};
     guard.reset();
     guard.previewed("audio.pond.grazer");
-    guard.previewed("com.eacp.cowterm");
-    guard.closedOnto("com.eacp.cowterm", 10.0);
+    guard.previewed("audio.pond.cowterm");
+    guard.closedOnto("audio.pond.cowterm", 10.0);
 
-    check(!guard.activated("com.eacp.cowterm", 10.005));
+    check(!guard.activated("audio.pond.cowterm", 10.005));
     check(guard.activated("audio.pond.grazer", 10.04)
-          == std::optional<std::string> {"com.eacp.cowterm"});
+          == std::optional<std::string> {"audio.pond.cowterm"});
 
     // Once: the target coming back, and Grazer after it, are left alone.
-    check(!guard.activated("com.eacp.cowterm", 10.05));
+    check(!guard.activated("audio.pond.cowterm", 10.05));
     check(!guard.activated("audio.pond.grazer", 10.2));
 };
 
@@ -172,7 +172,7 @@ auto tLateRaiseExpires = test("Providers/a previewed app activated later is the 
 {
     auto guard = LateRaiseGuard {};
     guard.previewed("audio.pond.grazer");
-    guard.closedOnto("com.eacp.cowterm", 10.0);
+    guard.closedOnto("audio.pond.cowterm", 10.0);
 
     check(
         !guard.activated("audio.pond.grazer", 10.0 + LateRaiseGuard::window + 0.01));
@@ -183,7 +183,7 @@ auto tLateRaiseOnlyPreviewed = test("Providers/an app that wasn't previewed is n
 {
     auto guard = LateRaiseGuard {};
     guard.previewed("audio.pond.grazer");
-    guard.closedOnto("com.eacp.cowterm", 10.0);
+    guard.closedOnto("audio.pond.cowterm", 10.0);
 
     check(!guard.activated("com.tinyspeck.slackmacgap", 10.1));
 
@@ -206,7 +206,7 @@ auto tResetForgetsPreviews = test("Providers/a new summon forgets the last panel
     auto guard = LateRaiseGuard {};
     guard.previewed("audio.pond.grazer");
     guard.reset();
-    guard.closedOnto("com.eacp.cowterm", 10.0);
+    guard.closedOnto("audio.pond.cowterm", 10.0);
 
     check(!guard.activated("audio.pond.grazer", 10.1));
 };
@@ -225,7 +225,7 @@ namespace
 {
 ProviderHello cowTerm()
 {
-    return {"CowTerm", "com.eacp.cowterm", 77};
+    return {"CowTerm", "audio.pond.cowterm", 77};
 }
 
 RudderContext focusedContext(const std::string& id)
@@ -242,7 +242,7 @@ auto tFocusedContexts = test("Providers/each provider's focused context, if it s
     providers.connect(grazer(), [](auto&, bool) {});
     providers.connect(cowTerm(), [](auto&, bool) {});
     providers.setContexts("audio.pond.grazer", {{"tab-1", "a", "", ""}, focusedContext("tab-2")});
-    providers.setContexts("com.eacp.cowterm", {{"pane:1", "a", "", ""}});
+    providers.setContexts("audio.pond.cowterm", {{"pane:1", "a", "", ""}});
 
     auto focused = providers.focusedContexts();
 
@@ -254,18 +254,18 @@ auto tEscUndoesPreviews = test("Providers/Esc puts previewed apps back on their 
     = []
 {
     auto undo = PreviewUndo {};
-    undo.reset({{"com.eacp.cowterm", "pane:1"}, {"audio.pond.grazer", "tab-2"}});
+    undo.reset({{"audio.pond.cowterm", "pane:1"}, {"audio.pond.grazer", "tab-2"}});
 
     check(undo.undo().empty(), "nothing previewed, nothing to undo");
 
-    undo.previewed("com.eacp.cowterm");
-    undo.previewed("com.eacp.cowterm");
+    undo.previewed("audio.pond.cowterm");
+    undo.previewed("audio.pond.cowterm");
     undo.previewed("org.no.focus");
 
     auto back = undo.undo();
 
     check(back.size() == 1, "once per app; an app with no focused context can't go back");
-    check(back.front() == std::pair<std::string, std::string> {"com.eacp.cowterm", "pane:1"});
+    check(back.front() == std::pair<std::string, std::string> {"audio.pond.cowterm", "pane:1"});
 
     undo.reset({});
     check(undo.undo().empty(), "a new summon forgets");

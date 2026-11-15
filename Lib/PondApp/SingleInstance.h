@@ -18,7 +18,7 @@ constexpr auto exitCodeAnotherInstanceIsRunning = 3;
 class SingleInstance
 {
 public:
-    // instanceName is short and unique per app, e.g. "com.pond.grazer".
+    // instanceName is short and unique per app, e.g. "audio.pond.grazer".
     explicit SingleInstance(std::string instanceName);
     ~SingleInstance();
 

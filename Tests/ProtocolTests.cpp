@@ -27,7 +27,7 @@ auto tHelloRoundTrips = test("Protocol/hello encodes to one line and back") = []
 
 auto tCanClose = test("Protocol/hello says whether the app closes contexts") = []
 {
-    auto line = encode(Hello {"CowTerm", "com.eacp.cowterm", 7, true});
+    auto line = encode(Hello {"CowTerm", "audio.pond.cowterm", 7, true});
     auto message = decode(line);
     auto* hello = message ? std::get_if<Hello>(&*message) : nullptr;
 

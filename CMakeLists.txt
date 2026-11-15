@@ -52,6 +52,7 @@ if (RUDDER_CLIENT_ONLY)
 
     add_subdirectory(Client)
     add_subdirectory(Lib/PondApp)
+    add_subdirectory(Lib/PermissionsPanel)
     return()
 endif ()
 
@@ -100,6 +101,7 @@ list(APPEND CMAKE_MODULE_PATH "${eacp_SOURCE_DIR}/CMake")
 
 add_subdirectory(Client)
 add_subdirectory(Lib/PondApp)
+add_subdirectory(Lib/PermissionsPanel)
 
 # The switcher's pure logic (ranking, MRU, back stack, keybindings, context
 # providers) lives in a plain static library so it stays unit-testable without
@@ -120,6 +122,7 @@ add_library(RudderSwitcher STATIC
         Lib/Switcher/PanelFrame.cpp
         Lib/Switcher/Providers.cpp
         Lib/Switcher/Ranking.cpp
+        Lib/Switcher/RenamedAppIds.cpp
         Lib/Switcher/Renames.cpp
         Lib/Switcher/SnapshotFrame.cpp
         Lib/Switcher/TextFit.cpp
@@ -174,7 +177,7 @@ add_executable(Rudder
 target_link_libraries(Rudder PRIVATE eacp-ui PondApp RudderSwitcher RudderPlatform SearchKeys SessionLog)
 target_compile_definitions(Rudder PRIVATE RUDDER_VERSION="${PROJECT_VERSION}")
 
-set(BUNDLE_ID "com.pond.rudder")
+set(BUNDLE_ID "audio.pond.rudder")
 
 # LSUIElement: an agent app. It launches with no Dock icon and no flash before
 # setDockIconVisible(false) confirms it.

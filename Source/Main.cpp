@@ -17,6 +17,7 @@
 #include "Providers.h"
 #include "QuickWindow.h"
 #include "Ranking.h"
+#include "RenamedAppIds.h"
 #include "Renames.h"
 #include "Web.h"
 
@@ -144,9 +145,30 @@ void logPlatformMessage(const char* message)
     logEvent("platform.log", {{"text", message}});
 }
 
+// Stores rewritten from apps' old bundle ids this launch, logged once logging runs.
+std::vector<std::filesystem::path>& getFilesWithRenamedAppIds()
+{
+    static auto files = std::vector<std::filesystem::path> {};
+    return files;
+}
+
+std::filesystem::path getFavouritesFilePath()
+{
+    return std::filesystem::path {eacp::FilePath::homeDirectory().str()} / ".config"
+           / "rudder.json";
+}
+
+void replaceRenamedAppIdsInStores()
+{
+    const auto directory = emberstore::appDataDirectory("pond", "Rudder").str();
+    auto files = listJsonFiles(directory);
+    files.push_back(getFavouritesFilePath());
+    getFilesWithRenamedAppIds() = replaceRenamedAppIdsInFiles(files, getRenamedPondAppIds());
+}
+
 pondapp::SingleInstance& getRunningInstanceClaim()
 {
-    static auto claim = pondapp::SingleInstance {"com.pond.rudder"};
+    static auto claim = pondapp::SingleInstance {"audio.pond.rudder"};
     return claim;
 }
 
@@ -189,6 +211,9 @@ struct RudderApp
         quick_window::setLogger(logPlatformMessage);
         platform::setLogger(logPlatformMessage);
         logEvent("app.launch", {{"version", RUDDER_VERSION}});
+
+        for (const auto& file: getFilesWithRenamedAppIds())
+            logEvent("app.migrate-app-ids", {{"file", file.string()}});
 
         // Opening Rudder.app again while it runs (Finder, Spotlight) arrives
         // as a reopen: summon the panel. quick_window swallows the reopens its
@@ -1325,7 +1350,7 @@ struct RudderApp
     // reported in the footer and the last good list stays.
     static eacp::FilePath favouritesPath()
     {
-        return eacp::FilePath::homeDirectory() / ".config" / "rudder.json";
+        return eacp::FilePath {getFavouritesFilePath().string()};
     }
 
     void loadFavourites()
@@ -2391,5 +2416,6 @@ int main(int argc, char* argv[])
         && claim.handOverToRunningInstance(pondapp::getLaunchArguments(argc, argv)))
         return pondapp::exitCodeAnotherInstanceIsRunning;
 
+    replaceRenamedAppIdsInStores();
     return Apps::run<RudderApp>(argc, argv);
 }

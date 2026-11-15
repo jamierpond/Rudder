@@ -11,7 +11,7 @@ auto tRenameStored = test("Renames/a name is stored by key, trimmed, and survive
     = []
 {
     auto db = testing::freshDatabase("renames-store");
-    auto key = std::string {"com.eacp.cowterm/branch:fix-login"};
+    auto key = std::string {"audio.pond.cowterm/branch:fix-login"};
 
     {
         auto renames = RenameStore {db};
@@ -23,14 +23,14 @@ auto tRenameStored = test("Renames/a name is stored by key, trimmed, and survive
 
     auto again = RenameStore {db};
     check(again.nameFor(key) == "Login bug");
-    check(again.nameFor("com.eacp.cowterm/branch:other").empty());
+    check(again.nameFor("audio.pond.cowterm/branch:other").empty());
 };
 
 auto tEmptyNameClears = test("Renames/an empty name clears the rename") = []
 {
     auto db = testing::freshDatabase("renames-clear");
     auto renames = RenameStore {db};
-    auto key = std::string {"com.eacp.cowterm/path:/p/notes"};
+    auto key = std::string {"audio.pond.cowterm/path:/p/notes"};
 
     renames.set(key, "Notes");
     renames.set(key, "   ");

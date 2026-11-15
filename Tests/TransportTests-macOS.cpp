@@ -115,7 +115,7 @@ void waitWithoutPumping(std::chrono::milliseconds interval)
         usleep(static_cast<useconds_t>(std::chrono::microseconds {interval}.count()));
 }
 
-const auto hello = protocol::Hello {"Tests", "com.pond.rudder.tests", 0};
+const auto hello = protocol::Hello {"Tests", "audio.pond.rudder.tests", 0};
 } // namespace
 
 auto tLargePushSurvivesADeafServer =

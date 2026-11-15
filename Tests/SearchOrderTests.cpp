@@ -14,8 +14,8 @@ constexpr std::int64_t nowMs = 1'790'000'000'000LL;
 constexpr std::int64_t minuteMs = 60LL * 1000;
 
 constexpr auto grazerId = "audio.pond.grazer";
-constexpr auto cowTermId = "com.eacp.cowterm";
-constexpr auto grazerPaneKey = "com.eacp.cowterm/repo:/Users/j/projects/Grazer#branch:main";
+constexpr auto cowTermId = "audio.pond.cowterm";
+constexpr auto grazerPaneKey = "audio.pond.cowterm/repo:/Users/j/projects/Grazer#branch:main";
 
 RudderItem makeApp(const std::string& id, const std::string& title)
 {

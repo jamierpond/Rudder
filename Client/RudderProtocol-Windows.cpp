@@ -6,6 +6,6 @@ namespace rudder::protocol
 // stale file to sweep, as there is for the macOS socket.
 std::string endpoint()
 {
-    return "com.pond.rudder.contexts";
+    return "audio.pond.rudder.contexts";
 }
 } // namespace rudder::protocol

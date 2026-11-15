@@ -81,7 +81,7 @@ auto tClientAndServerTalk =
         return;
     }
 
-    auto client = RudderClient {{"Tests", "com.pond.rudder.tests", 0, true}};
+    auto client = RudderClient {{"Tests", "audio.pond.rudder.tests", 0, true}};
     auto activated = std::string {};
     auto previewed = std::string {};
     auto closed = std::string {};
@@ -102,7 +102,7 @@ auto tClientAndServerTalk =
 
     auto [id, hello] = *heard.hellos.begin();
     check(hello.app == "Tests");
-    check(hello.bundleId == "com.pond.rudder.tests");
+    check(hello.bundleId == "audio.pond.rudder.tests");
     check(hello.pid == (std::int64_t) GetCurrentProcessId());
     check(hello.canClose);
     check(heard.contexts[id] == pushed);
@@ -144,7 +144,7 @@ auto tClosingIsHeard =
         return;
 
     {
-        auto client = RudderClient {{"Tests", "com.pond.rudder.tests", 0}};
+        auto client = RudderClient {{"Tests", "audio.pond.rudder.tests", 0}};
         check(pumpUntil([&] { return !heard.hellos.empty(); }));
     }
 

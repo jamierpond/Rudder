@@ -24,7 +24,7 @@ constexpr std::int64_t dayMs = 24 * hourMs;
 // Monday 00:00 of the simulated week; any fixed stamp would do.
 constexpr std::int64_t monday = 1'790'000'000'000LL;
 
-constexpr auto cowTermId = "com.eacp.cowterm";
+constexpr auto cowTermId = "audio.pond.cowterm";
 
 struct Use
 {

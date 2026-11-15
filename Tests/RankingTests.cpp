@@ -260,7 +260,7 @@ namespace
 // Wim; the tests below hinge on the letters w, i, m, so it keeps the old name.
 std::vector<RudderItem> cowTermAndWim()
 {
-    auto cowTerm = app("com.eacp.cowterm", "CowTerm");
+    auto cowTerm = app("audio.pond.cowterm", "CowTerm");
     cowTerm.contexts = {
         {"pane:1", "~/projects/old-stuff/tamber-web-analytics-macos-shortcut", "", ""},
         {"pane:2", "~/projects/old-stuff/tamber-web-sonic-atlas-breakout-simplify-ci-more", "", ""},
@@ -331,7 +331,7 @@ std::vector<RudderItem> busyCowTerm()
         "image-cache", "video-encoder", "pdf-renderer", "markdown-parser",
         "json-schema", "proto-defs"};
 
-    auto cowTerm = app("com.eacp.cowterm", "CowTerm");
+    auto cowTerm = app("audio.pond.cowterm", "CowTerm");
     auto tab = 0;
 
     for (auto& name: names)
@@ -414,22 +414,22 @@ auto tTitleStillFinds = test("Ranking/the title still finds the pane") = []
 
     // Nothing else has those letters close together; the subtitles and long
     // paths add no stragglers.
-    check(countFrom(ranked, "com.eacp.cowterm") == 1);
+    check(countFrom(ranked, "audio.pond.cowterm") == 1);
 };
 
 auto tScatteredPathsDontFlood =
     test("Ranking/letters scattered through paths and subtitles don't match") = []
 {
     // u(sers) j(amie)p(on)d: in every path, all of it far apart.
-    check(countFrom(rankItems(busyCowTerm(), "ujpd"), "com.eacp.cowterm") == 0);
+    check(countFrom(rankItems(busyCowTerm(), "ujpd"), "audio.pond.cowterm") == 0);
 
     // Ta(b) (1)2 · mai(n) in the subtitles, likewise.
-    check(countFrom(rankItems(busyCowTerm(), "b1n"), "com.eacp.cowterm") == 0);
+    check(countFrom(rankItems(busyCowTerm(), "b1n"), "audio.pond.cowterm") == 0);
 };
 
 auto tBranchNotShown = test("Ranking/the provider names the row; Rudder doesn't add the branch") = []
 {
-    auto cowTerm = app("com.eacp.cowterm", "CowTerm");
+    auto cowTerm = app("audio.pond.cowterm", "CowTerm");
 
     auto pane = RudderContext {"pane:1", "main · claude", "Tab 1", ""};
     pane.branch = "main";
@@ -453,8 +453,8 @@ auto tOriginContextsPreview =
 
     auto window = RudderItem {};
     window.kind = "window";
-    window.id = "com.eacp.cowterm/w1";
-    window.appId = "com.eacp.cowterm";
+    window.id = "audio.pond.cowterm/w1";
+    window.appId = "audio.pond.cowterm";
     window.contextId = "w1";
     check(isPreviewable(window, true));
 };
@@ -472,7 +472,7 @@ auto tFavouriteKeyedByTarget = test("Ranking/a favourite's frecency is keyed by 
 
 auto tClosedBelowOpen = test("Ranking/a branch with no pane ranks below an open pane that matches as well") = []
 {
-    auto cowTerm = app("com.eacp.cowterm", "CowTerm");
+    auto cowTerm = app("audio.pond.cowterm", "CowTerm");
 
     auto place = RudderContext {"place:fix", "fix-login", "", ""};
     place.open = false;
@@ -514,44 +514,44 @@ RudderItem rowFor(const std::vector<RudderItem>& ranked, const std::string& cont
 auto tContextKeyStable
     = test("Ranking/a context is keyed by repository and branch, else path, else id") = []
 {
-    auto cowTerm = "com.eacp.cowterm";
+    auto cowTerm = "audio.pond.cowterm";
 
     check(contextKey(cowTerm, pane("pane:aaa", "x", "fix-login", "/p/web"))
-          == "com.eacp.cowterm/repo:/p#branch:fix-login");
+          == "audio.pond.cowterm/repo:/p#branch:fix-login");
     check(contextKey(cowTerm, pane("pane:bbb", "x", "", "/p/notes"))
-          == "com.eacp.cowterm/path:/p/notes");
-    check(contextKey(cowTerm, pane("tab-4", "x", "", "")) == "com.eacp.cowterm/tab-4");
+          == "audio.pond.cowterm/path:/p/notes");
+    check(contextKey(cowTerm, pane("tab-4", "x", "", "")) == "audio.pond.cowterm/tab-4");
 };
 
 auto tSameBranchInOtherReposDiffers
     = test("Ranking/the same branch in two repositories is two contexts") = []
 {
-    auto cowTerm = "com.eacp.cowterm";
+    auto cowTerm = "audio.pond.cowterm";
     auto inEacp = pane("pane:1", "x", "develop", "/p/eacp", "/p/eacp");
     auto inWeb = pane("pane:2", "x", "develop", "/p/tamber-web", "/p/tamber-web");
 
-    check(contextKey(cowTerm, inEacp) == "com.eacp.cowterm/repo:/p/eacp#branch:develop");
+    check(contextKey(cowTerm, inEacp) == "audio.pond.cowterm/repo:/p/eacp#branch:develop");
     check(contextKey(cowTerm, inEacp) != contextKey(cowTerm, inWeb));
 };
 
 auto tBranchWithoutRepoKeysByPath
     = test("Ranking/a branch without a repository is keyed by its path") = []
 {
-    check(contextKey("com.eacp.cowterm", pane("pane:1", "x", "develop", "/p/web", ""))
-          == "com.eacp.cowterm/path:/p/web");
+    check(contextKey("audio.pond.cowterm", pane("pane:1", "x", "develop", "/p/web", ""))
+          == "audio.pond.cowterm/path:/p/web");
 };
 
 auto tPaneAndPlaceShareKey
     = test("Ranking/a new shell and its branch's place share the row's key") = []
 {
-    auto cowTerm = app("com.eacp.cowterm", "CowTerm");
+    auto cowTerm = app("audio.pond.cowterm", "CowTerm");
     auto place = pane("place:/p/web-fix", "web-fix", "fix-login", "/p/web-fix", "/p/web-fix");
     place.open = false;
     cowTerm.contexts = {pane("pane:111", "claude", "fix-login", "/p/web-fix/src", "/p/web-fix"),
                         pane("pane:222", "claude", "fix-login", "/p/web-fix", "/p/web-fix"),
                         place};
 
-    auto key = std::string {"com.eacp.cowterm/repo:/p/web-fix#branch:fix-login"};
+    auto key = std::string {"audio.pond.cowterm/repo:/p/web-fix#branch:fix-login"};
 
     for (auto query: {"claude", "web-fix"})
     {
@@ -580,7 +580,7 @@ std::vector<RudderItem> workday()
 {
     auto safari = app("com.apple.Safari", "Safari");
     auto grazer = app("audio.pond.grazer", "Grazer");
-    auto cowTerm = app("com.eacp.cowterm", "CowTerm");
+    auto cowTerm = app("audio.pond.cowterm", "CowTerm");
     auto focused = pane("pane:3", "claude", "rudder-rename", "/p/rudder");
     focused.focused = true;
     cowTerm.contexts = {pane("pane:1", "claude", "fix-login", "/p/web"),
@@ -595,10 +595,10 @@ auto tEmptyListHasRecentContexts
 {
     auto stamps = std::map<std::string, std::int64_t> {
         {"audio.pond.grazer", now - 3 * hour},
-        {"com.eacp.cowterm", now - 1 * hour},
-        {"com.eacp.cowterm/repo:/p#branch:fix-login", now - 2 * hour},
-        {"com.eacp.cowterm/repo:/p#branch:old-work", now - 72 * hour},
-        {"com.eacp.cowterm/repo:/p#branch:rudder-rename", now - 1 * hour}};
+        {"audio.pond.cowterm", now - 1 * hour},
+        {"audio.pond.cowterm/repo:/p#branch:fix-login", now - 2 * hour},
+        {"audio.pond.cowterm/repo:/p#branch:old-work", now - 72 * hour},
+        {"audio.pond.cowterm/repo:/p#branch:rudder-rename", now - 1 * hour}};
 
     auto list = rankItems(workday(), "", {}, recencyOf(stamps, "com.apple.Safari"));
 
@@ -616,16 +616,16 @@ auto tEmptyListSkipsWhereYouAre
 {
     auto stamps = std::map<std::string, std::int64_t> {
         {"audio.pond.grazer", now - 3 * hour},
-        {"com.eacp.cowterm/repo:/p#branch:fix-login", now - 2 * hour},
-        {"com.eacp.cowterm/repo:/p#branch:rudder-rename", now - 1 * hour}};
+        {"audio.pond.cowterm/repo:/p#branch:fix-login", now - 2 * hour},
+        {"audio.pond.cowterm/repo:/p#branch:rudder-rename", now - 1 * hour}};
 
-    auto list = rankItems(workday(), "", {}, recencyOf(stamps, "com.eacp.cowterm"));
+    auto list = rankItems(workday(), "", {}, recencyOf(stamps, "audio.pond.cowterm"));
 
     // CowTerm's "Current" row is shadowed by its other pane, so the
     // selection starts on the first row.
     check(titles(list) == std::vector<std::string> {"claude", "Grazer", "Safari"});
     check(list[0].contextId == "pane:1");
-    check(initialSelection(list, "", "com.eacp.cowterm") == 0);
+    check(initialSelection(list, "", "audio.pond.cowterm") == 0);
 };
 
 auto tEmptyListKeepsAppWithoutRecentContexts
@@ -633,8 +633,8 @@ auto tEmptyListKeepsAppWithoutRecentContexts
 {
     auto stamps = std::map<std::string, std::int64_t> {
         {"audio.pond.grazer", now - 3 * hour},
-        {"com.eacp.cowterm", now - 1 * hour},
-        {"com.eacp.cowterm/repo:/p#branch:old-work", now - 72 * hour}};
+        {"audio.pond.cowterm", now - 1 * hour},
+        {"audio.pond.cowterm/repo:/p#branch:old-work", now - 72 * hour}};
 
     auto list = rankItems(workday(), "", {}, recencyOf(stamps, "com.apple.Safari"));
 
@@ -653,14 +653,14 @@ auto tTypedQueryKeepsAppWithoutContexts
 auto tEmptyListLimited = test("Ranking/no query lists at most a handful of contexts, one per key")
     = []
 {
-    auto cowTerm = app("com.eacp.cowterm", "CowTerm");
+    auto cowTerm = app("audio.pond.cowterm", "CowTerm");
     auto stamps = std::map<std::string, std::int64_t> {};
 
     for (int i = 0; i < 10; ++i)
     {
         auto branch = "b" + std::to_string(i);
         cowTerm.contexts.push_back(pane("pane:" + branch, branch, branch, "/p"));
-        stamps["com.eacp.cowterm/repo:/p#branch:" + branch] = now - i * hour;
+        stamps["audio.pond.cowterm/repo:/p#branch:" + branch] = now - i * hour;
     }
 
     // A second pane and a place on b0: still one row, the open pane.
@@ -682,7 +682,7 @@ auto tEmptyListLimited = test("Ranking/no query lists at most a handful of conte
 auto tRenamedRowShowsName = test("Ranking/a renamed context shows its name, the old title after")
     = []
 {
-    auto cowTerm = app("com.eacp.cowterm", "CowTerm");
+    auto cowTerm = app("audio.pond.cowterm", "CowTerm");
     auto named = pane("pane:1", "claude", "fix-login", "/p");
     named.subtitle = "Tab 1";
     named.name = "Login bug";
@@ -712,7 +712,7 @@ auto tClosedTabIsGone = test("Ranking/a tab missing from the next push is gone")
 auto tKeyStillCarriedIsntGone
     = test("Ranking/a closed pane whose branch another pane or place carries isn't gone") = []
 {
-    auto cowTerm = "com.eacp.cowterm";
+    auto cowTerm = "audio.pond.cowterm";
     auto place = pane("place:/p/web-fix", "web-fix", "fix-login", "/p/web-fix");
     place.open = false;
 
@@ -729,13 +729,13 @@ auto tKeyStillCarriedIsntGone
 
     // Everything on fix-login goes: one key, once.
     check(goneContextKeys(cowTerm, before, {before[3]})
-          == std::vector<std::string> {"com.eacp.cowterm/repo:/p#branch:fix-login"});
+          == std::vector<std::string> {"audio.pond.cowterm/repo:/p#branch:fix-login"});
 };
 
 auto tMovedPaneIsntGone
     = test("Ranking/a pane that changed branch or directory isn't gone") = []
 {
-    auto cowTerm = "com.eacp.cowterm";
+    auto cowTerm = "audio.pond.cowterm";
     auto before = std::vector<RudderContext> {pane("pane:1", "zsh", "fix-login", "/p/web"),
                                               pane("pane:2", "zsh", "", "/p/notes")};
     auto after = std::vector<RudderContext> {pane("pane:1", "zsh", "main", "/p/web"),
@@ -761,7 +761,7 @@ auto tIdOnlyKeys = test("Ranking/only contexts with no branch or path are keyed 
 auto tPickWhereYouAre
     = test("Ranking/Enter on the app summoned over, or the pane it shows, isn't a pick") = []
 {
-    auto cowTerm = app("com.eacp.cowterm", "CowTerm");
+    auto cowTerm = app("audio.pond.cowterm", "CowTerm");
     auto shown = pane("pane:1", "claude", "fix-login", "/p/web");
     shown.focused = true;
     auto other = pane("pane:2", "zsh", "rename", "/p/rudder");
@@ -770,10 +770,10 @@ auto tPickWhereYouAre
     auto shownRow = rowFor(rankItems({cowTerm}, "claude"), "pane:1");
     auto otherRow = rowFor(rankItems({cowTerm}, "zsh"), "pane:2");
 
-    check(!pickMoves(cowTerm, "com.eacp.cowterm", cowTerm.contexts));
-    check(!pickMoves(shownRow, "com.eacp.cowterm", cowTerm.contexts));
-    check(pickMoves(otherRow, "com.eacp.cowterm", cowTerm.contexts));
-    check(pickMoves(app("com.apple.Safari", "Safari"), "com.eacp.cowterm", cowTerm.contexts));
+    check(!pickMoves(cowTerm, "audio.pond.cowterm", cowTerm.contexts));
+    check(!pickMoves(shownRow, "audio.pond.cowterm", cowTerm.contexts));
+    check(pickMoves(otherRow, "audio.pond.cowterm", cowTerm.contexts));
+    check(pickMoves(app("com.apple.Safari", "Safari"), "audio.pond.cowterm", cowTerm.contexts));
 
     // Summoned over another app, every CowTerm row goes somewhere.
     check(pickMoves(cowTerm, "com.apple.Safari", {}));

@@ -75,7 +75,7 @@ export async function main(fn) {
 
 // Rudder as the dev scripts see it: which privacy grants a dev launch resets.
 export const RUDDER = {
-  bundleId: 'com.pond.rudder',
+  bundleId: 'audio.pond.rudder',
   devResetsPrivacy: ['Accessibility'],
 };
 
