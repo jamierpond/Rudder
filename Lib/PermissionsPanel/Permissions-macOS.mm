@@ -315,6 +315,37 @@ void requestFilesAndFolders(bool prompted, std::function<void()> done)
         });
 }
 
+// CGPreflightScreenCaptureAccess keeps its first answer for the life of the
+// process, so a grant made while the panel is open would never show. Window
+// titles of other apps are only visible with the grant, and that is live.
+bool canSeeOtherAppsWindowTitles()
+{
+    auto* windows = (NSArray*) CFBridgingRelease(CGWindowListCopyWindowInfo(
+        kCGWindowListOptionOnScreenOnly, kCGNullWindowID));
+    const auto ownPid = getpid();
+
+    for (NSDictionary* window in windows)
+    {
+        auto* ownerPid = (NSNumber*) window[(__bridge NSString*) kCGWindowOwnerPID];
+        auto* owner = (NSString*) window[(__bridge NSString*) kCGWindowOwnerName];
+        auto* title = (NSString*) window[(__bridge NSString*) kCGWindowName];
+
+        if (ownerPid.intValue == ownPid || [owner isEqualToString:@"Window Server"]
+            || [owner isEqualToString:@"Dock"])
+            continue;
+
+        if (title.length > 0)
+            return true;
+    }
+
+    return false;
+}
+
+Status screenRecordingStatus()
+{
+    return statusFromGranted(CGPreflightScreenCaptureAccess() || canSeeOtherAppsWindowTitles());
+}
+
 void requestScreenRecording(bool prompted)
 {
     // CGRequestScreenCaptureAccess shows macOS's prompt the first time only.
@@ -361,7 +392,7 @@ Status check(Kind kind)
             refreshNotifications();
             return notificationStatus;
         case Kind::screenRecording:
-            return statusFromGranted(CGPreflightScreenCaptureAccess());
+            return screenRecordingStatus();
         case Kind::systemAudioRecording:
             // No public API reports it; the first recording asks.
             return Status::unknown;
