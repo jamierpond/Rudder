@@ -89,3 +89,9 @@ auto tUrlHostWordStart = test("FrecencySearch/a word of the url host starts the 
     check(findMatchLevel("google", inbox) == MatchLevel::nameContainsQueryOrDetailWordStartsWithQuery);
     check(!findMatchLevel("gmail", inbox));
 };
+
+auto tWholeWordBeforeCamelCase = test("FrecencySearch/github starts a word of Sign in to GitHub") = []
+{
+    check(findNameMatchLevel("github", "Sign in to GitHub · GitHub") == MatchLevel::nameWordStartsWithQuery);
+    check(findNameMatchLevel("hub", "Sign in to GitHub") == MatchLevel::nameWordStartsWithQuery);
+};

@@ -70,11 +70,39 @@ std::string joinWords(const std::vector<std::string>& words)
     return joined;
 }
 
+// Where a whole word -- between spaces or punctuation, CamelCase kept
+// together -- starts with the query: 0 for the first word.
+std::optional<std::size_t> findWholeWordStartingWith(std::string_view text,
+                                                     std::string_view normalisedQuery)
+{
+    auto lowerText = toLowerText(text);
+    auto wordIndex = std::size_t {0};
+
+    for (std::size_t index = 0; index < lowerText.size(); ++index)
+    {
+        auto startsWord = isLetterOrDigit(text[index]) && (index == 0 || !isLetterOrDigit(text[index - 1]));
+
+        if (!startsWord)
+            continue;
+
+        if (lowerText.compare(index, normalisedQuery.size(), normalisedQuery) == 0)
+            return wordIndex;
+
+        ++wordIndex;
+    }
+
+    return std::nullopt;
+}
+
 // Where in the joined words the query starts on a word: 0 for the first
-// word, the word's index otherwise.
+// word, the word's index otherwise. Whole words first, then CamelCase and
+// digit parts.
 std::optional<std::size_t> findWordStartingWith(std::string_view text,
                                                 std::string_view normalisedQuery)
 {
+    if (auto wholeWordIndex = findWholeWordStartingWith(text, normalisedQuery))
+        return wholeWordIndex;
+
     auto words = splitIntoWords(text);
     auto joined = joinWords(words);
     auto offset = std::size_t {0};
