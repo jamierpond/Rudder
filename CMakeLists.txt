@@ -77,6 +77,16 @@ lockstep_add_package(
         GIT_TAG jp/windows-apps
         SYSTEM YES)
 
+# Crash reports (Crashout): Rudder writes one to
+# <app support>/Rudder/Crashes/pending/<id>/ when it crashes, which
+# scripts/crash-reports.py lists. Added here, past the client-only return, so
+# Grazer and CowTerm never get a second copy through RudderClient.
+lockstep_add_package(
+        NAME Crashout
+        GITHUB_REPOSITORY jamierpond/Crashout
+        GIT_TAG main
+        SYSTEM YES)
+
 # Local persistence (Firestore-flavoured JSON documents). Must come after
 # eacp -- emberstore fetches its own copy only when no eacp targets exist.
 lockstep_add_package(
@@ -175,6 +185,23 @@ add_executable(Rudder
 
 target_link_libraries(Rudder PRIVATE eacp-ui PondApp RudderSwitcher RudderPlatform SearchKeys SessionLog)
 target_compile_definitions(Rudder PRIVATE RUDDER_VERSION="${PROJECT_VERSION}")
+
+set(RUDDER_VERSION_HEADER ${PROJECT_BINARY_DIR}/generated/RudderVersion.h)
+add_custom_target(RudderVersion
+        BYPRODUCTS ${RUDDER_VERSION_HEADER}
+        COMMAND ${CMAKE_COMMAND}
+                -DSRC=${CMAKE_SOURCE_DIR}
+                -DIN=${CMAKE_SOURCE_DIR}/Source/Version.h.in
+                -DOUT=${RUDDER_VERSION_HEADER}
+                -DRUDDER_PROJECT_VERSION=${PROJECT_VERSION}
+                -P ${CMAKE_SOURCE_DIR}/cmake/GitVersion.cmake
+        COMMENT "Stamping git version")
+
+add_dependencies(Rudder RudderVersion)
+target_include_directories(Rudder PRIVATE ${PROJECT_BINARY_DIR}/generated)
+
+eacp_enable_crash_reporting(Rudder SYMBOLS_DIR ${PROJECT_BINARY_DIR}/symbols)
+target_link_libraries(Rudder PRIVATE eacp-crash-faults)
 
 set(BUNDLE_ID "audio.pond.rudder")
 

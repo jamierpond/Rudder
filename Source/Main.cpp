@@ -30,6 +30,12 @@
 #include <SessionLog/EventLine.h>
 #include <SessionLog/SessionLog.h>
 
+#if EACP_CRASH_REPORTING
+#include <eacp/CrashReporting/CrashReporting.h>
+#include <eacp/CrashReporting/Faults/Faults.h>
+#include <RudderVersion.h>
+#endif
+
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -43,6 +49,7 @@
 #include <mutex>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <utility>
 #include <vector>
@@ -2343,6 +2350,22 @@ struct RudderApp
 
 namespace
 {
+#if EACP_CRASH_REPORTING
+// `Rudder --crash-for-testing <fault>` crashes on purpose with one of Crashout's
+// faults (nullptr, abort, stackoverflow, ...), to check a crash report end to end.
+constexpr auto crashForTestingFlag = std::string_view {"--crash-for-testing"};
+
+void crashIfAskedToForTesting(int argc, char** argv)
+{
+    for (auto index = 1; index + 1 < argc; ++index)
+    {
+        if (argv[index] == crashForTestingFlag)
+            CrashReporting::Faults::triggerFault(argv[index + 1],
+                                                 CrashReporting::Faults::ThreadChoice::main);
+    }
+}
+#endif
+
 // `Rudder --snapshot <dir>`: render the panel with no window -- the switcher
 // over the apps running now, then the unlock overlay -- to panel.png and
 // unlock.png. Real pixels from the real views, for docs, on a machine where
@@ -2407,6 +2430,11 @@ int snapshot(const std::string& directory)
 
 int main(int argc, char* argv[])
 {
+#if EACP_CRASH_REPORTING
+    if (auto handlerExitCode = CrashReporting::runHandlerIfRequested(argc, argv))
+        return *handlerExitCode;
+#endif
+
     if (argc == 3 && std::string {argv[1]} == "--snapshot")
         return snapshot(argv[2]);
 
@@ -2415,6 +2443,13 @@ int main(int argc, char* argv[])
     if (!claim.isTheRunningInstance()
         && claim.handOverToRunningInstance(pondapp::getLaunchArguments(argc, argv)))
         return pondapp::exitCodeAnotherInstanceIsRunning;
+
+#if EACP_CRASH_REPORTING
+    auto crashReportingOptions = CrashReporting::Options {};
+    crashReportingOptions.release = rudder::versionTag();
+    CrashReporting::start(crashReportingOptions);
+    crashIfAskedToForTesting(argc, argv);
+#endif
 
     replaceRenamedAppIdsInStores();
     return Apps::run<RudderApp>(argc, argv);

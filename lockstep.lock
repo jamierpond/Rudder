@@ -2,6 +2,22 @@
   "bootstrap": "cmake/lockstep.cmake",
   "packages": [
     {
+      "commit": "81ef584ba4c1313c265d83d8d5c0c52c8ebfca05",
+      "hash": "ceda5fe154b85fb7ec05ed3afe9245fb0fb71cbeb5abfc0e473448ab35bcec79",
+      "kind": "git",
+      "name": "Crashout",
+      "patches": [],
+      "requestedRef": "main",
+      "submoduleSelection": {
+        "isRecursive": true,
+        "isRestricted": false,
+        "paths": []
+      },
+      "submodules": [],
+      "url": "https://github.com/jamierpond/Crashout.git",
+      "usesGitLfs": false
+    },
+    {
       "commit": "9f26b4a120ef7e97a5f6d430c1bd9010d23e3709",
       "hash": "efc3c23665509c858b1cf7da9aaa41ba1423fb3c89b6381a98da6a2cbff3d06c",
       "kind": "git",
@@ -194,6 +210,6 @@
       "usesGitLfs": false
     }
   ],
-  "root": "40af1402e5822afc744b860d7356cfbc00da8da0f919f602c7e8b5416e62f594",
+  "root": "3630a1a45bd4003c7ea92bca843b4fc49373ceef7c7b963e5a69bb1e2c4df838",
   "version": 1
 }

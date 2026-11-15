@@ -4,7 +4,7 @@
 //
 // A running Rudder is quit first, as run-windows.mjs does. Windows can rename
 // an exe that is still mapped but not overwrite it, so a copy that fails
-// moves the old exe aside to Rudder.exe.old (swept on the next install) and
+// moves the old file aside to <name>.old (swept on the next install) and
 // tries again. The installed Rudder is then launched: it registers itself to
 // start at login against its own path, which takes the Run key off whichever
 // build last claimed it.
@@ -18,20 +18,30 @@ import { RELEASE_BUILD_DIR, lockstepSourceArgs, main, run } from './lib.mjs';
 
 const DIR = join(process.env.LOCALAPPDATA, 'Programs', 'Rudder');
 const EXE = join(DIR, 'Rudder.exe');
-const OLD = `${EXE}.old`;
 
-function install(built) {
-  mkdirSync(DIR, { recursive: true });
+// Windows Error Reporting loads the helper DLL from beside Rudder.exe to report
+// the crashes no in-process handler sees (fast-fail, heap corruption).
+const INSTALLED_FILE_NAMES = ['Rudder.exe', 'eacp-windows-error-reporting-helper.dll'];
 
-  if (existsSync(OLD))
-    rmSync(OLD, { force: true, maxRetries: 3 });
+function installFile(source, target) {
+  const old = `${target}.old`;
+
+  if (existsSync(old))
+    rmSync(old, { force: true, maxRetries: 3 });
 
   try {
-    copyFileSync(built, EXE);
+    copyFileSync(source, target);
   } catch {
-    renameSync(EXE, OLD);
-    copyFileSync(built, EXE);
+    renameSync(target, old);
+    copyFileSync(source, target);
   }
+}
+
+function install(buildDirectory) {
+  mkdirSync(DIR, { recursive: true });
+
+  for (const name of INSTALLED_FILE_NAMES)
+    installFile(join(buildDirectory, name), join(DIR, name));
 }
 
 // Through WScript.Shell, which is what writes a .lnk from a script.
@@ -61,7 +71,7 @@ await main(async () => {
 
   await run('taskkill', ['/IM', 'Rudder.exe', '/F'], { allowFail: true, stdio: 'ignore' });
 
-  install(join(RELEASE_BUILD_DIR, 'Rudder.exe'));
+  install(RELEASE_BUILD_DIR);
   await startMenuShortcut();
   console.log('Added a Start Menu shortcut');
 
