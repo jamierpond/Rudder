@@ -73,6 +73,25 @@ RunningApp describe(NSRunningApplication* app)
     return {idOf(app), toString(app.localizedName), app.processIdentifier};
 }
 
+bool isListedApp(NSRunningApplication* app)
+{
+    return app.activationPolicy == NSApplicationActivationPolicyRegular && !app.terminated
+           && !isSelf(app);
+}
+
+// An app without a bundle id is filed as "pid:<n>"; only a full scan finds it.
+std::optional<RunningApp> findRunningAppWithoutBundleId(const std::string& id)
+{
+    if (!id.starts_with("pid:"))
+        return std::nullopt;
+
+    for (NSRunningApplication* app in NSWorkspace.sharedWorkspace.runningApplications)
+        if (isListedApp(app) && idOf(app) == id)
+            return describe(app);
+
+    return std::nullopt;
+}
+
 NSRunningApplication* lookUp(const RunningApp& app)
 {
     return [NSRunningApplication runningApplicationWithProcessIdentifier:app.pid];
@@ -226,11 +245,22 @@ std::vector<RunningApp> runningApps()
     auto apps = std::vector<RunningApp> {};
 
     for (NSRunningApplication* app in NSWorkspace.sharedWorkspace.runningApplications)
-        if (app.activationPolicy == NSApplicationActivationPolicyRegular
-            && !app.terminated && !isSelf(app))
+        if (isListedApp(app))
             apps.push_back(describe(app));
 
     return apps;
+}
+
+std::optional<RunningApp> findRunningApp(const std::string& id)
+{
+    auto* bundleId = [NSString stringWithUTF8String:id.c_str()];
+
+    for (NSRunningApplication* app in
+         [NSRunningApplication runningApplicationsWithBundleIdentifier:bundleId])
+        if (isListedApp(app))
+            return describe(app);
+
+    return findRunningAppWithoutBundleId(id);
 }
 
 RunningApp frontmostApp()
@@ -1662,8 +1692,15 @@ void showPreviewSnapshot(NSImage* image, const rudder::ScreenRect& cocoaFrame)
     }
 
     previewSnapshotImageView.image = image;
-    [previewSnapshotWindow setFrame:frame display:YES];
-    [previewSnapshotWindow orderFrontRegardless];
+
+    if (!NSEqualRects(previewSnapshotWindow.frame, frame))
+        [previewSnapshotWindow setFrame:frame display:YES];
+
+    previewSnapshotWindow.alphaValue = 1.0;
+
+    if (!previewSnapshotWindow.visible)
+        [previewSnapshotWindow orderFrontRegardless];
+
     [previewSnapshotWindow invalidateShadow];
 }
 } // namespace
@@ -1671,6 +1708,12 @@ void showPreviewSnapshot(NSImage* image, const rudder::ScreenRect& cocoaFrame)
 void hidePreviewSnapshot()
 {
     ++latestPreview;
+    previewSnapshotWindow.alphaValue = 0.0;
+}
+
+void removePreviewSnapshot()
+{
+    hidePreviewSnapshot();
     [previewSnapshotWindow orderOut:nil];
 }
 
@@ -1710,7 +1753,7 @@ void previewApp(const RunningApp& app,
                        if (image != nil)
                            showPreviewSnapshot(image, frame);
                        else
-                           [previewSnapshotWindow orderOut:nil];
+                           previewSnapshotWindow.alphaValue = 0.0;
 
                        if (*done)
                            (*done)(std::move(*result));

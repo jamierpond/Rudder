@@ -905,11 +905,7 @@ struct RudderApp
     // From the OS at the moment of the call, never the summon's snapshot.
     std::optional<platform::RunningApp> findRunningNow(const std::string& id)
     {
-        for (auto& app: platform::runningApps())
-            if (app.id == id)
-                return app;
-
-        return std::nullopt;
+        return platform::findRunningApp(id);
     }
 
     std::optional<platform::RunningApp> findRunning(const std::string& id)
@@ -995,7 +991,7 @@ struct RudderApp
         syncAccessibilityGate(false);
         stopKeyCapture();
         platform::stopWatchingWindows();
-        platform::hidePreviewSnapshot();
+        platform::removePreviewSnapshot();
         previewedId.clear();
 
         // Deferred on macOS: hiding a key panel while the app is active
@@ -1155,11 +1151,13 @@ struct RudderApp
         if (!panelVisible || filtered.empty())
             return;
 
+        auto start = uptime();
         selected = std::clamp(selected + delta, 0, (int) filtered.size() - 1);
         visit.highlightMoves++;
-        logSelectedRow("switcher.highlight", {{"delta", delta}});
         previewSelection();
         publishResults();
+        logSelectedRow("switcher.highlight", {{"delta", delta}});
+        logEvent("switcher.move", {{"ms", millis(uptime() - start)}});
     }
 
     // Grazer's palette preview, for windows: whenever the results change -- a

@@ -1018,6 +1018,15 @@ std::vector<RunningApp> runningApps()
     return apps;
 }
 
+std::optional<RunningApp> findRunningApp(const std::string& id)
+{
+    for (auto& app: runningApps())
+        if (app.id == id)
+            return app;
+
+    return std::nullopt;
+}
+
 RunningApp frontmostApp()
 {
     auto foreground = GetForegroundWindow();
@@ -1123,6 +1132,8 @@ void previewApp(const RunningApp& app,
 }
 
 void hidePreviewSnapshot() {}
+
+void removePreviewSnapshot() {}
 
 bool screenRecordingAllowedRequestingOnce()
 {

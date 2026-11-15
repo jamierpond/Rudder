@@ -6,6 +6,7 @@
 #include <eacp/Graphics/Graphics.h>
 
 #include <functional>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -29,6 +30,9 @@ struct RunningApp
 
 // Every running regular app except Rudder, in the OS's launch order.
 std::vector<RunningApp> runningApps();
+
+// The running regular app with this id, asking the OS about that app alone.
+std::optional<RunningApp> findRunningApp(const std::string& id);
 
 // The app that currently has the user's focus; empty id when that is Rudder
 // or nothing.
@@ -99,8 +103,12 @@ void previewApp(const RunningApp& app,
                 bool captureSnapshot,
                 std::function<void(PreviewResult)> onDone);
 
-// Takes the snapshot off the screen and drops any capture in flight.
+// Makes the snapshot invisible and drops any capture in flight. The window
+// stays ordered in: ordering it out costs a WindowServer round trip per move.
 void hidePreviewSnapshot();
+
+// Orders the snapshot window out, for when the panel closes.
+void removePreviewSnapshot();
 
 // Whether Rudder holds the Screen Recording grant the snapshots need. The
 // first call per launch that finds it missing asks macOS for it, which shows
