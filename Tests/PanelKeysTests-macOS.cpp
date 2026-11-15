@@ -67,3 +67,19 @@ auto tPanelWordBack = test("PanelKeys/b from the end of hello world goes back a 
     panel.keyDown(makeLetterKey('x'));
     check(panel.getQueryText() == "hello orld");
 };
+
+auto tPanelControlWDeletesWord = test("PanelKeys/ctrl+w in insert mode deletes the word behind the caret") = []
+{
+    auto panel = PanelView {};
+    panel.reset(false);
+    typeText(panel, "hello world");
+
+    auto controlW = Graphics::KeyEvent {};
+    controlW.characters = "\x17";
+    controlW.charactersIgnoringModifiers = "w";
+    controlW.keyCode = Graphics::KeyCode::W;
+    controlW.modifiers.control = true;
+    panel.keyDown(controlW);
+
+    check(panel.getQueryText() == "hello ");
+};
