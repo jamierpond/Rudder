@@ -58,6 +58,13 @@ void LearnedPickStore::forgetExpiredPicks(std::int64_t nowMs)
         entries.remove(calculateEntryId(pick.query, pick.destinationKey));
 }
 
+void LearnedPickStore::forgetDestination(const std::string& destinationKey)
+{
+    for (auto& pick: getAllPicks())
+        if (pick.destinationKey == destinationKey)
+            entries.remove(calculateEntryId(pick.query, pick.destinationKey));
+}
+
 std::vector<frecencysearch::LearnedPick> LearnedPickStore::getAllPicks()
 {
     auto picks = std::vector<frecencysearch::LearnedPick> {};

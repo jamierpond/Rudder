@@ -3,6 +3,7 @@
 #include "Favourites.h"
 #include "Focus.h"
 #include "Frecency.h"
+#include "ClosingContexts.h"
 #include "LearnedPickStore.h"
 #include "ContextServer.h"
 #include "Icon.h"
@@ -1067,7 +1068,7 @@ struct RudderApp
 
         orderBaseList();
 
-        filtered = rankWithWeb(allItems, query, webSettings(), searchUsageFor(query), recencyLookup());
+        filtered = rankVisibleRows();
         selected = initialSelection(filtered, query, frontAppId);
         pendingPreview.reset();
         previewedId.clear();
@@ -1115,7 +1116,7 @@ struct RudderApp
         query = text;
         logEvent(("query '" + query + "'").c_str());
         logEvent(("line edit: " + std::to_string(query.size()) + " chars").c_str());
-        filtered = rankWithWeb(allItems, query, webSettings(), searchUsageFor(query), recencyLookup());
+        filtered = rankVisibleRows();
         selected = initialSelection(filtered, query, frontAppId);
         previewSelection();
         dumpReason = PanelDumpReason::query;
@@ -1411,7 +1412,7 @@ struct RudderApp
     void rebuildFavouriteRows()
     {
         orderBaseList();
-        filtered = rankWithWeb(allItems, query, webSettings(), searchUsageFor(query), recencyLookup());
+        filtered = rankVisibleRows();
         selected = std::clamp(selected, 0, std::max((int) filtered.size() - 1, 0));
         publishResults();
     }
@@ -1610,6 +1611,9 @@ struct RudderApp
                 contexts.push_back(std::move(converted));
             }
 
+            contexts = closingContexts.removeClosingContexts(
+                app->second, std::move(contexts), FrecencyStore::nowMs());
+
             logEvent(("provider contexts: " + app->second + " "
                       + std::to_string(contexts.size()))
                          .c_str());
@@ -1701,6 +1705,7 @@ struct RudderApp
         {
             logEvent(("forget " + key).c_str());
             frecency.forget(key);
+            learnedPicks.forgetDestination(key);
             mru.forget(key);
             renames.forget(key);
             focus.forgetKey(key);
@@ -1815,10 +1820,10 @@ struct RudderApp
     // A push, a window change or a rename while the panel is up: the listed
     // rows take their live data in place. Which rows, their order and the
     // selection change only on a keystroke or a summon; a row whose context
-    // closed stays listed.
+    // closed in its app stays listed until then.
     void refreshListedRows()
     {
-        auto fresh = rankWithWeb(allItems, query, webSettings(), searchUsageFor(query), recencyLookup());
+        auto fresh = rankVisibleRows();
         filtered = refreshListedRowsInPlace(std::move(filtered), fresh);
         publishResults();
     }
@@ -1827,8 +1832,8 @@ struct RudderApp
     // turns "not running" when the app is actually gone (markQuit), so an app
     // that refuses -- an unsaved-changes dialog -- simply stays running.
     // On an open context of an app that closes contexts (canClose), it
-    // closes just that tab or pane instead; the row goes when the app's next
-    // push leaves it out.
+    // closes just that tab or pane instead, and its row leaves the list at
+    // once (ClosingContexts).
     void quitSelected()
     {
         if (!panelVisible || filtered.empty())
@@ -1839,6 +1844,7 @@ struct RudderApp
         if (item.kind == "context" && providers.close(item.appId, item.contextId))
         {
             logEvent(("close -> " + item.appId + " " + item.contextId).c_str());
+            removeClosedRow(item);
             return;
         }
 
@@ -1847,6 +1853,17 @@ struct RudderApp
             logEvent(("quit -> " + app->name).c_str());
             platform::quitApp(*app);
         }
+    }
+
+    // The row goes at once and the selection stays at its index, so the next
+    // row is highlighted.
+    void removeClosedRow(const RudderItem& item)
+    {
+        closingContexts.markClosing(item.appId, item.contextId, FrecencyStore::nowMs());
+        closingContexts.removeClosingRows(filtered, FrecencyStore::nowMs());
+        selected = std::clamp(selected, 0, std::max((int) filtered.size() - 1, 0));
+        previewSelection();
+        publishResults();
     }
 
     // An app quit while the panel is up: its rows become closed apps in place
@@ -1900,6 +1917,15 @@ struct RudderApp
             return;
 
         pickItem(filtered[(std::size_t) selected]);
+    }
+
+    // The rows for the query, without contexts closed from the panel that
+    // their app hasn't dropped yet.
+    std::vector<RudderItem> rankVisibleRows()
+    {
+        auto rows = rankWithWeb(allItems, query, webSettings(), searchUsageFor(query), recencyLookup());
+        closingContexts.removeClosingRows(rows, FrecencyStore::nowMs());
+        return rows;
     }
 
     // Each row's frecency, all decayed to the same moment, and the picks
@@ -2190,6 +2216,7 @@ struct RudderApp
     grazer::MruStore mru {atomic};
     FrecencyStore frecency {atomic};
     LearnedPickStore learnedPicks {atomic};
+    ClosingContexts closingContexts;
     RenameStore renames {durable};
     FocusTracker focus;
     emberstore::Document<FavouriteList> favouritesDocument {favouritesPath()};

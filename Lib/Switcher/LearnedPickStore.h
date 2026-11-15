@@ -34,6 +34,8 @@ struct LearnedPickStore
 
     void forgetExpiredPicks(std::int64_t nowMs);
 
+    void forgetDestination(const std::string& destinationKey);
+
     std::vector<frecencysearch::LearnedPick> getAllPicks();
 
     emberstore::Collection<LearnedPickEntry> entries;
