@@ -73,3 +73,19 @@ auto tOldPicksForgotten = test("FrecencySearch/picks unused for four weeks are f
     check(forgotten.size() == 1);
     check(forgotten.front().destinationKey == "y");
 };
+
+auto tCamelCaseNameStillStarts = test("FrecencySearch/github starts GitHub, typed in any case") = []
+{
+    check(findNameMatchLevel("github", "GitHub") == MatchLevel::nameStartsWithQuery);
+    check(findNameMatchLevel("GitHub", "GitHub") == MatchLevel::nameStartsWithQuery);
+    check(findMatchLevel("GitHub", SearchableTexts {{"GitHub"}, {}}) == MatchLevel::nameStartsWithQuery);
+};
+
+auto tUrlHostWordStart = test("FrecencySearch/a word of the url host starts the text") = []
+{
+    auto inbox = SearchableTexts {{"Inbox (3)"}, {removeUrlScheme("https://mail.google.com/mail/u/0/")}};
+
+    check(findMatchLevel("mail", inbox) == MatchLevel::nameContainsQueryOrDetailWordStartsWithQuery);
+    check(findMatchLevel("google", inbox) == MatchLevel::nameContainsQueryOrDetailWordStartsWithQuery);
+    check(!findMatchLevel("gmail", inbox));
+};

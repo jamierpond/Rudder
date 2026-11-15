@@ -35,16 +35,16 @@ std::vector<std::string> splitIntoWords(std::string_view text);
 // `url` without its scheme, so grazer:// or https:// never match.
 std::string removeUrlScheme(std::string_view url);
 
-bool hasWordStartingWith(std::string_view text, std::string_view normalisedQuery);
+// Every function here takes the query as typed and normalises it.
+bool hasWordStartingWith(std::string_view text, std::string_view query);
 
-// Every letter of the query (spaces skipped) appears in `text` in order.
-bool hasLettersInOrder(std::string_view normalisedQuery, std::string_view text);
+// Every letter of the query (spaces skipped) appears in `text` in order,
+// ignoring case.
+bool hasLettersInOrder(std::string_view query, std::string_view text);
 
-std::optional<MatchLevel> findNameMatchLevel(std::string_view normalisedQuery,
-                                             std::string_view name);
+std::optional<MatchLevel> findNameMatchLevel(std::string_view query, std::string_view name);
 
-std::optional<MatchLevel> findMatchLevel(std::string_view normalisedQuery,
-                                         const SearchableTexts& texts);
+std::optional<MatchLevel> findMatchLevel(std::string_view query, const SearchableTexts& texts);
 
 bool isBetterMatchLevel(std::optional<MatchLevel> candidate,
                         std::optional<MatchLevel> current);

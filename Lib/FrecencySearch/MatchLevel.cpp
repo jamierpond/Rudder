@@ -139,13 +139,14 @@ std::string removeUrlScheme(std::string_view url)
     return std::string {url.substr(schemeEnd + 3)};
 }
 
-bool hasWordStartingWith(std::string_view text, std::string_view normalisedQuery)
+bool hasWordStartingWith(std::string_view text, std::string_view query)
 {
-    return findWordStartingWith(text, normalisedQuery).has_value();
+    return findWordStartingWith(text, normaliseQuery(query)).has_value();
 }
 
-bool hasLettersInOrder(std::string_view normalisedQuery, std::string_view text)
+bool hasLettersInOrder(std::string_view query, std::string_view text)
 {
+    auto normalisedQuery = normaliseQuery(query);
     auto textIndex = std::size_t {0};
 
     for (auto letter: normalisedQuery)
@@ -165,9 +166,10 @@ bool hasLettersInOrder(std::string_view normalisedQuery, std::string_view text)
     return true;
 }
 
-std::optional<MatchLevel> findNameMatchLevel(std::string_view normalisedQuery,
-                                             std::string_view name)
+std::optional<MatchLevel> findNameMatchLevel(std::string_view query, std::string_view name)
 {
+    auto normalisedQuery = normaliseQuery(query);
+
     if (normalisedQuery.empty() || name.empty())
         return std::nullopt;
 
@@ -276,9 +278,9 @@ std::optional<MatchLevel> findEveryWordMatchLevel(std::string_view normalisedQue
 }
 } // namespace
 
-std::optional<MatchLevel> findMatchLevel(std::string_view normalisedQuery,
-                                         const SearchableTexts& texts)
+std::optional<MatchLevel> findMatchLevel(std::string_view query, const SearchableTexts& texts)
 {
+    auto normalisedQuery = normaliseQuery(query);
     auto level = findWholeQueryMatchLevel(normalisedQuery, texts);
     auto everyWordLevel = findEveryWordMatchLevel(normalisedQuery, texts);
 
