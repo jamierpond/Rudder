@@ -130,6 +130,7 @@ public:
     // Vim normal mode: the query's thin caret becomes a block over the
     // character it's on, and a small "NORMAL" sits at the field's right edge.
     void setNormalMode(bool isNormal);
+    bool isNormalMode() const { return normalMode; }
 
     eacp::UI::TextEditor query;
     ResultsList list;
@@ -297,6 +298,9 @@ public:
     void reset(bool showSettings);
     bool settingsOpen() const { return root.settings.isVisible(); }
 
+    std::string getQueryText() const { return root.switcher.query.getText(); }
+    int getQueryCaret() const { return root.switcher.query.getCaretPosition(); }
+
     // The unlock overlay over everything, while the grant is missing.
     void setAccessibilityGate(bool show);
     bool accessibilityGateShown() const { return root.overlay.isVisible(); }
@@ -320,6 +324,7 @@ public:
     IconLookup iconFor;
 
     std::function<void(const std::string&)> onQueryChange = [](auto&) {};
+    std::function<void(bool isNormalMode)> onSearchModeChange = [](bool) {};
     std::function<void(int)> onMove = [](int) {};
     std::function<void()> onAccept = [] {};
     std::function<void(int)> onChoose = [](int) {};

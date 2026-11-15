@@ -32,6 +32,14 @@ target_link_libraries(RudderTests PRIVATE NanoTest NanoTestMain RudderSwitcher S
 if (APPLE)
     target_sources(RudderTests PRIVATE TransportTests-macOS.cpp)
     target_link_libraries(RudderTests PRIVATE RudderClient RudderPlatform)
+
+    # The switcher's real key path: PanelView::keyDown into the query field.
+    target_sources(RudderTests PRIVATE
+            PanelKeysTests-macOS.cpp
+            ../Source/Icon.cpp
+            ../Source/PanelView.cpp)
+    target_include_directories(RudderTests PRIVATE ../Source)
+    target_link_libraries(RudderTests PRIVATE eacp-ui SearchKeys)
 endif ()
 
 if (WIN32)

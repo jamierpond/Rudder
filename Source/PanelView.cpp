@@ -331,12 +331,10 @@ std::string getCharacterUnderCaret(const std::string& text, int caret)
 
 void SwitcherPage::setNormalMode(bool isNormal)
 {
-    if (normalMode == isNormal)
-        return;
-
     normalMode = isNormal;
     // eacp's thin caret is drawn in the accent colour: hidden under the block.
     query.setAccentColour(isNormal ? transparent : accent);
+    // Always: the block follows the caret, and the field's own repaint skips this page.
     repaint();
 }
 
@@ -1093,6 +1091,10 @@ void PanelView::showSearchBox()
         query.setText(searchBox.getText(), true);
 
     query.setCaretPosition(searchBox.getCaret());
+
+    if (searchBox.isNormalMode() != root.switcher.isNormalMode())
+        onSearchModeChange(searchBox.isNormalMode());
+
     root.switcher.setNormalMode(searchBox.isNormalMode());
 }
 
