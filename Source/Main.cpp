@@ -132,6 +132,11 @@ void logEvent(std::string_view event, std::initializer_list<sessionlog::Field> f
     writeLogLine(sessionlog::formatEventLine(event, fields));
 }
 
+void logSwitcherModeChange(bool isNormalMode)
+{
+    logEvent("switcher.mode", {{"mode", isNormalMode ? "normal" : "insert"}});
+}
+
 void logPlatformMessage(const char* message)
 {
     logEvent("platform.log", {{"text", message}});
@@ -292,6 +297,7 @@ struct RudderApp
             }
         };
         panel.onMove = [this](int delta) { moveSelection(delta); };
+        panel.onSearchModeChange = logSwitcherModeChange;
         panel.onAccept = [this] { Threads::callAsync([this] { activateSelection(); }); };
         panel.onChoose = [this](int index)
         {
