@@ -55,3 +55,18 @@ auto tMruForgetDrops = test("Mru/forget drops one stamp") = []
     check(mru.lastUsed("audio.pond.grazer/3") == 0);
     check(mru.lastUsed("audio.pond.grazer/4") == 1000);
 };
+
+auto tMruStampsSurviveRestart = test("Mru/a new store reads the stamps an earlier one wrote") = []
+{
+    constexpr auto stampedAtMs = std::int64_t {1000};
+    auto db = testing::freshDatabase("mru-restart");
+
+    {
+        auto earlier = MruStore {db};
+        earlier.touch("audio.pond.grazer/3", stampedAtMs);
+    }
+
+    auto later = MruStore {db};
+
+    check(later.lastUsed("audio.pond.grazer/3") == stampedAtMs);
+};

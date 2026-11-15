@@ -10,18 +10,27 @@ namespace grazer
 MruStore::MruStore(const emberstore::Database& db)
     : stamps(db.collection<Stamp>("mru"))
 {
+    loadStampsIntoMemory();
     prune();
+}
+
+void MruStore::loadStampsIntoMemory()
+{
+    for (auto& id: stamps.ids())
+        if (auto stamp = stamps.get(id))
+            stampsInMemory[id] = stamp->at;
 }
 
 void MruStore::touch(const std::string& normalizedUrl, std::int64_t atMs)
 {
     stamps.doc(normalizedUrl).set({atMs});
+    stampsInMemory[normalizedUrl] = atMs;
 }
 
 std::int64_t MruStore::lastUsed(const std::string& normalizedUrl)
 {
-    if (auto stamp = stamps.get(normalizedUrl))
-        return stamp->at;
+    if (auto stamp = stampsInMemory.find(normalizedUrl); stamp != stampsInMemory.end())
+        return stamp->second;
 
     return 0;
 }
@@ -29,6 +38,7 @@ std::int64_t MruStore::lastUsed(const std::string& normalizedUrl)
 void MruStore::forget(const std::string& normalizedUrl)
 {
     stamps.remove(normalizedUrl);
+    stampsInMemory.erase(normalizedUrl);
 }
 
 void MruStore::prune()
@@ -46,7 +56,7 @@ void MruStore::prune()
     auto excess = aged.size() - maxEntries;
 
     for (std::size_t i = 0; i < excess; ++i)
-        stamps.remove(aged[i].second);
+        forget(aged[i].second);
 }
 
 std::int64_t MruStore::nowMs()
