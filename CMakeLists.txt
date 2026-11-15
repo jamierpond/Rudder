@@ -69,9 +69,8 @@ set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
 # Work against a local eacp checkout with:
 #   cmake -B build -DLOCKSTEP_eacp_SOURCE=$HOME/projects/eacp
 #
-# jp/windows-apps is develop plus two open PRs Rudder needs on Windows:
-# #141 (keys reach the focused view; charactersIgnoringModifiers on Windows)
-# and #143 (GlobalHotKey::isAvailable). Move back to develop once they merge.
+# jp/windows-apps is develop plus open PR #143 (GlobalHotKey::isAvailable),
+# which Rudder calls. Move back to develop once it merges.
 lockstep_add_package(
         NAME eacp
         GITHUB_REPOSITORY eyalamirmusic/eacp
