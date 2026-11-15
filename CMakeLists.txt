@@ -51,6 +51,7 @@ if (RUDDER_CLIENT_ONLY)
     endif ()
 
     add_subdirectory(Client)
+    add_subdirectory(Lib/PondApp)
     return()
 endif ()
 
@@ -98,6 +99,7 @@ set(CMAKE_COMPILE_WARNING_AS_ERROR ON)
 list(APPEND CMAKE_MODULE_PATH "${eacp_SOURCE_DIR}/CMake")
 
 add_subdirectory(Client)
+add_subdirectory(Lib/PondApp)
 
 # The switcher's pure logic (ranking, MRU, back stack, keybindings, context
 # providers) lives in a plain static library so it stays unit-testable without
@@ -169,7 +171,7 @@ add_executable(Rudder
         Source/PanelDump.cpp
         Source/PanelView.cpp)
 
-target_link_libraries(Rudder PRIVATE eacp-ui RudderSwitcher RudderPlatform SearchKeys SessionLog)
+target_link_libraries(Rudder PRIVATE eacp-ui PondApp RudderSwitcher RudderPlatform SearchKeys SessionLog)
 target_compile_definitions(Rudder PRIVATE RUDDER_VERSION="${PROJECT_VERSION}")
 
 set(BUNDLE_ID "com.pond.rudder")

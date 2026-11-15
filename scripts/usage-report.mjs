@@ -4,8 +4,8 @@
 //
 //   just usage-report [--days 7] [--slow-ms 3000] [--logs App=/path/to/logs] [--source App=/path/to/repo]
 //
-// Log folders are found under the app-data folder (<App>/logs and
-// pond/<App>/logs holding <digits>.log files); source repos at ~/projects/<App>.
+// Log folders are found under the app-data folder (pond/<App>/logs holding
+// <digits>.log files); source repos at ~/projects/<App>.
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
@@ -59,10 +59,7 @@ function hasSessionLogs(path) {
 function findLogDirectories() {
   const found = {};
   const root = getAppDataDirectory();
-  const candidates = [
-    ...listDirectories(root).map((app) => [app, join(root, app, 'logs')]),
-    ...listDirectories(join(root, 'pond')).map((app) => [app, join(root, 'pond', app, 'logs')]),
-  ];
+  const candidates = listDirectories(join(root, 'pond')).map((app) => [app, join(root, 'pond', app, 'logs')]);
   for (const [app, path] of candidates)
     if (!app.endsWith('Snapshot') && hasSessionLogs(path))
       found[app] = path;

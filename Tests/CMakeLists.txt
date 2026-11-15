@@ -48,3 +48,9 @@ if (WIN32)
 endif ()
 
 nano_discover_tests(RudderTests)
+
+# Its own binary with its own main: the single-instance tests relaunch it as a
+# running instance and as a second launch.
+add_executable(PondAppTests PondAppTests.cpp)
+target_link_libraries(PondAppTests PRIVATE NanoTest PondApp)
+nano_discover_tests(PondAppTests)

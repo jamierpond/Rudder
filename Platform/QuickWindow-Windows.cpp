@@ -3,16 +3,12 @@
 #include <eacp/Core/Threads/EventLoop.h>
 #include <eacp/Core/Utils/WinInclude.h>
 
-#include <thread>
 #include <utility>
 
 namespace rudder::quick_window
 {
 namespace
 {
-constexpr auto* instanceMutexName = L"Local\\com.pond.rudder.instance";
-constexpr auto* reopenEventName = L"Local\\com.pond.rudder.reopen";
-
 std::function<void(const char*)> logger;
 
 void logEvent(const char* message)
@@ -64,14 +60,6 @@ bool activateRememberedWindow()
     return SetForegroundWindow(rememberedWindow) != 0;
 }
 
-// A second Rudder.exe -- the Start menu, a pinned icon -- is the reopen:
-// it signals this event and leaves, and the Rudder already running summons
-// its panel, which is what reopening the app does on macOS.
-void waitForReopens(HANDLE reopen, std::function<void()> onReopen)
-{
-    while (WaitForSingleObject(reopen, INFINITE) == WAIT_OBJECT_0)
-        eacp::Threads::callAsync(onReopen);
-}
 } // namespace
 
 void setLogger(std::function<void(const char*)> log)
@@ -178,23 +166,6 @@ void hideYieldingActivation(eacp::Graphics::Window& window,
     hide();
 }
 
-void installReopenHandler(std::function<void()> onReopen)
-{
-    // Held for the life of the process; the system drops it with the process.
-    auto instance = CreateMutexW(nullptr, FALSE, instanceMutexName);
-    auto alreadyRunning = GetLastError() == ERROR_ALREADY_EXISTS;
-    auto reopen = CreateEventW(nullptr, FALSE, FALSE, reopenEventName);
-
-    if (instance == nullptr || reopen == nullptr)
-        return;
-
-    if (alreadyRunning)
-    {
-        logEvent("another Rudder is running: handing it the reopen");
-        SetEvent(reopen);
-        ExitProcess(0);
-    }
-
-    std::thread(waitForReopens, reopen, std::move(onReopen)).detach();
-}
+// A second Rudder.exe reaches the running one through pondapp::SingleInstance.
+void installReopenHandler(std::function<void()>) {}
 } // namespace rudder::quick_window

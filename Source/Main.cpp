@@ -24,6 +24,8 @@
 #include <eacp/UI/UI.h>
 #include <emberstore/AppDatabase.h>
 #include <emberstore/FileWatcher.h>
+#include <PondApp/DataDirectory.h>
+#include <PondApp/SingleInstance.h>
 #include <SessionLog/EventLine.h>
 #include <SessionLog/SessionLog.h>
 
@@ -63,7 +65,7 @@ constexpr auto sessionLogsToKeep = std::size_t {50};
 FILE* openLogFile()
 {
     auto directory =
-        std::filesystem::path {emberstore::appDataDirectory("pond", "Rudder").str()} / "logs";
+        pondapp::getPondAppDataDirectory("Rudder") / "logs";
     auto error = std::error_code {};
     std::filesystem::create_directories(directory, error);
     sessionlog::deleteOldSessionLogs(directory.string(), sessionLogsToKeep);
@@ -142,6 +144,12 @@ void logPlatformMessage(const char* message)
     logEvent("platform.log", {{"text", message}});
 }
 
+pondapp::SingleInstance& getRunningInstanceClaim()
+{
+    static auto claim = pondapp::SingleInstance {"com.pond.rudder"};
+    return claim;
+}
+
 std::optional<std::filesystem::path> getPanelDumpDirectory()
 {
     if (auto* directory = std::getenv("RUDDER_DUMP_DIR"))
@@ -190,6 +198,13 @@ struct RudderApp
             {
                 logEvent("app.reopen");
                 reveal(false, "reopen");
+            });
+
+        getRunningInstanceClaim().setSecondLaunchHandler(
+            [this](const std::vector<std::string>&)
+            {
+                logEvent("app.second-launch");
+                reveal(false, "second-launch");
             });
 
         bindPanel();
@@ -2371,6 +2386,12 @@ int main(int argc, char* argv[])
 {
     if (argc == 3 && std::string {argv[1]} == "--snapshot")
         return snapshot(argv[2]);
+
+    auto& claim = getRunningInstanceClaim();
+
+    if (!claim.isTheRunningInstance()
+        && claim.handOverToRunningInstance(pondapp::getLaunchArguments(argc, argv)))
+        return pondapp::exitCodeAnotherInstanceIsRunning;
 
     return Apps::run<RudderApp>(argc, argv);
 }

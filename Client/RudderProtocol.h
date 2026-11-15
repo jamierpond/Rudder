@@ -133,7 +133,7 @@ private:
 };
 
 // Where Rudder listens: the socket file
-// ~/Library/Application Support/Rudder/rudder.sock on macOS, the name of an
+// ~/Library/Application Support/pond/Rudder/rudder.sock on macOS, the name of an
 // eacp IPC channel (a named pipe only this user can open) on Windows.
 std::string endpoint();
 

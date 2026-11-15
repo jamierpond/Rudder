@@ -11,7 +11,7 @@ await main(async () => {
   if (!existsSync(join(TEST_DIR, 'build.ninja')))
     await run('cmake', ['-G', 'Ninja', '-B', TEST_DIR, '-DCMAKE_BUILD_TYPE=Debug']);
 
-  await run('cmake', ['--build', TEST_DIR, '--target', 'RudderTests']);
+  await run('cmake', ['--build', TEST_DIR, '--target', 'RudderTests', 'PondAppTests']);
   await run('ctest', ['--test-dir', TEST_DIR, '--output-on-failure']);
   await run('node', ['--test', join(ROOT, 'scripts', 'usage-log.test.mjs')]);
 });

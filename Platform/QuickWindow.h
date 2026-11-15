@@ -39,8 +39,8 @@ void hideYieldingActivation(eacp::Graphics::Window& window,
 
 // Opening Rudder again while it runs arrives as onReopen. On macOS this also
 // swallows the reopen activateForPanel's escalation comes back as, which would
-// otherwise open the big window over the panel; on Windows a second Rudder.exe
-// hands the reopen to the running one and exits.
+// otherwise open the big window over the panel. Windows has no reopen; a second
+// Rudder.exe is handed over by pondapp::SingleInstance instead.
 void installReopenHandler(std::function<void()> onReopen);
 
 // Off by default — a panel meant to stay put should not become draggable.
