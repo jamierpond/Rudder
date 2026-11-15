@@ -45,3 +45,7 @@ icon:
 [doc('Print the live frecency store: each key usage decayed to now and when it was last used')]
 frecency-report *args:
     node scripts/frecency-report.mjs {{args}}
+
+[doc('Print how Jamie uses his apps from their session logs: feature counts, never-used features, abandoned pickers, slow picks')]
+usage-report *args:
+    node scripts/usage-report.mjs {{args}}

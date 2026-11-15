@@ -13,4 +13,5 @@ await main(async () => {
 
   await run('cmake', ['--build', TEST_DIR, '--target', 'RudderTests']);
   await run('ctest', ['--test-dir', TEST_DIR, '--output-on-failure']);
+  await run('node', ['--test', join(ROOT, 'scripts', 'usage-log.test.mjs')]);
 });
