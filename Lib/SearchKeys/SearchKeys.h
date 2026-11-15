@@ -49,7 +49,8 @@ enum class Action
 
 // A one-line vim search box over a list of rows. Text editing is the vim
 // editor's; this adds the list's keys on top: Enter opens, arrows and j/k
-// move the highlight, gg/G jump to the ends, s stars, Esc in normal closes.
+// move the highlight, gg/G jump to the ends, s stars, Esc in normal closes,
+// ctrl+w in insert deletes the word behind the caret.
 class SearchBox
 {
 public:
@@ -69,6 +70,7 @@ public:
     bool isNormalMode() const;
 
 private:
+    Action handleChord(const Key& key);
     Action handleKeyInNormal(const Key& key);
     Action handleTypedInNormal(const std::string& typed);
     void feedEditorKeepingOneLine(const std::string& editorKey);

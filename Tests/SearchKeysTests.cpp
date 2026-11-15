@@ -180,6 +180,7 @@ auto tSearchKeysChordsPassThrough = test("SearchKeys/control and command chords 
     auto controlW = makeTypedKey("w");
     controlW.control = true;
     check(box.handleKey(controlW) == Action::passThrough);
+    check(box.getText() == "git");
 
     auto commandD = makeTypedKey("d");
     commandD.command = true;
@@ -198,4 +199,16 @@ auto tSearchKeysAppEditsKeepMode = test("SearchKeys/the app's own edits keep the
     box.setTextAndCaret("git", 3);
     check(box.isNormalMode());
     check(box.getCaret() == 2);
+};
+
+auto tSearchKeysControlWDeletesWord = test("SearchKeys/ctrl+w in insert mode deletes the word behind the caret") = []
+{
+    auto box = SearchBox {};
+    pressKeys(box, {"g", "i", "t", " ", "l", "o", "g"});
+
+    auto controlW = makeTypedKey("w");
+    controlW.control = true;
+    check(box.handleKey(controlW) == Action::none);
+    check(box.getText() == "git ");
+    check(!box.isNormalMode());
 };

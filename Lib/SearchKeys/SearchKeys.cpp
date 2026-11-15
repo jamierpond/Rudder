@@ -83,6 +83,11 @@ constexpr auto normalListBindings = std::array {
     NormalListBinding {"s", Action::starHighlighted},
 };
 
+bool isDeleteWordKey(const Key& key)
+{
+    return key.control && !key.command && !key.alt && key.characters == "w";
+}
+
 // Prompts the one-line box has no room to show.
 bool isPromptKey(const std::string& typed)
 {
@@ -100,9 +105,8 @@ Action SearchBox::handleKey(const Key& key)
     if (auto listAction = getListActionForArrowOrEnter(key))
         return *listAction;
 
-    // Chords stay the app's (ctrl-n/p, ctrl-w, ⌘D, its quit and rename bindings).
     if (key.command || key.control)
-        return Action::passThrough;
+        return handleChord(key);
 
     if (isNormalMode())
         return handleKeyInNormal(key);
@@ -111,6 +115,17 @@ Action SearchBox::handleKey(const Key& key)
         return Action::passThrough;
 
     feedEditor(key);
+    return Action::none;
+}
+
+// Chords other than ctrl+w in insert mode stay the app's (ctrl-n/p, ⌘D, its
+// quit and rename bindings).
+Action SearchBox::handleChord(const Key& key)
+{
+    if (!isDeleteWordKey(key) || isNormalMode())
+        return Action::passThrough;
+
+    feedEditorKeepingOneLine("C-w");
     return Action::none;
 }
 
