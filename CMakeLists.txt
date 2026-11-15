@@ -169,7 +169,7 @@ add_executable(Rudder
         Source/PanelDump.cpp
         Source/PanelView.cpp)
 
-target_link_libraries(Rudder PRIVATE eacp-ui RudderSwitcher RudderPlatform SearchKeys)
+target_link_libraries(Rudder PRIVATE eacp-ui RudderSwitcher RudderPlatform SearchKeys SessionLog)
 target_compile_definitions(Rudder PRIVATE RUDDER_VERSION="${PROJECT_VERSION}")
 
 set(BUNDLE_ID "com.pond.rudder")

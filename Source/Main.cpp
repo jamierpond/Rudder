@@ -24,6 +24,8 @@
 #include <eacp/UI/UI.h>
 #include <emberstore/AppDatabase.h>
 #include <emberstore/FileWatcher.h>
+#include <SessionLog/EventLine.h>
+#include <SessionLog/SessionLog.h>
 
 #include <algorithm>
 #include <chrono>
@@ -48,7 +50,6 @@ using namespace rudder;
 
 namespace
 {
-constexpr auto maximumLogFileBytes = std::uintmax_t {10 * 1024 * 1024};
 constexpr auto monotonicMillisecondsWrap = 100000LL;
 constexpr auto millisecondsPerSecond = 1000LL;
 // How long a provider takes to draw the context a preview switched it to.
@@ -57,42 +58,18 @@ constexpr auto contextSwitchRedrawMs = 150;
 // taken as typed before those modifiers were released.
 constexpr auto summonModifiersReleaseSeconds = 1.0;
 
-std::filesystem::path getLogDirectory()
-{
-#if defined(_WIN32)
-    if (auto* localAppData = std::getenv("LOCALAPPDATA"))
-        return std::filesystem::path {localAppData} / "Rudder" / "Logs";
-#else
-    if (auto* home = std::getenv("HOME"))
-        return std::filesystem::path {home} / "Library" / "Logs" / "Rudder";
-#endif
-    return std::filesystem::temp_directory_path() / "Rudder";
-}
-
-// Renames a log over the size limit to rudder.log.1, replacing the old one.
-void rotateLogFileIfTooLarge(const std::filesystem::path& logFile)
-{
-    auto error = std::error_code {};
-    auto size = std::filesystem::file_size(logFile, error);
-
-    if (error || size <= maximumLogFileBytes)
-        return;
-
-    auto rotated = logFile;
-    rotated += ".1";
-    std::filesystem::rename(logFile, rotated, error);
-}
+constexpr auto sessionLogsToKeep = std::size_t {50};
 
 FILE* openLogFile()
 {
-    auto directory = getLogDirectory();
+    auto directory =
+        std::filesystem::path {emberstore::appDataDirectory("pond", "Rudder").str()} / "logs";
     auto error = std::error_code {};
     std::filesystem::create_directories(directory, error);
+    sessionlog::deleteOldSessionLogs(directory.string(), sessionLogsToKeep);
 
-    auto logFile = directory / "rudder.log";
-    rotateLogFileIfTooLarge(logFile);
-
-    auto* file = std::fopen(logFile.string().c_str(), "a");
+    auto logFile = sessionlog::getSessionLogPath(directory.string(), FrecencyStore::nowMs());
+    auto* file = std::fopen(logFile.c_str(), "a");
 
     if (file != nullptr)
         std::setvbuf(file, nullptr, _IOLBF, BUFSIZ);
@@ -127,8 +104,8 @@ std::string formatWallClockTime()
     return text;
 }
 
-// Always appends to the log file; RUDDER_LOG=1 mirrors each line to stderr.
-void logEvent(const char* message)
+// Always appends to this launch's session log; RUDDER_LOG=1 mirrors each line to stderr.
+void writeLogLine(const std::string& message)
 {
     static auto mutex = std::mutex {};
     static auto* file = openLogFile();
@@ -150,6 +127,16 @@ void logEvent(const char* message)
         std::fputs(line.c_str(), stderr);
 }
 
+void logEvent(std::string_view event, std::initializer_list<sessionlog::Field> fields = {})
+{
+    writeLogLine(sessionlog::formatEventLine(event, fields));
+}
+
+void logPlatformMessage(const char* message)
+{
+    logEvent("platform.log", {{"text", message}});
+}
+
 std::optional<std::filesystem::path> getPanelDumpDirectory()
 {
     if (auto* directory = std::getenv("RUDDER_DUMP_DIR"))
@@ -169,6 +156,14 @@ ModifierKeys modifiersOf(const Chord& chord)
 }
 } // namespace
 
+// One showing of the switcher, from summon to pick or cancel.
+struct SwitcherVisit
+{
+    std::int64_t openedAtMs = 0;
+    int queryEdits = 0;
+    int highlightMoves = 0;
+};
+
 struct RudderApp
 {
     RudderApp()
@@ -178,9 +173,9 @@ struct RudderApp
         if (!Apps::isLaunchAtLogin())
             Apps::setLaunchAtLogin(true);
 
-        quick_window::setLogger(logEvent);
-        platform::setLogger(logEvent);
-        logEvent("launched " RUDDER_VERSION);
+        quick_window::setLogger(logPlatformMessage);
+        platform::setLogger(logPlatformMessage);
+        logEvent("app.launch", {{"version", RUDDER_VERSION}});
 
         // Opening Rudder.app again while it runs (Finder, Spotlight) arrives
         // as a reopen: summon the panel. quick_window swallows the reopens its
@@ -188,8 +183,8 @@ struct RudderApp
         quick_window::installReopenHandler(
             [this]
             {
-                logEvent("reopen");
-                reveal(false);
+                logEvent("app.reopen");
+                reveal(false, "reopen");
             });
 
         bindPanel();
@@ -285,14 +280,14 @@ struct RudderApp
 
             if (hotkeyTime > 0.0)
             {
-                logEvent(("hotkey -> first frame " + millis(now - hotkeyTime)).c_str());
+                logEvent("latency.summon-to-frame", {{"ms", millis(now - hotkeyTime)}});
                 hotkeyTime = 0.0;
                 snapshotIfAsked();
             }
 
             if (panel.lastKeyTime > 0.0)
             {
-                logEvent(("key -> frame " + millis(now - panel.lastKeyTime)).c_str());
+                logEvent("latency.key-to-frame", {{"ms", millis(now - panel.lastKeyTime)}});
                 panel.lastKeyTime = 0.0;
             }
         };
@@ -300,13 +295,11 @@ struct RudderApp
         panel.onAccept = [this] { Threads::callAsync([this] { activateSelection(); }); };
         panel.onChoose = [this](int index)
         {
-            logEvent(("panel: row " + std::to_string(index) + " clicked").c_str());
-
             if (index < 0 || index >= (int) filtered.size())
                 return;
 
             auto chosen = filtered[(std::size_t) index];
-            Threads::callAsync([this, chosen] { pickItem(chosen); });
+            Threads::callAsync([this, chosen, index] { pickItem(chosen, "click", index); });
         };
         panel.onQuitSelected = [this] { Threads::callAsync([this] { quitSelected(); }); };
         panel.onToggleFavourite = [this]
@@ -317,21 +310,20 @@ struct RudderApp
 
         panel.onCancel = [this]
         {
-            logEvent("panel: escape");
-            Threads::callAsync([this] { cancel(); });
+            Threads::callAsync([this] { cancel("esc"); });
         };
 
         // While a chord is recorded the old ones must not fire -- pressing
         // ⌥Space to rebind it would otherwise close the panel.
         panel.onCaptureStart = [this]
         {
-            logEvent("chord capture: start");
+            logEvent("settings.chord-capture.start");
             setCapturing(true);
         };
         panel.onCaptureEnd = [this](const std::string& action, const std::string& chord)
         {
             settingsError.clear();
-            logEvent(("chord capture: " + action + " = '" + chord + "'").c_str());
+            logEvent("settings.chord-capture.end", {{"action", action}, {"chord", chord}});
 
             if (!chord.empty())
                 setBinding(action, chord);
@@ -347,7 +339,7 @@ struct RudderApp
         panel.setPermissionsResettable(platform::canResetPermissions());
         panel.onResetPermissions = []
         {
-            logEvent("resetting permissions");
+            logEvent("settings.reset-permissions");
             platform::resetPermissions();
         };
 
@@ -396,8 +388,8 @@ struct RudderApp
     Menu createTrayMenu()
     {
         auto menu = Menu();
-        menu.add(MenuItem::withAction("Open Rudder", [this] { reveal(false); }));
-        menu.add(MenuItem::withAction("Settings…", [this] { reveal(true); }));
+        menu.add(MenuItem::withAction("Open Rudder", [this] { reveal(false, "tray"); }));
+        menu.add(MenuItem::withAction("Settings…", [this] { reveal(true, "tray"); }));
         menu.addSeparator();
         menu.add(MenuItem::withAction("Quit Rudder", [] { Apps::quit(); }));
         return menu;
@@ -422,7 +414,7 @@ struct RudderApp
         for (auto* text: {&bindings.summon, &bindings.back})
             if (auto chord = parseChord(*text);
                 chord && !GlobalHotKey::isAvailable(modifiersOf(*chord), *keyCodeFor(chord->key)))
-                logEvent(("hotkey clashes with a system shortcut: " + *text).c_str());
+                logEvent("settings.hotkey-clash", {{"chord", *text}});
 
         if (auto chord = parseChord(bindings.summon))
             summonKey.emplace(modifiersOf(*chord),
@@ -511,15 +503,15 @@ struct RudderApp
     void goBack()
     {
         if (panelVisible)
-            cancel();
+            cancel("back-key");
 
-        logStack("back pressed");
+        logStack("back.press");
 
         while (auto target = backStack.back())
         {
             if (auto app = findRunning(*target))
             {
-                logEvent(("back -> " + app->name).c_str());
+                logEvent("back.open", {{"app", app->name}});
                 lateRaise.closedOnto(app->id, uptime());
                 platform::activateApp(*app);
                 return;
@@ -544,8 +536,7 @@ struct RudderApp
             {
                 if (auto back = findRunningNow(*target))
                 {
-                    logEvent(("late raise by " + app.name + "; back to " + back->name)
-                                 .c_str());
+                    logEvent("late-raise.undo", {{"raised", app.name}, {"back-to", back->name}});
                     platform::activateApp(*back);
                     return;
                 }
@@ -600,7 +591,7 @@ struct RudderApp
                     installedItems.push_back(std::move(item));
                 }
 
-                logEvent(("installed apps: " + std::to_string(apps.size())).c_str());
+                logEvent("apps.installed", {{"count", apps.size()}});
             });
     }
 
@@ -616,17 +607,28 @@ struct RudderApp
             mru.touch(*key, now);
 
         backStack.record(appId);
-        logStack("activated " + appId);
+        logStack("app.activate", appId);
     }
 
-    void logStack(const std::string& what)
+    void logStack(std::string_view event, std::string_view appId = {})
     {
-        auto text = what + " | stack:";
+        auto stack = std::string {};
 
         for (auto& id: backStack.entries())
-            text += " " + id;
+            stack += (stack.empty() ? "" : ",") + id;
 
-        logEvent((text + (backStack.walking() ? " (walking)" : "")).c_str());
+        logEvent(event, {{"app", appId}, {"stack", stack}, {"walking", backStack.walking()}});
+    }
+
+    // An event about the highlighted row: what it is, then `fields`.
+    void logSelectedRow(std::string_view event, std::initializer_list<sessionlog::Field> fields = {})
+    {
+        auto& item = filtered[(std::size_t) selected];
+        auto line = sessionlog::formatEventLine(
+            event,
+            {{"row", selected}, {"kind", item.kind}, {"app", item.appId}, {"title", item.title}});
+        auto extra = sessionlog::formatEventLine("", fields);
+        writeLogLine(line + extra);
     }
 
     // --- Panel frame ------------------------------------------------------------
@@ -672,7 +674,7 @@ struct RudderApp
             frameDrag.reset();
             auto area = screenUnderPanel(currentFrame());
             applyFrame(placedFrame(std::nullopt, area));
-            logEvent("panel frame: reset");
+            logEvent("panel-frame.reset");
 
             if (forgetFrame(favourites.panel, area))
                 savePanelFrames();
@@ -682,7 +684,7 @@ struct RudderApp
 
         if (phase == FrameDrag::begin)
         {
-            logEvent(("panel frame: press, edges " + std::to_string(edges)).c_str());
+            logEvent("panel-frame.press", {{"edges", edges}});
             frameDrag = FrameDragState {currentFrame(), pointer, edges};
             return;
         }
@@ -703,7 +705,7 @@ struct RudderApp
 
         auto moved = frame != frameDrag->start;
         frameDrag.reset();
-        logEvent(moved ? "panel frame: release, moved" : "panel frame: release, still");
+        logEvent("panel-frame.release", {{"moved", moved}});
 
         // A plain click is no move: nothing to remember.
         if (!moved)
@@ -727,7 +729,7 @@ struct RudderApp
     {
         if (!favouritesError.empty())
         {
-            logEvent("panel frame: not saved, rudder.json has an error");
+            logEvent("panel-frame.save-fail", {{"reason", "rudder.json has an error"}});
             return;
         }
 
@@ -755,14 +757,14 @@ struct RudderApp
         auto capture = platform::KeyCapture {};
         capture.onKey = [this](const KeyEvent& event) { onCapturedKey(event); };
         capture.onMouseDownOutside = [this]
-        { Threads::callAsync([this] { cancel(); }); };
+        { Threads::callAsync([this] { cancel("click-outside"); }); };
 
         // Capture has already switched itself off; the panel follows.
         capture.onAbort = [this](const std::string& reason)
         {
-            logEvent(("key capture aborted: " + reason).c_str());
+            logEvent("key-capture.abort", {{"reason", reason}});
             capturingKeys = false;
-            cancel();
+            cancel("key-capture-abort");
         };
 
         capturingKeys =
@@ -807,7 +809,7 @@ struct RudderApp
 
         if (stallMs > 0 && event.type == KeyEventType::Down)
         {
-            logEvent(("debug stall " + std::to_string(stallMs) + " ms").c_str());
+            logEvent("debug.stall", {{"ms", stallMs}});
             std::this_thread::sleep_for(std::chrono::milliseconds {stallMs});
         }
 
@@ -859,11 +861,14 @@ struct RudderApp
     void logCapturedKey(const KeyEvent& event, const char* outcome)
     {
         auto& mods = event.modifiers;
-        auto line = "captured key " + std::to_string(event.keyCode) + " mods "
-                    + (mods.command ? "cmd " : "") + (mods.control ? "ctrl " : "")
-                    + (mods.alt ? "alt " : "") + (mods.shift ? "shift " : "") + "-> "
-                    + outcome + ", " + millis(uptime() - summonUptime) + " after summon";
-        logEvent(line.c_str());
+        logEvent("key-capture.key",
+                 {{"code", event.keyCode},
+                  {"cmd", mods.command},
+                  {"ctrl", mods.control},
+                  {"alt", mods.alt},
+                  {"shift", mods.shift},
+                  {"outcome", outcome},
+                  {"ms-after-summon", millis(uptime() - summonUptime)}});
     }
 
     static bool isChord(const KeyEvent& event, const std::string& text)
@@ -903,24 +908,25 @@ struct RudderApp
 
     void togglePanel()
     {
-        logEvent("summon hotkey");
+        logEvent("switcher.hotkey", {{"visible", panelVisible}});
         hotkeyTime = uptime();
 
         if (panelVisible)
-            cancel();
+            cancel("hotkey");
         else
-            reveal(false);
+            reveal(false, "hotkey");
     }
 
-    void reveal(bool showSettings)
+    void reveal(bool showSettings, std::string_view via)
     {
-        logEvent("reveal: begin");
+        logEvent("switcher.open", {{"via", via}, {"settings", showSettings}});
+        visit = SwitcherVisit {FrecencyStore::nowMs()};
         summonUptime = uptime();
         summonModifiersMayBeHeld = true;
         // First, so keys typed while the panel is being built are swallowed;
         // they run on the main thread after this reveal returns.
         startKeyCapture();
-        logEvent("reveal: key capture on");
+        logEvent("switcher.key-capture-on");
 
         // BEFORE the panel takes key: that app gets focus back on the way out.
         quick_window::rememberFrontmostApp();
@@ -954,7 +960,7 @@ struct RudderApp
         syncAccessibilityGate(true);
         platform::watchWindows(running,
                                [this](const std::string& appId) { onWindowsChanged(appId); });
-        logEvent("reveal: shown");
+        logEvent("switcher.shown", {{"rows", filtered.size()}, {"ms", millis(uptime() - summonUptime)}});
     }
 
     void hidePanel()
@@ -962,7 +968,7 @@ struct RudderApp
         if (!panelVisible)
             return;
 
-        logEvent("hidePanel: begin");
+        logEvent("switcher.hide");
         panelVisible = false;
         setCapturing(false);
         syncAccessibilityGate(false);
@@ -986,7 +992,7 @@ struct RudderApp
                                                  // panel.
                                                  stopKeyCapture();
                                                  window.setVisible(false);
-                                                 logEvent("hidePanel: ordered out");
+                                                 logEvent("switcher.ordered-out");
                                              });
     }
 
@@ -1020,7 +1026,7 @@ struct RudderApp
         if (!platform::accessibilityTrusted(false))
             return;
 
-        logEvent("accessibility granted");
+        logEvent("permissions.accessibility-granted");
 
         // Live preview works from here on: lift the overlay.
         syncAccessibilityGate(false);
@@ -1030,7 +1036,7 @@ struct RudderApp
 
     void onPanelActivationChanged(bool isKey)
     {
-        logEvent(isKey ? "panel became key" : "panel lost key");
+        logEvent("switcher.key-window", {{"is-key", isKey}});
 
         // The unlock flow sends the user to System Settings and back; the
         // panel waits for them instead of hiding.
@@ -1042,7 +1048,7 @@ struct RudderApp
             [this]
             {
                 if (window.isVisible() && panelVisible)
-                    cancel();
+                    cancel("focus-lost");
             });
     }
 
@@ -1114,10 +1120,10 @@ struct RudderApp
             return;
 
         query = text;
-        logEvent(("query '" + query + "'").c_str());
-        logEvent(("line edit: " + std::to_string(query.size()) + " chars").c_str());
+        visit.queryEdits++;
         filtered = rankVisibleRows();
         selected = initialSelection(filtered, query, frontAppId);
+        logEvent("switcher.query", {{"text", query}, {"rows", filtered.size()}});
         previewSelection();
         dumpReason = PanelDumpReason::query;
         publishResults();
@@ -1129,6 +1135,8 @@ struct RudderApp
             return;
 
         selected = std::clamp(selected + delta, 0, (int) filtered.size() - 1);
+        visit.highlightMoves++;
+        logSelectedRow("switcher.highlight", {{"delta", delta}});
         previewSelection();
         publishResults();
     }
@@ -1253,15 +1261,17 @@ struct RudderApp
                 previewWindows = std::move(result.windowTitles);
 
                 if (previewShown)
-                    logEvent(("preview snapshot " + label + " "
-                              + std::to_string(result.snapshotWidth) + "x"
-                              + std::to_string(result.snapshotHeight) + " in "
-                              + millis(uptime() - start) + " (" + result.snapshotPath + ")")
-                                 .c_str());
+                    logEvent("preview.snapshot",
+                             {{"target", label},
+                              {"width", result.snapshotWidth},
+                              {"height", result.snapshotHeight},
+                              {"ms", millis(uptime() - start)},
+                              {"path", result.snapshotPath}});
                 else
-                    logEvent(("preview " + label + " " + millis(uptime() - start)
-                              + ", no snapshot: " + result.snapshotPath)
-                                 .c_str());
+                    logEvent("preview.no-snapshot",
+                             {{"target", label},
+                              {"ms", millis(uptime() - start)},
+                              {"reason", result.snapshotPath}});
 
                 publishResults();
             });
@@ -1279,7 +1289,7 @@ struct RudderApp
 
         if (!screenRecordingAllowed)
         {
-            logEvent("preview: no screen recording grant");
+            logEvent("preview.no-screen-recording");
             panel.setFooterHint(
                 "Screen Recording lets Rudder preview windows (System Settings → Privacy)");
         }
@@ -1336,12 +1346,12 @@ struct RudderApp
 
         if (error)
         {
-            logEvent(("favourites: couldn't move " + old + ": " + error.message()).c_str());
+            logEvent("favourites.migrate-fail", {{"from", old}, {"error", error.message()}});
             return;
         }
 
         std::filesystem::remove(old, error);
-        logEvent(("favourites: moved " + old + " to " + now).c_str());
+        logEvent("favourites.migrate", {{"from", old}, {"to", now}});
     }
 
     // The panel's frames used to live in Rudder's emberstore folder. Taken into
@@ -1362,14 +1372,14 @@ struct RudderApp
 
         if (adopted && !favouritesDocument.set(favourites))
         {
-            logEvent(("panel frame: couldn't write " + favouritesPath().str()).c_str());
+            logEvent("panel-frame.migrate-fail", {{"path", favouritesPath().str()}});
             return;
         }
 
         if (!error.empty())
-            logEvent(("panel frame: dropped " + old + ": " + error).c_str());
+            logEvent("panel-frame.migrate-drop", {{"from", old}, {"error", error}});
         else if (adopted)
-            logEvent(("panel frame: moved " + old + " into " + favouritesPath().str()).c_str());
+            logEvent("panel-frame.migrate", {{"from", old}, {"to", favouritesPath().str()}});
 
         auto removed = std::error_code {};
         std::filesystem::remove(old, removed);
@@ -1387,7 +1397,7 @@ struct RudderApp
 
         if (!result.list)
         {
-            logEvent(("favourites: " + result.error).c_str());
+            logEvent("favourites.load-fail", {{"error", result.error}});
             favouritesError = result.error;
             panel.setFooterError(favouritesError);
             return;
@@ -1401,7 +1411,7 @@ struct RudderApp
         favourites = std::move(*result.list);
         favouritesError.clear();
         panel.setFooterError({});
-        logEvent(("favourites: " + std::to_string(favourites.favourites.size())).c_str());
+        logEvent("favourites.load", {{"count", favourites.favourites.size()}});
 
         if (panelVisible && rowsChanged)
             rebuildFavouriteRows();
@@ -1446,7 +1456,7 @@ struct RudderApp
 
         auto key = frecencyKey(item);
         renames.set(key, name);
-        logEvent(("rename " + key + " -> '" + renames.nameFor(key) + "'").c_str());
+        logSelectedRow("switcher.rename", {{"key", key}, {"name", renames.nameFor(key)}});
 
         for (auto& app: running)
             for (auto& row: allItems)
@@ -1468,7 +1478,7 @@ struct RudderApp
             return;
 
         auto added = toggleFavourite(favourites, *favourite);
-        logEvent(((added ? "favourited " : "unfavourited ") + favourite->title).c_str());
+        logSelectedRow("switcher.favourite", {{"added", added}});
         favouritesDocument.set(favourites);
         rebuildFavouriteRows();
     }
@@ -1525,7 +1535,7 @@ struct RudderApp
         if (favourite.path.empty())
             return;
 
-        logEvent(("open favourite -> " + favourite.title).c_str());
+        logEvent("open.favourite", {{"title", favourite.title}});
         quick_window::rememberAppForHandoff(0);
         hidePanel();
 
@@ -1554,12 +1564,12 @@ struct RudderApp
         // opened -- never quietly the default browser instead.
         if (!app.empty() && !platform::hasApp(app))
         {
-            logEvent(("open link: no app " + app).c_str());
+            logEvent("open.link-fail", {{"app", app}});
             panel.setFooterError("No app with bundle id " + app);
             return;
         }
 
-        logEvent(("open link -> " + label).c_str());
+        logEvent("open.link", {{"title", label}});
         quick_window::rememberAppForHandoff(0);
         hidePanel();
 
@@ -1614,9 +1624,7 @@ struct RudderApp
             contexts = closingContexts.removeClosingContexts(
                 app->second, std::move(contexts), FrecencyStore::nowMs());
 
-            logEvent(("provider contexts: " + app->second + " "
-                      + std::to_string(contexts.size()))
-                         .c_str());
+            logEvent("provider.contexts", {{"app", app->second}, {"count", contexts.size()}});
             trackFocus(app->second, contexts);
             forgetContexts(
                 goneContextKeys(app->second, providers.contextsFor(app->second), contexts));
@@ -1638,7 +1646,7 @@ struct RudderApp
             if (providerConnection[bundleId] != connection)
                 return;
 
-            logEvent(("provider gone: " + bundleId).c_str());
+            logEvent("provider.gone", {{"app", bundleId}});
             providerConnection.erase(bundleId);
             forgetContexts(idOnlyContextKeys(bundleId, providers.contextsFor(bundleId)));
             providers.disconnect(bundleId);
@@ -1648,13 +1656,13 @@ struct RudderApp
         providers.onChanged = [this] { refreshContexts(); };
 
         if (!contextServer.start())
-            logEvent("contexts socket unavailable");
+            logEvent("provider.socket-unavailable");
     }
 
     void connectProvider(int connection, const protocol::Hello& hello)
     {
         auto appId = providerAppId(hello);
-        logEvent(("provider hello: " + hello.app + " (" + appId + ")").c_str());
+        logEvent("provider.hello", {{"name", hello.app}, {"app", appId}});
 
         if (auto previous = connectionApps.find(connection);
             previous != connectionApps.end() && previous->second != appId
@@ -1703,7 +1711,7 @@ struct RudderApp
     {
         for (auto& key: keys)
         {
-            logEvent(("forget " + key).c_str());
+            logEvent("frecency.forget", {{"key", key}});
             frecency.forget(key);
             learnedPicks.forgetDestination(key);
             mru.forget(key);
@@ -1725,7 +1733,7 @@ struct RudderApp
 
         if (auto key = focus.pushed(appId, contexts, frontmost, now))
         {
-            logEvent(("focus -> " + *key).c_str());
+            logEvent("focus.record", {{"app", appId}, {"key", *key}});
             mru.touch(*key, now);
             settleFocusLater();
         }
@@ -1745,7 +1753,7 @@ struct RudderApp
 
                                if (auto key = focus.settle(platform::frontmostApp().id, now))
                                {
-                                   logEvent(("focus held: " + *key).c_str());
+                                   logEvent("focus.held", {{"key", *key}});
                                    frecency.touch(*key, now, FocusTracker::focusWeight);
                                }
                            });
@@ -1843,14 +1851,14 @@ struct RudderApp
 
         if (item.kind == "context" && providers.close(item.appId, item.contextId))
         {
-            logEvent(("close -> " + item.appId + " " + item.contextId).c_str());
+            logSelectedRow("switcher.close-context");
             removeClosedRow(item);
             return;
         }
 
         if (auto app = findRunningNow(item.appId))
         {
-            logEvent(("quit -> " + app->name).c_str());
+            logSelectedRow("switcher.quit-app");
             platform::quitApp(*app);
         }
     }
@@ -1916,7 +1924,7 @@ struct RudderApp
         if (!panelVisible || filtered.empty())
             return;
 
-        pickItem(filtered[(std::size_t) selected]);
+        pickItem(filtered[(std::size_t) selected], "enter", selected);
     }
 
     // The rows for the query, without contexts closed from the panel that
@@ -1950,12 +1958,22 @@ struct RudderApp
     // the tab or app a favourite turns out to open (openItem from
     // openFavourite), only the row picked. A web row is a fresh query each
     // time, so it isn't counted.
-    void pickItem(const RudderItem& item)
+    void pickItem(const RudderItem& item, std::string_view via, int row)
     {
         if (!panelVisible)
             return;
 
         auto now = FrecencyStore::nowMs();
+        logEvent("switcher.pick",
+                 {{"via", via},
+                  {"row", row},
+                  {"kind", item.kind},
+                  {"app", item.appId},
+                  {"title", item.title},
+                  {"query", query},
+                  {"edits", visit.queryEdits},
+                  {"moves", visit.highlightMoves},
+                  {"ms", now - visit.openedAtMs}});
 
         recordPickUsage(item, now);
 
@@ -2017,7 +2035,7 @@ struct RudderApp
         // activates it, so focus isn't handed back anywhere on the way out.
         if (!app && !item.path.empty())
         {
-            logEvent(("launch -> " + item.title).c_str());
+            logEvent("open.launch", {{"app", item.appId}, {"title", item.title}});
             quick_window::rememberAppForHandoff(0);
             hidePanel();
             lateRaise.closedOnto(item.appId, uptime());
@@ -2029,11 +2047,11 @@ struct RudderApp
 
         if (!app)
         {
-            cancel();
+            cancel("app-gone");
             return;
         }
 
-        logEvent(("open -> " + app->name).c_str());
+        logEvent("open.app", {{"app", app->id}, {"name", app->name}, {"kind", item.kind}});
         quick_window::rememberAppForHandoff(app->pid);
         hidePanel();
         lateRaise.closedOnto(app->id, uptime());
@@ -2046,12 +2064,18 @@ struct RudderApp
     }
 
     // Esc / losing focus: put the screen back exactly as it was.
-    void cancel()
+    void cancel(std::string_view via)
     {
         if (!panelVisible)
             return;
 
-        logEvent("cancel");
+        logEvent("switcher.cancel",
+                 {{"via", via},
+                  {"query", query},
+                  {"rows", filtered.size()},
+                  {"edits", visit.queryEdits},
+                  {"moves", visit.highlightMoves},
+                  {"ms", FrecencyStore::nowMs() - visit.openedAtMs}});
 
         // A preview showed another app, or another window, pane or tab of this
         // one (anything but its own app row): hand focus back to the origin.
@@ -2128,7 +2152,7 @@ struct RudderApp
     static std::string millis(double seconds)
     {
         char text[32];
-        std::snprintf(text, sizeof(text), "%.1f ms", seconds * 1000.0);
+        std::snprintf(text, sizeof(text), "%.1f", seconds * 1000.0);
         return text;
     }
 
@@ -2150,7 +2174,7 @@ struct RudderApp
                 ++probeTicks;
 
                 if (probeTicks == 2)
-                    reveal(false);
+                    reveal(false, "probe");
                 else if (probeTicks == 3)
                 {
                     std::fprintf(stderr,
@@ -2174,7 +2198,7 @@ struct RudderApp
                                  "probe: done; panel %s, capturing keys %s\n",
                                  panelVisible ? "up" : "down",
                                  capturingKeys ? "yes" : "no");
-                    cancel();
+                    cancel("probe");
                     Apps::quit();
                 }
             },
@@ -2255,6 +2279,7 @@ struct RudderApp
     platform::RunningApp origin;
     bool capturingKeys = false;
     std::optional<RudderItem> pendingPreview;
+    SwitcherVisit visit;
     LateRaiseGuard lateRaise;
     PreviewUndo previewUndo;
     std::map<std::string, std::string> focusedAtSummon;
