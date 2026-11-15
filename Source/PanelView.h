@@ -5,6 +5,7 @@
 
 #include <cstdint>
 
+#include <SearchKeys/SearchKeys.h>
 #include <eacp/UI/UI.h>
 
 #include <functional>
@@ -123,12 +124,25 @@ public:
     SwitcherPage();
 
     void paint(eacp::UI::Graphics& g) override;
+    void paintOverChildren(eacp::UI::Graphics& g) override;
     void resized() override;
+
+    // Vim normal mode: the query's thin caret becomes a block over the
+    // character it's on, and a small "NORMAL" sits at the field's right edge.
+    void setNormalMode(bool isNormal);
 
     eacp::UI::TextEditor query;
     ResultsList list;
     PreviewPane preview;
     eacp::UI::Label footer;
+
+private:
+    void paintBlockCaret(eacp::UI::Graphics& g);
+    void paintModeLabel(eacp::UI::Graphics& g);
+
+    eacp::Text::Font queryFont;
+    bool normalMode = false;
+    float blockScroll = 0.f;
 };
 
 class SettingsPage final : public eacp::UI::Component
@@ -359,6 +373,16 @@ private:
     // fzf's emacs keys on the query field. True when the key was one.
     bool editQuery(const eacp::Graphics::KeyEvent& event);
 
+    // Vim insert and normal modes on the query field (Lib/SearchKeys). True
+    // when the key was the mode model's and nothing else should see it.
+    bool handleSearchKey(const eacp::Graphics::KeyEvent& event);
+    void performSearchAction(searchkeys::Action action);
+    void applySearchState(const searchkeys::State& state);
+
+    // The switcher's keys when the mode model passed: chords, emacs editing,
+    // arrows, Enter, Esc, then the text field.
+    void handleSwitcherKey(const eacp::Graphics::KeyEvent& event);
+
     // A key while renaming: every key is the editor's.
     void editRename(const eacp::Graphics::KeyEvent& event);
     void stopRenaming();
@@ -375,6 +399,7 @@ private:
     std::string footerHint;
     std::string capturing;
     std::optional<Line> renaming;
+    searchkeys::State searchKeysState = searchkeys::getOpeningState();
     // A rename starts with the whole title selected: typing replaces it,
     // deleting clears it, moving the cursor keeps it.
     bool renameAllSelected = false;

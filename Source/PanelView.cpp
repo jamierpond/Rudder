@@ -7,6 +7,7 @@
 #include "TextFit.h"
 
 #include <algorithm>
+#include <array>
 #include <utility>
 
 namespace rudder
@@ -301,6 +302,91 @@ void PreviewPane::paint(UI::Graphics& g)
     }
 }
 
+// --- Query field ---------------------------------------------------------------
+
+namespace
+{
+// eacp's TextEditor draws its text this far in from its left edge
+// (editorTextInset in Widgets.cpp); the block caret has to land on the same
+// glyphs.
+constexpr auto editorTextInset = 6.f;
+constexpr auto blockCaretAlpha = 0.55f;
+constexpr auto blockCaretVerticalInset = 3.f;
+constexpr auto modeLabelFontSize = 10.f;
+constexpr auto modeLabelRightInset = 4.f;
+const auto transparent = Color(0.f, 0.f, 0.f, 0.f);
+
+// The character the block covers: the one after the caret, or a space at
+// the end of the text so the block still has a width.
+std::string getCharacterUnderCaret(const std::string& text, int caret)
+{
+    auto next = line::right(Line {text, caret}).cursor;
+
+    if (next == caret)
+        return " ";
+
+    return text.substr((std::size_t) caret, (std::size_t) (next - caret));
+}
+} // namespace
+
+void SwitcherPage::setNormalMode(bool isNormal)
+{
+    if (normalMode == isNormal)
+        return;
+
+    normalMode = isNormal;
+    // eacp's thin caret is drawn in the accent colour: hidden under the block.
+    query.setAccentColour(isNormal ? transparent : accent);
+    repaint();
+}
+
+void SwitcherPage::paintOverChildren(UI::Graphics& g)
+{
+    if (!normalMode)
+        return;
+
+    paintBlockCaret(g);
+    paintModeLabel(g);
+}
+
+void SwitcherPage::paintBlockCaret(UI::Graphics& g)
+{
+    auto scope = UI::Graphics::ScopedState {g};
+    auto field = query.getBounds();
+    g.setFont(queryFont);
+
+    auto content = query.getText();
+    auto caret = std::clamp(query.getCaretPosition(), 0, (int) content.size());
+    auto caretX = g.measureText(std::string_view(content).substr(0, (std::size_t) caret));
+    auto visible = field.w - editorTextInset * 2.f;
+    blockScroll = line::scrollToCaret(caretX, g.measureText(content), visible, blockScroll);
+
+    auto blockWidth = g.measureText(getCharacterUnderCaret(content, caret));
+    auto left = field.x + editorTextInset - blockScroll + caretX;
+
+    g.setColour(text.withAlpha(blockCaretAlpha));
+    g.fillRect({left,
+                field.y + blockCaretVerticalInset,
+                blockWidth,
+                field.h - blockCaretVerticalInset * 2.f});
+}
+
+void SwitcherPage::paintModeLabel(UI::Graphics& g)
+{
+    auto scope = UI::Graphics::ScopedState {g};
+    auto field = query.getBounds();
+    auto labelFont = queryFont;
+    labelFont.pointSize = modeLabelFontSize;
+    g.setFont(labelFont);
+
+    constexpr auto label = std::string_view("NORMAL");
+    auto labelWidth = g.measureText(label);
+    auto baseline = field.y + (field.h - g.lineHeight()) * 0.5f + g.ascent();
+
+    g.setColour(dimText);
+    g.drawText(label, {field.x + field.w - labelWidth - modeLabelRightInset, baseline});
+}
+
 // --- Pages ---------------------------------------------------------------------
 
 SwitcherPage::SwitcherPage()
@@ -309,6 +395,7 @@ SwitcherPage::SwitcherPage()
     font.family = "Helvetica Neue";
     font.pointSize = 18.f;
 
+    queryFont = font;
     query.setFont(font);
     query.setDrawsFrame(false);
     query.setPlaceholder("Switch to…");
@@ -706,6 +793,7 @@ void PanelView::reset(bool showSettings)
     capturing.clear();
     stopRenaming();
     root.switcher.query.setText({});
+    applySearchState(searchkeys::getOpeningState());
     showPage(showSettings);
 }
 
@@ -938,6 +1026,99 @@ bool PanelView::editQuery(const Graphics::KeyEvent& event)
     return true;
 }
 
+namespace
+{
+// Far enough past either end of any list that moveSelection clamps to it.
+constexpr auto pastEveryRow = 1'000'000;
+
+searchkeys::SpecialKey getSpecialKey(const Graphics::KeyEvent& event)
+{
+    using searchkeys::SpecialKey;
+    namespace KeyCode = Graphics::KeyCode;
+
+    if (event.keyCode == KeyCode::Escape)
+        return SpecialKey::escape;
+    if (event.keyCode == KeyCode::Return)
+        return SpecialKey::enter;
+    if (event.keyCode == KeyCode::UpArrow)
+        return SpecialKey::upArrow;
+    if (event.keyCode == KeyCode::DownArrow)
+        return SpecialKey::downArrow;
+
+    return SpecialKey::none;
+}
+
+searchkeys::Key makeSearchKey(const Graphics::KeyEvent& event)
+{
+    auto key = searchkeys::Key {};
+    key.special = getSpecialKey(event);
+    key.characters = typedText(event).value_or("");
+    key.command = event.modifiers.command;
+    key.control = event.modifiers.control;
+    key.alt = event.modifiers.alt;
+    return key;
+}
+} // namespace
+
+bool PanelView::handleSearchKey(const Graphics::KeyEvent& event)
+{
+    auto& query = root.switcher.query;
+    auto current = searchKeysState;
+    current.text = query.getText();
+    current.caret = query.getCaretPosition();
+
+    auto result = searchkeys::handleKey(current, makeSearchKey(event));
+
+    if (result.action == searchkeys::Action::passThrough)
+        return false;
+
+    applySearchState(result.state);
+    performSearchAction(result.action);
+    return true;
+}
+
+void PanelView::applySearchState(const searchkeys::State& state)
+{
+    auto& query = root.switcher.query;
+
+    // A text change re-filters and re-previews exactly as typing does.
+    if (state.text != query.getText())
+        query.setText(state.text, true);
+
+    query.setCaretPosition(state.caret);
+    root.switcher.setNormalMode(searchkeys::isNormalMode(state));
+    searchKeysState = state;
+}
+
+void PanelView::performSearchAction(searchkeys::Action action)
+{
+    using searchkeys::Action;
+    using Effect = void (*)(PanelView&);
+
+    struct ActionEffect
+    {
+        Action action;
+        Effect effect;
+    };
+
+    static constexpr auto effects = std::array {
+        ActionEffect {Action::moveHighlightDown, [](PanelView& p) { p.onMove(1); }},
+        ActionEffect {Action::moveHighlightUp, [](PanelView& p) { p.onMove(-1); }},
+        ActionEffect {Action::moveHighlightToFirst, [](PanelView& p) { p.onMove(-pastEveryRow); }},
+        ActionEffect {Action::moveHighlightToLast, [](PanelView& p) { p.onMove(pastEveryRow); }},
+        ActionEffect {Action::openHighlighted, [](PanelView& p) { p.onAccept(); }},
+        // Rudder has no tabs to open into: ⌘Enter opens like Enter.
+        ActionEffect {Action::openHighlightedInNewTab, [](PanelView& p) { p.onAccept(); }},
+        ActionEffect {Action::closeHighlighted, [](PanelView& p) { p.onQuitSelected(); }},
+        ActionEffect {Action::starHighlighted, [](PanelView& p) { p.onToggleFavourite(); }},
+        ActionEffect {Action::closeSearch, [](PanelView& p) { p.onCancel(); }},
+    };
+
+    for (auto& entry: effects)
+        if (entry.action == action)
+            entry.effect(*this);
+}
+
 void PanelView::stopRenaming()
 {
     renaming.reset();
@@ -1018,7 +1199,6 @@ void PanelView::keyDown(const Graphics::KeyEvent& event)
         return;
     }
 
-    auto ctrl = event.modifiers.control;
     auto key = event.keyCode;
 
     if (accessibilityGateShown())
@@ -1039,15 +1219,25 @@ void PanelView::keyDown(const Graphics::KeyEvent& event)
         return;
     }
 
+    if (renaming)
+        editRename(event);
+    else if (!handleSearchKey(event))
+        handleSwitcherKey(event);
+}
+
+void PanelView::handleSwitcherKey(const Graphics::KeyEvent& event)
+{
+    using namespace Graphics;
+
+    auto ctrl = event.modifiers.control;
+    auto key = event.keyCode;
     auto quit = parseChord(settingsModel.quit);
     auto& mods = event.modifiers;
 
     auto favourite = parseChord(settingsModel.favourite);
     auto rename = parseChord(settingsModel.rename);
 
-    if (renaming)
-        editRename(event);
-    else if (rename
+    if (rename
              && matchesChord(*rename, key, mods.control, mods.alt, mods.shift, mods.command))
     {
         if (auto title = onRenameStart())
