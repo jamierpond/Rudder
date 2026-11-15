@@ -17,13 +17,14 @@ add_executable(RudderTests
         ProvidersTests.cpp
         RankingTests.cpp
         RenamesTests.cpp
+        SearchKeysTests.cpp
         SearchOrderTests.cpp
         SnapshotFrameTests.cpp
         TextFitTests.cpp
         UrlTests.cpp
         WebTests.cpp)
 
-target_link_libraries(RudderTests PRIVATE NanoTest NanoTestMain RudderSwitcher)
+target_link_libraries(RudderTests PRIVATE NanoTest NanoTestMain RudderSwitcher SearchKeys)
 
 # The contexts transport end to end, client and server in one process. On
 # macOS over a socket in a temporary folder, never a running Rudder's.

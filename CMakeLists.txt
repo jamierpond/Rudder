@@ -19,6 +19,12 @@ add_library(FrecencySearch STATIC
 target_include_directories(FrecencySearch PUBLIC Lib)
 target_compile_features(FrecencySearch PUBLIC cxx_std_20)
 
+# Vim-style insert and normal modes for a search box: key in, state and
+# action out, so Rudder, Grazer and CowTerm share one set of keys.
+add_library(SearchKeys STATIC Lib/SearchKeys/SearchKeys.cpp)
+target_include_directories(SearchKeys PUBLIC Lib)
+target_compile_features(SearchKeys PUBLIC cxx_std_20)
+
 if (RUDDER_CLIENT_ONLY)
     if (APPLE)
         enable_language(OBJCXX)
@@ -143,7 +149,7 @@ add_executable(Rudder
         Source/PanelDump.cpp
         Source/PanelView.cpp)
 
-target_link_libraries(Rudder PRIVATE eacp-ui RudderSwitcher RudderPlatform)
+target_link_libraries(Rudder PRIVATE eacp-ui RudderSwitcher RudderPlatform SearchKeys)
 target_compile_definitions(Rudder PRIVATE RUDDER_VERSION="${PROJECT_VERSION}")
 
 set(BUNDLE_ID "com.pond.rudder")
