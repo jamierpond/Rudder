@@ -1,6 +1,7 @@
 #include "Permissions.h"
 
-#include <eacp/Core/Process/Process.h>
+#include "MacProcesses.h"
+
 #include <eacp/Graphics/Graphics.h>
 
 #import <AppKit/AppKit.h>
@@ -78,23 +79,9 @@ NSString* toNSString(const std::string& text)
     return [NSString stringWithUTF8String:text.c_str()];
 }
 
-struct CommandOutput
+macos::ProcessOutput run(const std::vector<std::string>& args)
 {
-    int status = -1;
-    // stdout then stderr.
-    std::string text;
-};
-
-CommandOutput run(const std::vector<std::string>& args)
-{
-    auto options = eacp::Processes::ProcessOptions {};
-    options.executable = args.front();
-
-    for (auto i = std::size_t {1}; i < args.size(); ++i)
-        options.arguments.add(args[i]);
-
-    const auto result = eacp::Processes::run(options);
-    return {result.exited ? result.exitCode : -1, result.output + result.errorOutput};
+    return macos::runProcessCapturingOutput(args, macos::StandardInput::discarded);
 }
 
 // The verdict for one target app. A target that isn't running has none.
@@ -477,12 +464,12 @@ eacp::Graphics::Image appIcon()
 
 std::string bundlePath()
 {
-    auto* path = NSBundle.mainBundle.bundlePath;
+    const auto app = macos::findAppBundlePath();
 
-    if (path == nil || ![path hasSuffix:@".app"])
+    if (!app)
         return {};
 
-    return path.UTF8String;
+    return app->string();
 }
 
 std::string bundleIdentifier()

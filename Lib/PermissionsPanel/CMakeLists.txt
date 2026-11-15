@@ -13,7 +13,7 @@ add_library(PermissionsPanel STATIC
         PermissionsPanel.cpp)
 
 if (APPLE)
-    target_sources(PermissionsPanel PRIVATE Permissions-macOS.mm)
+    target_sources(PermissionsPanel PRIVATE MacProcesses.mm Permissions-macOS.mm)
     target_link_libraries(PermissionsPanel PUBLIC
             "-framework UserNotifications"
             "-framework Foundation"
