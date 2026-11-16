@@ -18,6 +18,15 @@ build:
 test:
     {{msvc}} node scripts/test.mjs
 
+# Builds in build-test/, as `just test` does, so the app in build/ keeps its
+# Accessibility grant.
+[doc("Build everything, then run clang-tidy (eacp's checks) over Rudder's sources; fails on any finding")]
+[unix]
+tidy:
+    cmake -G Ninja -B build-test -DCMAKE_BUILD_TYPE=Debug
+    cmake --build build-test
+    scripts/tidy.sh build-test
+
 [doc('Build + launch Rudder')]
 run:
     {{msvc}} node scripts/run.mjs
