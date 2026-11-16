@@ -103,7 +103,8 @@ int runHolder(const TestInstance& testInstance)
     return exitCodeClaimed;
 }
 
-int runSecondLaunch(const std::string& instanceName, std::vector<std::string> arguments)
+int runSecondLaunch(const std::string& instanceName,
+                    const std::vector<std::string>& arguments)
 {
     auto instance = pondapp::SingleInstance {instanceName};
 

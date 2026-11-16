@@ -20,7 +20,7 @@ RudderItem makeTabRow(const std::string& contextId)
     return row;
 }
 
-std::vector<RudderContext> makeTabs(std::vector<std::string> ids)
+std::vector<RudderContext> makeTabs(const std::vector<std::string>& ids)
 {
     auto tabs = std::vector<RudderContext> {};
 

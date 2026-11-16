@@ -4,7 +4,7 @@
 
 #include <NanoTest/NanoTest.h>
 
-#include <fstream>
+#include <eacp/Core/Utils/Files.h>
 
 using namespace nano;
 using namespace rudder;
@@ -110,10 +110,9 @@ auto tOldDocumentsGetQuit = test("Keybinding/a document from before quit gets th
     std::filesystem::remove_all(dir);
     std::filesystem::create_directories(dir);
 
-    {
-        auto file = std::ofstream {dir / "settings.json"};
-        file << R"({"keybindings": {"summon": "control+space", "back": "option+tab"}})";
-    }
+    eacp::Files::writeFile(
+        dir / "settings.json",
+        R"({"keybindings": {"summon": "control+space", "back": "option+tab"}})");
 
     auto db = emberstore::Database {dir.string()};
     auto stored = db.collection<Keybindings>("settings").get("keybindings");

@@ -229,7 +229,7 @@ PermissionsPanel::Layout PermissionsPanel::layout() const
     {
         const auto row = Rect {at.card.x + 12.0f, y, at.card.w - 24.0f, rowHeight - 2.0f};
         at.rows.push_back(row);
-        at.actions.push_back({row.right() - 136.0f, row.y + 7.0f, 124.0f, 26.0f});
+        at.actions.emplace_back(row.right() - 136.0f, row.y + 7.0f, 124.0f, 26.0f);
         y += rowHeight;
     }
 

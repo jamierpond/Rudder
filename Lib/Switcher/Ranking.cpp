@@ -279,9 +279,9 @@ std::vector<RudderItem> browseItems(const std::vector<RudderItem>& all,
 
         for (auto& context: recent)
             if (item.kind == "app" && context.row.appId == item.id)
-                rows.push_back({context.at, context.row});
+                rows.emplace_back(context.at, context.row);
 
-        rows.push_back({recency.lastUsed(frecencyKey(item)), item});
+        rows.emplace_back(recency.lastUsed(frecencyKey(item)), item);
     }
 
     std::stable_sort(rows.begin(),

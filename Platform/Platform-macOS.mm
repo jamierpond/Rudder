@@ -8,6 +8,8 @@
 #import <ScreenCaptureKit/ScreenCaptureKit.h>
 
 #include <SnapshotFrame.h>
+#include <eacp/Core/Utils/Environment.h>
+#include <eacp/Core/Utils/Strings.h>
 
 #include <libproc.h>
 #include <os/log.h>
@@ -343,7 +345,7 @@ eacp::Graphics::Image renderIcon(NSImage* icon)
             pixels[i + c] = (std::uint8_t) std::min(255, (int) pixels[i + c] * 255 / alpha);
     }
 
-    return eacp::Graphics::Image(size, size, std::move(pixels));
+    return {size, size, std::move(pixels)};
 }
 
 void forgetIcon(const std::string& appId)
@@ -432,11 +434,8 @@ std::atomic<bool> screenshotOn {false};
 
 // RUDDER_DEBUG_STALL_TAP_MS: the tap thread itself sleeps on each key press,
 // so the OS times the tap out -- for proving that is honoured.
-const int tapStallMs = []
-{
-    auto* text = std::getenv("RUDDER_DEBUG_STALL_TAP_MS");
-    return text != nullptr ? std::atoi(text) : 0;
-}();
+const int tapStallMs =
+    eacp::Strings::parseIntOr(eacp::getEnvValue("RUDDER_DEBUG_STALL_TAP_MS"));
 
 // Main thread only.
 KeyCapture activeCapture;
@@ -1159,6 +1158,8 @@ std::vector<std::string> titlesOf(pid_t pid);
 std::atomic<std::uint64_t> latestPreview {0};
 } // namespace
 
+// Apple's private function; the system library fixes its name.
+// NOLINTNEXTLINE(bugprone-reserved-identifier)
 extern "C" AXError _AXUIElementGetWindow(AXUIElementRef element, CGWindowID* windowId);
 
 namespace
@@ -1466,6 +1467,8 @@ bool focusWindow(const RunningApp& app, const std::string& windowId, bool unmini
         return false;
 
     auto pid = app.pid;
+    // The block runs after this returns, when app may be gone.
+    // NOLINTNEXTLINE(performance-unnecessary-copy-initialization)
     auto target = app;
     auto minimized = unminimize && window.minimized;
     auto title = window.title;
@@ -2343,11 +2346,30 @@ CGEventRef probeCallback(CGEventTapProxy, CGEventType type, CGEventRef event, vo
 
     return event;
 }
+
+// Milliseconds since the first post; `seenAt` is 0 for a swallowed press.
+std::string formatProbeLine(int index, std::uint64_t sentAt, std::uint64_t seenAt)
+{
+    constexpr auto nanosecondsPerMillisecond = 1e6;
+    auto sentNanoseconds = static_cast<double>(sentAt - probeStart);
+    auto seenNanoseconds = static_cast<double>(seenAt - probeStart);
+    char line[128];
+    std::snprintf(line,
+                  sizeof(line),
+                  "  #%02d sent %6.0f  %s %6.0f\n",
+                  index,
+                  sentNanoseconds / nanosecondsPerMillisecond,
+                  seenAt != 0 ? "passed at" : "swallowed",
+                  seenAt != 0 ? seenNanoseconds / nanosecondsPerMillisecond : 0.0);
+    return line;
+}
 } // namespace
 
 void probeKeyFlow(std::uint16_t keyCode,
                   int count,
                   double interval,
+                  // The detached thread's block keeps its own copy.
+                  // NOLINTNEXTLINE(performance-unnecessary-value-param)
                   std::function<void(const std::string&)> report)
 {
     count = std::min(count, 256);
@@ -2404,16 +2426,7 @@ void probeKeyFlow(std::uint16_t keyCode,
 
       for (auto i = 0; i < count; ++i)
       {
-          auto seen = probeSeen[i].load();
-          char line[128];
-          std::snprintf(line,
-                        sizeof(line),
-                        "  #%02d sent %6.0f  %s %6.0f\n",
-                        i,
-                        (sent[(std::size_t) i] - probeStart) / 1e6,
-                        seen != 0 ? "passed at" : "swallowed",
-                        seen != 0 ? (seen - probeStart) / 1e6 : 0.0);
-          text += line;
+          text += formatProbeLine(i, sent[(std::size_t) i], probeSeen[i].load());
       }
 
       text += "  capture tap enabled now: ";

@@ -96,7 +96,10 @@ std::vector<protocol::Context> makeManyContexts(const std::string& tag)
     for (auto index = 0; index < contextsInLargePush; ++index)
     {
         auto id = tag + std::to_string(index);
-        contexts.push_back({id, "title " + id + padding, "/Users/someone/projects/" + id, ""});
+        auto title = "title " + id;
+        title += padding;
+        contexts.push_back(
+            {id, std::move(title), "/Users/someone/projects/" + id, ""});
     }
 
     return contexts;

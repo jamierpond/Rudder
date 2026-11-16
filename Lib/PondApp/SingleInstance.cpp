@@ -132,7 +132,7 @@ struct SingleInstance::Impl
         }
     }
 
-    bool tellRunningInstance(const std::vector<std::string>& arguments)
+    bool tellRunningInstance(const std::vector<std::string>& arguments) const
     {
         try
         {

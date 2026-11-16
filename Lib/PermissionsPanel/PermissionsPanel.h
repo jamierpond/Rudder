@@ -102,7 +102,7 @@ private:
     bool isDragTileActive() const;
     std::string describeBanner() const;
 
-    void paintRow(eacp::UI::Graphics& g, const Layout& at, int row);
+    void paintRow(eacp::UI::Graphics& g, const Layout& at, int i);
     eacp::UI::Color getStatusColour(permissions::Status status) const;
     void paintDetail(eacp::UI::Graphics& g, const Layout& at);
     void paintDragTile(eacp::UI::Graphics& g, const eacp::UI::Rect& tile, bool done);

@@ -22,6 +22,8 @@
 #include "Web.h"
 
 #include <eacp/Core/App/LoginItem.h>
+#include <eacp/Core/Utils/Environment.h>
+#include <eacp/Core/Utils/Strings.h>
 #include <eacp/UI/UI.h>
 #include <emberstore/AppDatabase.h>
 #include <emberstore/FileWatcher.h>
@@ -627,7 +629,7 @@ struct RudderApp
     void watchInstalledApps()
     {
         platform::watchInstalledApps(
-            [this](std::vector<platform::InstalledApp> apps)
+            [this](const std::vector<platform::InstalledApp>& apps)
             {
                 installedItems.clear();
                 installedPaths.clear();
@@ -663,7 +665,7 @@ struct RudderApp
         logStack("app.activate", appId);
     }
 
-    void logStack(std::string_view event, std::string_view appId = {})
+    void logStack(std::string_view event, std::string_view appId = {}) const
     {
         auto stack = std::string {};
 
@@ -693,7 +695,7 @@ struct RudderApp
         applyFrame(placedFrame(savedFrame(favourites.panel, area), area));
     }
 
-    Frame currentFrame()
+    Frame currentFrame() const
     {
         auto position = window.getPosition();
         auto size = window.getSize();
@@ -854,11 +856,8 @@ struct RudderApp
     {
         // RUDDER_DEBUG_STALL_MS: hold the main thread on every key press, to
         // prove a stuck Rudder can't take the keyboard with it.
-        static const auto stallMs = []
-        {
-            auto* text = std::getenv("RUDDER_DEBUG_STALL_MS");
-            return text != nullptr ? std::atoi(text) : 0;
-        }();
+        static const auto stallMs =
+            eacp::Strings::parseIntOr(eacp::getEnvValue("RUDDER_DEBUG_STALL_MS"));
 
         if (stallMs > 0 && event.type == KeyEventType::Down)
         {
@@ -911,7 +910,7 @@ struct RudderApp
                && mods.shift == chord->shift && mods.command == chord->command;
     }
 
-    void logCapturedKey(const KeyEvent& event, const char* outcome)
+    void logCapturedKey(const KeyEvent& event, const char* outcome) const
     {
         auto& mods = event.modifiers;
         logEvent("key-capture.key",
@@ -1384,7 +1383,7 @@ struct RudderApp
 
     // Favourites used to live in Rudder's emberstore folder. Moved over once,
     // only when the new file isn't there yet, then the old one goes.
-    void migrateFavourites()
+    void migrateFavourites() const
     {
         auto old = (durable.directory() / "favourites.json").str();
         auto now = favouritesPath().str();
@@ -1644,7 +1643,7 @@ struct RudderApp
         };
 
         contextServer.onContexts =
-            [this](int connection, std::vector<protocol::Context> pushed)
+            [this](int connection, const std::vector<protocol::Context>& pushed)
         {
             // An app that said hello before its first window showed is filed
             // under its bundle id until a push finds its row.
@@ -2214,13 +2213,13 @@ struct RudderApp
     // Rudder handing the keyboard back.
     void probeIfAsked()
     {
-        auto* text = std::getenv("RUDDER_DEBUG_CAPTURE_PROBE");
+        auto text = eacp::getEnv("RUDDER_DEBUG_CAPTURE_PROBE");
 
-        if (text == nullptr)
+        if (!text)
             return;
 
         probeTimer.emplace(
-            [this, count = std::atoi(text)]
+            [this, count = eacp::Strings::parseIntOr(*text)]
             {
                 ++probeTicks;
 

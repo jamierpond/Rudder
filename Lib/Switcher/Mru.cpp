@@ -49,7 +49,7 @@ void MruStore::prune()
     auto aged = std::vector<std::pair<std::int64_t, std::string>> {};
 
     for (auto& id: stamps.ids())
-        aged.push_back({lastUsed(id), id});
+        aged.emplace_back(lastUsed(id), id);
 
     std::sort(aged.begin(), aged.end());
 

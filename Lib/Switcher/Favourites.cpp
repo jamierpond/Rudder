@@ -146,8 +146,8 @@ std::optional<Favourite> readFavourite(const Miro::JSON& json,
     if (favourite.title.empty())
         error = "favourite " + std::to_string(index + 1) + " needs a \"title\"";
     else if (targets != 1)
-        error = "favourite \"" + favourite.title
-                + "\" needs exactly one of \"url\", \"app\" or \"path\"";
+        error = R"(favourite ")" + favourite.title
+                + R"(" needs exactly one of "url", "app" or "path")";
 
     if (!error.empty())
         return std::nullopt;
@@ -198,7 +198,7 @@ std::optional<std::map<std::string, Frame>> readPanelFrames(const Miro::JSON& js
 
         if (frame.width <= 0.f || frame.height <= 0.f)
         {
-            error = where + ": \"width\" and \"height\" must be above 0";
+            error = where + R"(: "width" and "height" must be above 0)";
             return std::nullopt;
         }
 
@@ -311,13 +311,13 @@ bool adoptPanelFrames(FavouriteList& config, std::string_view oldText, std::stri
     return true;
 }
 
-std::vector<RudderItem> favouriteItems(const FavouriteList& config)
+std::vector<RudderItem> favouriteItems(const FavouriteList& list)
 {
     auto items = std::vector<RudderItem> {};
 
-    for (std::size_t i = 0; i < config.favourites.size(); ++i)
+    for (std::size_t i = 0; i < list.favourites.size(); ++i)
     {
-        auto& favourite = config.favourites[i];
+        auto& favourite = list.favourites[i];
         auto item = RudderItem {};
         item.kind = "favourite";
         item.id = "fav:" + std::to_string(i);

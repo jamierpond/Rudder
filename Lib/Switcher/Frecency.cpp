@@ -41,7 +41,7 @@ void FrecencyStore::prune()
     auto ranked = std::vector<std::pair<double, std::string>> {};
 
     for (auto& id: entries.ids())
-        ranked.push_back({frecency(id, now), id});
+        ranked.emplace_back(frecency(id, now), id);
 
     std::sort(ranked.begin(), ranked.end());
 

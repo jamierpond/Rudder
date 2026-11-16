@@ -284,7 +284,7 @@ void requestAutomation(bool prompted, std::function<void()> done)
     // AEDeterminePermissionToAutomateTarget blocks until the prompt
     // is answered, so never on the main thread.
     launchSystemEvents(
-        [done]
+        [done = std::move(done)]
         {
             for (const auto* target: {finder, systemEvents})
                 automation(target, true);
@@ -305,7 +305,7 @@ void requestFilesAndFolders(bool prompted, std::function<void()> done)
     // Touching each folder is the request: macOS prompts on first
     // access, and the access waits for the answer.
     inBackground(
-        [done]
+        [done = std::move(done)]
         {
             for (const auto& folder: protectedFolders())
                 canList(folder);

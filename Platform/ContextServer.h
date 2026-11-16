@@ -33,7 +33,7 @@ public:
     std::function<void(int connection, const protocol::Hello&)> onHello =
         [](int, auto&) {};
     std::function<void(int connection, std::vector<protocol::Context>)> onContexts =
-        [](int, auto) {};
+        [](int, const auto&) {};
     std::function<void(int connection)> onClosed = [](int) {};
 
 private:

@@ -50,9 +50,10 @@ std::vector<std::pair<std::int64_t, std::string>> schedule(const std::vector<Use
     for (auto& use: uses)
         for (auto day: use.days)
             for (int i = 0; i < use.perDay; ++i)
-                picks.push_back({monday + day * dayMs + 9 * hourMs
-                                     + (std::int64_t) (9 * hourMs * (i + 0.5) / use.perDay),
-                                 use.key});
+                picks.emplace_back(
+                    monday + day * dayMs + 9 * hourMs
+                        + (std::int64_t) (9 * hourMs * (i + 0.5) / use.perDay),
+                    use.key);
 
     std::sort(picks.begin(), picks.end());
     return picks;

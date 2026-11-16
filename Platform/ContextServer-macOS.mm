@@ -122,15 +122,15 @@ ContextServer::~ContextServer()
         dispatch_source_cancel(native->acceptor);
 }
 
-bool ContextServer::start(const std::string& path)
+bool ContextServer::start(const std::string& endpoint)
 {
     auto address = sockaddr_un {};
     address.sun_family = AF_UNIX;
 
-    if (path.size() >= sizeof(address.sun_path))
+    if (endpoint.size() >= sizeof(address.sun_path))
         return false;
 
-    auto folder = path.substr(0, path.rfind('/'));
+    auto folder = endpoint.substr(0, endpoint.rfind('/'));
     [NSFileManager.defaultManager
               createDirectoryAtPath:[NSString stringWithUTF8String:folder.c_str()]
         withIntermediateDirectories:YES
@@ -139,9 +139,9 @@ bool ContextServer::start(const std::string& path)
 
     // A socket file left by a Rudder that didn't exit cleanly would make bind
     // fail; nothing can be listening on it, as Rudder is the only listener.
-    ::unlink(path.c_str());
+    ::unlink(endpoint.c_str());
 
-    std::strncpy(address.sun_path, path.c_str(), sizeof(address.sun_path) - 1);
+    std::strncpy(address.sun_path, endpoint.c_str(), sizeof(address.sun_path) - 1);
 
     auto fd = ::socket(AF_UNIX, SOCK_STREAM, 0);
 
@@ -156,7 +156,7 @@ bool ContextServer::start(const std::string& path)
     }
 
     // This user's apps only.
-    ::chmod(path.c_str(), 0600);
+    ::chmod(endpoint.c_str(), 0600);
 
     native->listener = fd;
     native->acceptor = dispatch_source_create(
