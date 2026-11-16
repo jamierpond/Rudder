@@ -10,6 +10,10 @@ project(Rudder VERSION 0.1.0 LANGUAGES C CXX)
 # brings eacp (and with it Miro) itself.
 option(RUDDER_CLIENT_ONLY "Build only the RudderClient library" OFF)
 
+# pond_add_version_library: each app's "<semver>+<commit>" version string. Before
+# the client-only return, so every app that adds Rudder gets it.
+include(${CMAKE_CURRENT_LIST_DIR}/cmake/PondVersion.cmake)
+
 # Matching and usage ordering for search lists: plain functions on strings
 # and times, no storage, no dependencies, so the client-only build has it.
 add_library(FrecencySearch STATIC
@@ -184,21 +188,8 @@ add_executable(Rudder
         Source/PanelView.cpp)
 
 target_link_libraries(Rudder PRIVATE eacp-ui PondApp RudderSwitcher RudderPlatform SearchKeys SessionLog)
-target_compile_definitions(Rudder PRIVATE RUDDER_VERSION="${PROJECT_VERSION}")
-
-set(RUDDER_VERSION_HEADER ${PROJECT_BINARY_DIR}/generated/RudderVersion.h)
-add_custom_target(RudderVersion
-        BYPRODUCTS ${RUDDER_VERSION_HEADER}
-        COMMAND ${CMAKE_COMMAND}
-                -DSRC=${CMAKE_SOURCE_DIR}
-                -DIN=${CMAKE_SOURCE_DIR}/Source/Version.h.in
-                -DOUT=${RUDDER_VERSION_HEADER}
-                -DRUDDER_PROJECT_VERSION=${PROJECT_VERSION}
-                -P ${CMAKE_SOURCE_DIR}/cmake/GitVersion.cmake
-        COMMENT "Stamping git version")
-
-add_dependencies(Rudder RudderVersion)
-target_include_directories(Rudder PRIVATE ${PROJECT_BINARY_DIR}/generated)
+pond_add_version_library(RudderVersion)
+target_link_libraries(Rudder PRIVATE RudderVersion)
 
 eacp_enable_crash_reporting(Rudder SYMBOLS_DIR ${PROJECT_BINARY_DIR}/symbols)
 target_link_libraries(Rudder PRIVATE eacp-crash-faults)

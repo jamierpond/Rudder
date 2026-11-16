@@ -35,7 +35,7 @@
 #if EACP_CRASH_REPORTING
 #include <eacp/CrashReporting/CrashReporting.h>
 #include <eacp/CrashReporting/Faults/Faults.h>
-#include <RudderVersion.h>
+#include <PondVersion.h>
 #endif
 
 #include <algorithm>
@@ -219,7 +219,7 @@ struct RudderApp
 
         quick_window::setLogger(logPlatformMessage);
         platform::setLogger(logPlatformMessage);
-        logEvent("app.launch", {{"version", RUDDER_VERSION}});
+        logEvent("app.launch", {{"version", pond::getVersionString()}});
 
         for (const auto& file: getFilesWithRenamedAppIds())
             logEvent("app.migrate-app-ids", {{"file", file.string()}});
@@ -2445,7 +2445,7 @@ int main(int argc, char* argv[])
 
 #if EACP_CRASH_REPORTING
     auto crashReportingOptions = CrashReporting::Options {};
-    crashReportingOptions.release = rudder::versionTag();
+    crashReportingOptions.release = pond::getVersionString();
     CrashReporting::start(crashReportingOptions);
     crashIfAskedToForTesting(argc, argv);
 #endif

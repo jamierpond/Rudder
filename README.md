@@ -187,3 +187,23 @@ rudder.pushContexts({{"1", "Title", "subtitle", "https://..."}});
 
 It reconnects when Rudder restarts and is silent when Rudder isn't running.
 Grazer is the first provider.
+
+## Version strings for apps
+
+Every pond app reports one version, `<semver>+<commit>` (`0.1.0+f30059f`,
+`0.1.0+f30059f.dirty` when tracked files have uncommitted changes, the semver
+alone when built outside a git checkout). Adding Rudder with lockstep brings
+the function that makes it; see `cmake/PondVersion.cmake`:
+
+```cmake
+pond_add_version_library(MyAppVersion)
+target_link_libraries(MyApp PRIVATE MyAppVersion)
+```
+
+```cpp
+#include <PondVersion.h>
+std::printf("myapp %s\n", pond::getVersionString().c_str());
+```
+
+The commit is read on every build into one generated source file, so a new
+commit shows after `just build` and recompiles only that file.
