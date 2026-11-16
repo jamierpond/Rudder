@@ -198,6 +198,7 @@ the function that makes it; see `cmake/PondVersion.cmake`:
 ```cmake
 pond_add_version_library(MyAppVersion)
 target_link_libraries(MyApp PRIVATE MyAppVersion)
+pond_add_version_test(MyApp myapp) # ctest: `myapp --version` prints "myapp <version>", exits 0
 ```
 
 ```cpp

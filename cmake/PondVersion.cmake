@@ -7,9 +7,28 @@
 #   #include <PondVersion.h>
 #   pond::getVersionString(); // "0.1.0+f30059f"
 #
+#   pond_add_version_test(ct ct) # ctest: `ct --version` prints "ct <semver>..." and exits 0
+#
 # Rudder includes this file, so every app that adds Rudder with lockstep gets
 # the function. This file is identical in every pond app that keeps its own
 # copy; change Rudder's, then copy it to them.
+
+if (CMAKE_SCRIPT_MODE_FILE AND DEFINED TESTED_EXECUTABLE)
+    execute_process(
+            COMMAND "${TESTED_EXECUTABLE}" --version
+            OUTPUT_VARIABLE printedVersion
+            RESULT_VARIABLE exitCode)
+
+    string(REPLACE "." "\\." semanticVersionPattern "${SEMANTIC_VERSION}")
+    set(expectedPattern "^${TOOL_NAME} ${semanticVersionPattern}(\\+[0-9a-f]+(\\.dirty)?)?\r?\n$")
+
+    if (NOT exitCode EQUAL 0 OR NOT printedVersion MATCHES "${expectedPattern}")
+        message(FATAL_ERROR "`${TOOL_NAME} --version` exited ${exitCode} and printed "
+                "'${printedVersion}', not '${TOOL_NAME} ${SEMANTIC_VERSION}[+<commit>[.dirty]]'")
+    endif ()
+
+    return()
+endif ()
 
 if (CMAKE_SCRIPT_MODE_FILE)
     set(versionString "${SEMANTIC_VERSION}")
@@ -83,4 +102,13 @@ std::string getVersionString();
     add_dependencies(${libraryName} ${libraryName}Stamp)
     target_include_directories(${libraryName} PUBLIC "${generatedDirectory}")
     target_compile_features(${libraryName} PUBLIC cxx_std_17)
+endfunction()
+
+function(pond_add_version_test executableTarget toolName)
+    add_test(NAME ${executableTarget}PrintsItsVersion
+            COMMAND "${CMAKE_COMMAND}"
+                    "-DTESTED_EXECUTABLE=$<TARGET_FILE:${executableTarget}>"
+                    "-DTOOL_NAME=${toolName}"
+                    "-DSEMANTIC_VERSION=${PROJECT_VERSION}"
+                    -P "${CMAKE_CURRENT_FUNCTION_LIST_FILE}")
 endfunction()
