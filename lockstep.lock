@@ -130,12 +130,12 @@
       "usesGitLfs": false
     },
     {
-      "commit": "7d4772c2d1e2b2232087e78c5d65f369e768cf60",
-      "hash": "1c036b3e49a15aecd600df8e2210ed171dd67b3472b6fddb73a3a9657073a501",
+      "commit": "55e4023b52d30118c083c6c1efada7cd43edf8ba",
+      "hash": "63c07b12676855ca67e7c3422aeb76e89d28028ceea2686067d9b350a920be28",
       "kind": "git",
       "name": "eacp",
       "patches": [],
-      "requestedRef": "jp/windows-apps",
+      "requestedRef": "jp/develop",
       "submoduleSelection": {
         "isRecursive": true,
         "isRestricted": false,
@@ -210,6 +210,6 @@
       "usesGitLfs": false
     }
   ],
-  "root": "3630a1a45bd4003c7ea92bca843b4fc49373ceef7c7b963e5a69bb1e2c4df838",
+  "root": "6205004f46ff1a677ba6ba1fad6b85f34c51a1a0957c0dd8a575bc38b74bb66f",
   "version": 1
 }
