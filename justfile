@@ -58,3 +58,8 @@ frecency-report *args:
 [doc('Print how Jamie uses his apps from their session logs: feature counts, never-used features, abandoned pickers, slow picks')]
 usage-report *args:
     node scripts/usage-report.mjs {{args}}
+
+[doc('clang-format every tracked source in place')]
+[unix]
+format:
+    git ls-files '*.h' '*.cpp' '*.mm' | xargs clang-format -i
