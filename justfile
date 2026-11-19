@@ -18,6 +18,11 @@ build:
 test:
     {{msvc}} node scripts/test.mjs
 
+[doc("Run the unit tests on a Windows box over ssh (git-bash shell) with this checkout's changes applied")]
+[unix]
+test-windows host="jamie@tamby-windows":
+    scripts/test-windows-remote.sh {{host}}
+
 # Builds in build-test/, as `just test` does, so the app in build/ keeps its
 # Accessibility grant.
 [doc("Build everything, then run clang-tidy (eacp's checks) over Rudder's sources; fails on any finding")]

@@ -120,4 +120,34 @@ auto tOldDocumentsGetQuit = test("Keybinding/a document from before quit gets th
     check(stored.has_value());
     check(stored->summon == "control+space");
     check(stored->quit == "control+q");
+    check(stored->cycle == Keybindings {}.cycle);
+};
+
+auto tCycleDefault = test("Keybinding/the cycle default parses as control+tab") = []
+{
+    auto cycle = parseChord(Keybindings {}.cycle);
+
+    check(cycle.has_value() && cycle->control && cycle->key == "tab");
+    check(!cycle->option && !cycle->shift && !cycle->command);
+};
+
+auto tAnyChordModifierHeld = test(
+    "Keybinding/a chord's modifiers count as held while any one of them is") = []
+{
+    auto chord = *parseChord("control+option+tab");
+
+    check(isAnyChordModifierHeld(chord, {.control = true}));
+    check(isAnyChordModifierHeld(chord, {.option = true}));
+    check(!isAnyChordModifierHeld(chord, {.shift = true, .command = true}));
+    check(!isAnyChordModifierHeld(chord, {}));
+};
+
+auto tReverseCycleChord = test(
+    "Keybinding/the reverse cycle chord adds Shift, unless the chord has it") = []
+{
+    auto reverse = getReverseCycleChord(*parseChord("control+tab"));
+
+    check(reverse.has_value() && reverse->control && reverse->shift
+          && reverse->key == "tab");
+    check(!getReverseCycleChord(*parseChord("control+shift+tab")).has_value());
 };

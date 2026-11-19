@@ -20,6 +20,7 @@
 #include <algorithm>
 #include <atomic>
 #include <filesystem>
+#include <future>
 #include <map>
 #include <memory>
 #include <cmath>
@@ -772,6 +773,116 @@ void CALLBACK
         activeCapture.onMouseDownOutside();
 }
 
+// The panel's own key events carry no modifier key going up, and the cycle
+// gesture needs that wherever the focus is. A low-level keyboard hook sees it,
+// on a thread of its own so a busy main thread never holds up the system's
+// input. It only watches: every event goes on unchanged.
+
+struct ModifierKeySides
+{
+    DWORD leftVirtualKey;
+    DWORD rightVirtualKey;
+    bool eacp::Graphics::ModifierKeys::* held;
+};
+
+constexpr ModifierKeySides modifierKeySides[] = {
+    {VK_LSHIFT, VK_RSHIFT, &eacp::Graphics::ModifierKeys::shift},
+    {VK_LCONTROL, VK_RCONTROL, &eacp::Graphics::ModifierKeys::control},
+    {VK_LMENU, VK_RMENU, &eacp::Graphics::ModifierKeys::alt},
+    {VK_LWIN, VK_RWIN, &eacp::Graphics::ModifierKeys::command},
+};
+
+// GetAsyncKeyState's top bit: the key is down now.
+constexpr auto virtualKeyHeldBit = 0x8000;
+
+std::thread modifierWatchThread;
+DWORD modifierWatchThreadId = 0;
+
+bool isVirtualKeyHeld(DWORD virtualKey)
+{
+    auto virtualKeyCode = static_cast<int>(virtualKey);
+    return (GetAsyncKeyState(virtualKeyCode) & virtualKeyHeldBit) != 0;
+}
+
+// The hook runs before the system updates its key state for this event, so
+// the event's own key is taken from the event and its other side from the OS.
+std::optional<eacp::Graphics::ModifierKeys>
+    modifiersAfterKeyEvent(const KBDLLHOOKSTRUCT& key)
+{
+    for (auto& side: modifierKeySides)
+    {
+        if (key.vkCode != side.leftVirtualKey && key.vkCode != side.rightVirtualKey)
+            continue;
+
+        auto otherSide = key.vkCode == side.leftVirtualKey ? side.rightVirtualKey
+                                                           : side.leftVirtualKey;
+        auto isGoingDown = (key.flags & LLKHF_UP) == 0;
+        auto modifiers = eacp::Graphics::Keyboard::getModifiers();
+        modifiers.*side.held = isGoingDown || isVirtualKeyHeld(otherSide);
+        return modifiers;
+    }
+
+    return std::nullopt;
+}
+
+void deliverModifiersChanged(const eacp::Graphics::ModifierKeys& modifiers)
+{
+    if (capturePanel != nullptr && activeCapture.onModifiersChanged)
+        activeCapture.onModifiersChanged(modifiers);
+}
+
+LRESULT CALLBACK watchModifierKeys(int code, WPARAM message, LPARAM data)
+{
+    if (code == HC_ACTION)
+    {
+        auto* key = reinterpret_cast<const KBDLLHOOKSTRUCT*>(data);
+
+        if (auto modifiers = modifiersAfterKeyEvent(*key))
+            eacp::Threads::callAsync([modifiers = *modifiers]
+                                     { deliverModifiersChanged(modifiers); });
+    }
+
+    return CallNextHookEx(nullptr, code, message, data);
+}
+
+void runModifierWatch(std::promise<DWORD> started)
+{
+    // Creates this thread's message queue, so the WM_QUIT that ends it can't
+    // be posted before there is a queue to take it.
+    auto message = MSG {};
+    PeekMessageW(&message, nullptr, 0, 0, PM_NOREMOVE);
+
+    auto hook = SetWindowsHookExW(
+        WH_KEYBOARD_LL, watchModifierKeys, GetModuleHandleW(nullptr), 0);
+    started.set_value(GetCurrentThreadId());
+
+    while (GetMessageW(&message, nullptr, 0, 0) > 0)
+        DispatchMessageW(&message);
+
+    if (hook != nullptr)
+        UnhookWindowsHookEx(hook);
+}
+
+void stopWatchingModifierKeys()
+{
+    if (!modifierWatchThread.joinable())
+        return;
+
+    PostThreadMessageW(modifierWatchThreadId, WM_QUIT, 0, 0);
+    modifierWatchThread.join();
+    modifierWatchThreadId = 0;
+}
+
+void startWatchingModifierKeys()
+{
+    stopWatchingModifierKeys();
+
+    auto started = std::promise<DWORD> {};
+    auto threadId = started.get_future();
+    modifierWatchThread = std::thread(runModifierWatch, std::move(started));
+    modifierWatchThreadId = threadId.get();
+}
+
 // --- Installed apps ---------------------------------------------------------
 //
 // What the Start menu lists: every shortcut under the user's and everyone's
@@ -1081,11 +1192,14 @@ bool startKeyCapture(eacp::Graphics::Window& panel,
                                   0,
                                   0,
                                   WINEVENT_OUTOFCONTEXT);
+    startWatchingModifierKeys();
     return true;
 }
 
 void stopKeyCapture()
 {
+    stopWatchingModifierKeys();
+
     if (captureHook != nullptr)
         UnhookWinEvent(captureHook);
 

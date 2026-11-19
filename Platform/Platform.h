@@ -64,9 +64,13 @@ bool activateApp(const RunningApp& app);
 // reach macOS, and from one of them until the screenshot UI is gone every key
 // goes to macOS and clicks don't count as leaving: the panel stays up, ready to
 // be captured.
+//
+// `onModifiersChanged` runs on the main thread with the modifiers held after
+// any modifier key goes down or up. Those events are never swallowed.
 struct KeyCapture
 {
     std::function<void(const eacp::Graphics::KeyEvent&)> onKey;
+    std::function<void(const eacp::Graphics::ModifierKeys&)> onModifiersChanged;
     std::function<void()> onMouseDownOutside;
     std::function<void(const std::string& reason)> onAbort;
 };

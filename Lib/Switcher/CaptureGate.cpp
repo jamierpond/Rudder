@@ -53,6 +53,9 @@ CaptureVerdict decideCapture(CaptureEvent event,
     if (state.stalled)
         return CaptureVerdict::passAndAbort;
 
+    if (event == CaptureEvent::modifiersChanged)
+        return CaptureVerdict::passAndCopy;
+
     if (event != CaptureEvent::keyDown && event != CaptureEvent::keyUp)
         return CaptureVerdict::pass;
 

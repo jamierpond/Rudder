@@ -23,6 +23,10 @@ enum class CaptureVerdict
     // too until the screenshot is over (the space, escape and arrows that
     // drive ⌘⇧4 and ⌘⇧5 belong to macOS, not the panel).
     passAndScreenshot,
+    // Let it go, and the main thread gets a copy: a modifier key went down
+    // or up, which the cycle gesture waits for. Never swallowed, so every app
+    // still sees its modifiers.
+    passAndCopy,
     // Let it go and switch the tap off: capture is over (the panel hid).
     passAndStop,
     // Let it go, switch the tap off for good and tell the main thread to drop
@@ -34,6 +38,8 @@ enum class CaptureEvent
 {
     keyDown,
     keyUp,
+    // A modifier key went down or up (macOS: kCGEventFlagsChanged).
+    modifiersChanged,
     // The OS switched the tap off because it took too long. Never switched
     // back on.
     tapTimedOut,

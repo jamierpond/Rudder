@@ -123,6 +123,7 @@ add_library(RudderSwitcher STATIC
         Lib/Switcher/BackStack.cpp
         Lib/Switcher/CaptureGate.cpp
         Lib/Switcher/ClosingContexts.cpp
+        Lib/Switcher/CycleGesture.cpp
         Lib/Switcher/DragHandle.cpp
         Lib/Switcher/Favourites.cpp
         Lib/Switcher/Focus.cpp

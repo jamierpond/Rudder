@@ -77,6 +77,25 @@ auto tNoPanelPasses = test("CaptureGate/no panel on screen: everything passes, t
           == CaptureVerdict::passAndStop);
 };
 
+auto tModifiersPassAndCopy = test(
+    "CaptureGate/a modifier change always reaches the system, and the panel gets a copy") =
+    []
+{
+    auto screenshotting = open;
+    screenshotting.screenshotting = true;
+
+    check(decideCapture(CaptureEvent::modifiersChanged, open, std::nullopt, hotkeys)
+          == CaptureVerdict::passAndCopy);
+    check(decideCapture(
+              CaptureEvent::modifiersChanged, screenshotting, std::nullopt, hotkeys)
+          == CaptureVerdict::passAndCopy);
+    check(decideCapture(CaptureEvent::modifiersChanged,
+                        {true, false, false},
+                        std::nullopt,
+                        hotkeys)
+          == CaptureVerdict::passAndStop);
+};
+
 auto tStallAborts = test("CaptureGate/a stuck main thread gets the keyboard back") = []
 {
     check(keyDown({true, true, true}, letterA) == CaptureVerdict::passAndAbort);

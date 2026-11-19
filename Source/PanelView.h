@@ -33,6 +33,7 @@ struct SettingsModel
 {
     std::string summonLabel;
     std::string backLabel;
+    std::string cycleLabel;
     std::string quitLabel;
     std::string favouriteLabel;
     std::string renameLabel;
@@ -41,6 +42,7 @@ struct SettingsModel
     std::string quit;
     std::string favourite;
     std::string rename;
+    std::string cycle;
 
     // Where the favourites file (~/.config/rudder.json) lives, for anyone (or any agent) editing it.
     std::string favouritesPath;
@@ -159,6 +161,8 @@ public:
     eacp::UI::Button summonChord;
     eacp::UI::Label backCaption {"Go back to the previous app"};
     eacp::UI::Button backChord;
+    eacp::UI::Label cycleCaption {"Cycle recent rows: hold, tap, let go to pick"};
+    eacp::UI::Button cycleChord;
     eacp::UI::Label quitCaption {"Quit the selected app, or close the selected tab (in the panel)"};
     eacp::UI::Button quitChord;
     eacp::UI::Label favouriteCaption {"Favourite / unfavourite the selection"};
@@ -330,6 +334,10 @@ public:
     std::function<void(int)> onChoose = [](int) {};
     std::function<void()> onCancel = [] {};
 
+    // The cycle hotkey pressed inside the panel, and the same chord with Shift.
+    std::function<void()> onCycleChord = [] {};
+    std::function<void()> onReverseCycleChord = [] {};
+
     // The favourite binding (⌘D by default): star the selection, or unstar a
     // favourite.
     std::function<void()> onToggleFavourite = [] {};
@@ -388,11 +396,22 @@ private:
     // editing, ctrl-n/p, then the text field.
     void handleSwitcherKey(const eacp::Graphics::KeyEvent& event);
 
+    // Keys for the list: the rename editor's, the cycle chords, the search
+    // box's, then the switcher's.
+    void handleListKey(const eacp::Graphics::KeyEvent& event);
+
+    // The cycle chord or its reverse: handed to the app, true. Ahead of the
+    // search box, which would otherwise take the Tab.
+    bool handleCycleKey(const eacp::Graphics::KeyEvent& event);
+
     // A key while renaming: every key is the editor's.
     void editRename(const eacp::Graphics::KeyEvent& event);
     void stopRenaming();
 
     void startCapture(const std::string& action);
+    // A binding's button: its chord, or a prompt while it is being recorded.
+    std::string getChordButtonText(const std::string& action,
+                                   const std::string& label) const;
     void recordChord(const eacp::Graphics::KeyEvent& event);
     void showPage(bool showSettings);
 

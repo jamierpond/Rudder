@@ -83,3 +83,34 @@ auto tPanelControlWDeletesWord = test("PanelKeys/ctrl+w in insert mode deletes t
 
     check(panel.getQueryText() == "hello ");
 };
+
+auto tPanelCycleChords = test(
+    "PanelKeys/the cycle chord and its Shift reverse reach the app, not the query") =
+    []
+{
+    auto panel = PanelView {};
+    auto settings = rudder::SettingsModel {};
+    settings.cycle = "control+tab";
+    panel.setSettings(settings);
+    panel.reset(false);
+
+    auto forwardPresses = 0;
+    auto reversePresses = 0;
+    panel.onCycleChord = [&] { ++forwardPresses; };
+    panel.onReverseCycleChord = [&] { ++reversePresses; };
+
+    auto controlTab = Graphics::KeyEvent {};
+    controlTab.characters = "\t";
+    controlTab.charactersIgnoringModifiers = "\t";
+    controlTab.keyCode = Graphics::KeyCode::Tab;
+    controlTab.modifiers.control = true;
+    panel.keyDown(controlTab);
+
+    auto controlShiftTab = controlTab;
+    controlShiftTab.modifiers.shift = true;
+    panel.keyDown(controlShiftTab);
+
+    check(forwardPresses == 1);
+    check(reversePresses == 1);
+    check(panel.getQueryText().empty());
+};

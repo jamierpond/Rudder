@@ -197,6 +197,22 @@ bool matchesChord(const Chord& chord,
            && chord.command == command;
 }
 
+bool isAnyChordModifierHeld(const Chord& chord, const HeldModifiers& held)
+{
+    return (chord.control && held.control) || (chord.option && held.option)
+           || (chord.shift && held.shift) || (chord.command && held.command);
+}
+
+std::optional<Chord> getReverseCycleChord(const Chord& chord)
+{
+    if (chord.shift)
+        return std::nullopt;
+
+    auto reverse = chord;
+    reverse.shift = true;
+    return reverse;
+}
+
 std::optional<std::string> keyNameFor(std::uint16_t keyCode)
 {
     for (auto& key: keys)

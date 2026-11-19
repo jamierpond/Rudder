@@ -2,6 +2,7 @@ add_executable(RudderTests
         BackStackTests.cpp
         CaptureGateTests.cpp
         ClosingContextsTests.cpp
+        CycleGestureTests.cpp
         DragHandleTests.cpp
         FavouritesTests.cpp
         FocusTests.cpp

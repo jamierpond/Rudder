@@ -4,6 +4,7 @@
 #include "Focus.h"
 #include "Frecency.h"
 #include "ClosingContexts.h"
+#include "CycleGesture.h"
 #include "LearnedPickStore.h"
 #include "ContextServer.h"
 #include "Icon.h"
@@ -39,6 +40,7 @@
 #endif
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
@@ -187,6 +189,11 @@ std::optional<std::filesystem::path> getPanelDumpDirectory()
         return std::filesystem::path {directory};
 
     return std::nullopt;
+}
+
+bool doesChordHaveModifiers(const Chord& chord)
+{
+    return chord.control || chord.option || chord.shift || chord.command;
 }
 
 ModifierKeys modifiersOf(const Chord& chord)
@@ -347,7 +354,14 @@ struct RudderApp
         };
         panel.onMove = [this](int delta) { moveSelection(delta); };
         panel.onSearchModeChange = logSwitcherModeChange;
-        panel.onAccept = [this] { Threads::callAsync([this] { activateSelection(); }); };
+        panel.onAccept = [this]
+        { Threads::callAsync([this] { activateSelection("enter"); }); };
+        panel.onCycleChord = [this] { pressCycleHotKey(); };
+        panel.onReverseCycleChord = [this]
+        {
+            performCycleStep(cycleGesture.pressReverseCycleChord(panelVisible),
+                             "cycle-key");
+        };
         panel.onChoose = [this](int index)
         {
             if (index < 0 || index >= (int) filtered.size())
@@ -368,6 +382,14 @@ struct RudderApp
             Threads::callAsync([this] { cancel("esc"); });
         };
 
+        bindSettingsPage();
+
+        panel.onFrameDrag = [this](FrameDrag phase, std::uint8_t edges, Point at)
+        { onFrameDrag(phase, edges, at); };
+    }
+
+    void bindSettingsPage()
+    {
         // While a chord is recorded the old ones must not fire -- pressing
         // ⌥Space to rebind it would otherwise close the panel.
         panel.onCaptureStart = [this]
@@ -404,9 +426,6 @@ struct RudderApp
             platform::startFileDrag(panel, platform::appBundlePath());
             platform::openAccessibilitySettings();
         };
-
-        panel.onFrameDrag = [this](FrameDrag phase, std::uint8_t edges, Point at)
-        { onFrameDrag(phase, edges, at); };
 
         panel.onCloseSettings = [this]
         {
@@ -462,11 +481,12 @@ struct RudderApp
     {
         summonKey.reset();
         backKey.reset();
+        cycleKey.reset();
 
         if (capturing)
             return;
 
-        for (auto* text: {&bindings.summon, &bindings.back})
+        for (auto* text: {&bindings.summon, &bindings.back, &bindings.cycle})
             if (auto chord = parseChord(*text);
                 chord && !GlobalHotKey::isAvailable(modifiersOf(*chord), *keyCodeFor(chord->key)))
                 logEvent("settings.hotkey-clash", {{"chord", *text}});
@@ -479,6 +499,11 @@ struct RudderApp
         if (auto chord = parseChord(bindings.back))
             backKey.emplace(
                 modifiersOf(*chord), *keyCodeFor(chord->key), [this] { goBack(); });
+
+        if (auto chord = parseChord(bindings.cycle))
+            cycleKey.emplace(modifiersOf(*chord),
+                             *keyCodeFor(chord->key),
+                             [this] { pressCycleHotKey(); });
     }
 
     void setCapturing(bool shouldCapture)
@@ -493,6 +518,24 @@ struct RudderApp
             platform::setKeyCapturePassThrough(passThroughKeys());
     }
 
+    // Each binding by the action name the settings page records it under.
+    std::array<std::pair<std::string_view, std::string*>, 6> getNamedBindings()
+    {
+        return {{{"summon", &bindings.summon},
+                 {"back", &bindings.back},
+                 {"cycle", &bindings.cycle},
+                 {"quit", &bindings.quit},
+                 {"favourite", &bindings.favourite},
+                 {"rename", &bindings.rename}}};
+    }
+
+    void assignBinding(const std::string& action, const std::string& canonical)
+    {
+        for (auto& [name, bound]: getNamedBindings())
+            if (action == name)
+                *bound = canonical;
+    }
+
     void setBinding(const std::string& action, const std::string& text)
     {
         auto chord = parseChord(text);
@@ -505,11 +548,7 @@ struct RudderApp
 
         auto canonical = serialiseChord(*chord);
 
-        for (auto& [name, bound]: {std::pair {"summon", &bindings.summon},
-                                   std::pair {"back", &bindings.back},
-                                   std::pair {"quit", &bindings.quit},
-                                   std::pair {"favourite", &bindings.favourite},
-                                   std::pair {"rename", &bindings.rename}})
+        for (auto& [name, bound]: getNamedBindings())
         {
             if (action != name && *bound == canonical)
             {
@@ -519,7 +558,7 @@ struct RudderApp
         }
 
         // Quit, favourite and rename only act inside the panel, where Rudder has the
-        // keyboard; the two global hotkeys must not be ones the OS keeps.
+        // keyboard; the three global hotkeys must not be ones the OS keeps.
         // Recording unregistered Rudder's own (setCapturing), so the chord
         // bound now reads as free and can be kept.
         if (action != "quit" && action != "favourite" && action != "rename"
@@ -534,17 +573,7 @@ struct RudderApp
             return;
         }
 
-        if (action == "summon")
-            bindings.summon = canonical;
-        else if (action == "back")
-            bindings.back = canonical;
-        else if (action == "quit")
-            bindings.quit = canonical;
-        else if (action == "favourite")
-            bindings.favourite = canonical;
-        else if (action == "rename")
-            bindings.rename = canonical;
-
+        assignBinding(action, canonical);
         settingsStore.doc(keybindingsDoc).set(bindings);
 
         if (capturingKeys)
@@ -802,8 +831,9 @@ struct RudderApp
 
     // --- Key capture ------------------------------------------------------------
 
-    // While the panel is up the keyboard is ours. The two hotkeys pass through so they still toggle and go
-    // back -- except while a new chord is being recorded.
+    // While the panel is up the keyboard is ours. The three hotkeys pass
+    // through so they still toggle, go back and cycle -- except while a new
+    // chord is being recorded.
     void startKeyCapture()
     {
         if (!platform::accessibilityTrusted(false))
@@ -811,6 +841,8 @@ struct RudderApp
 
         auto capture = platform::KeyCapture {};
         capture.onKey = [this](const KeyEvent& event) { onCapturedKey(event); };
+        capture.onModifiersChanged = [this](const ModifierKeys& modifiers)
+        { changeCycleModifiers(modifiers, "cycle-release"); };
         capture.onMouseDownOutside = [this]
         { Threads::callAsync([this] { cancel("click-outside"); }); };
 
@@ -844,7 +876,7 @@ struct RudderApp
         if (capturing)
             return keys;
 
-        for (auto* text: {&bindings.summon, &bindings.back})
+        for (auto* text: {&bindings.summon, &bindings.back, &bindings.cycle})
             if (auto chord = parseChord(*text))
                 if (auto key = captureKeyFor(*chord))
                     keys.push_back(*key);
@@ -868,7 +900,7 @@ struct RudderApp
         if (event.type != KeyEventType::Down)
             return;
 
-        if (!capturing && (isChord(event, bindings.summon) || isChord(event, bindings.back)))
+        if (!capturing && isGlobalHotKey(event))
         {
             logCapturedKey(event, "ignored as hotkey");
             return;
@@ -923,6 +955,12 @@ struct RudderApp
                   {"ms-after-summon", millis(uptime() - summonUptime)}});
     }
 
+    bool isGlobalHotKey(const KeyEvent& event) const
+    {
+        return isChord(event, bindings.summon) || isChord(event, bindings.back)
+               || isChord(event, bindings.cycle);
+    }
+
     static bool isChord(const KeyEvent& event, const std::string& text)
     {
         auto chord = parseChord(text);
@@ -963,6 +1001,75 @@ struct RudderApp
             cancel("hotkey");
         else
             reveal(false, "hotkey");
+    }
+
+    // The cycle hotkey, cmd-tab style: opens the panel with the selection on
+    // the previous row, or moves the selection down in an open panel.
+    void pressCycleHotKey()
+    {
+        auto chord = parseChord(bindings.cycle);
+
+        if (!chord)
+            return;
+
+        logEvent("cycle.hotkey",
+                 {{"visible", panelVisible}, {"cycling", cycleGesture.isCycling()}});
+        performCycleStep(cycleGesture.pressCycleChord(
+                             panelVisible, doesChordHaveModifiers(*chord)),
+                         "cycle-hotkey");
+    }
+
+    void changeCycleModifiers(const ModifierKeys& modifiers, std::string_view via)
+    {
+        auto chord = parseChord(bindings.cycle);
+
+        if (!chord)
+            return;
+
+        auto held = HeldModifiers {
+            modifiers.control, modifiers.alt, modifiers.shift, modifiers.command};
+        auto isHeld = isAnyChordModifierHeld(*chord, held);
+        performCycleStep(cycleGesture.changeHeldModifiers(isHeld), via);
+    }
+
+    void performCycleStep(CycleStep step, std::string_view via)
+    {
+        switch (step)
+        {
+            case CycleStep::nothing:
+                return;
+
+            case CycleStep::openPanel:
+                hotkeyTime = uptime();
+                reveal(false, via);
+                return;
+
+            case CycleStep::openPanelCycling:
+                revealCycling(via);
+                return;
+
+            case CycleStep::moveSelectionDown:
+                cycleSelection(1);
+                return;
+
+            case CycleStep::moveSelectionUp:
+                cycleSelection(-1);
+                return;
+
+            case CycleStep::pickSelection:
+                activateSelection(via);
+                return;
+        }
+    }
+
+    void revealCycling(std::string_view via)
+    {
+        hotkeyTime = uptime();
+        reveal(false, via);
+        // Keys typed now carry the cycle chord's modifiers, not the summon's.
+        summonModifiersMayBeHeld = false;
+        // A quick tap can let go of the modifiers before capture was on to see it.
+        changeCycleModifiers(Keyboard::getModifiers(), "cycle-tap");
     }
 
     void reveal(bool showSettings, std::string_view via)
@@ -1018,6 +1125,7 @@ struct RudderApp
 
         logEvent("switcher.hide");
         panelVisible = false;
+        cycleGesture.endCycling();
         setCapturing(false);
         syncAccessibilityGate(false);
         stopKeyCapture();
@@ -1182,8 +1290,23 @@ struct RudderApp
         if (!panelVisible || filtered.empty())
             return;
 
+        selectRow(std::clamp(selected + delta, 0, (int) filtered.size() - 1), delta);
+    }
+
+    // The cycle chord walks round the list instead of stopping at its ends.
+    void cycleSelection(int delta)
+    {
+        if (!panelVisible || filtered.empty())
+            return;
+
+        selectRow(calculateWrappedRow(selected, delta, (int) filtered.size()),
+                  delta);
+    }
+
+    void selectRow(int row, int delta)
+    {
         auto start = uptime();
-        selected = std::clamp(selected + delta, 0, (int) filtered.size() - 1);
+        selected = row;
         visit.highlightMoves++;
         previewSelection();
         publishResults();
@@ -1969,12 +2092,12 @@ struct RudderApp
 
     // Enter: open whatever is selected -- with no query that's the previous
     // app, cmd-tab style.
-    void activateSelection()
+    void activateSelection(std::string_view via)
     {
         if (!panelVisible || filtered.empty())
             return;
 
-        pickItem(filtered[(std::size_t) selected], "enter", selected);
+        pickItem(filtered[(std::size_t) selected], via, selected);
     }
 
     // The rows for the query, without contexts closed from the panel that
@@ -2186,12 +2309,14 @@ struct RudderApp
 
         panel.setSettings({label(bindings.summon),
                            label(bindings.back),
+                           label(bindings.cycle),
                            label(bindings.quit),
                            label(bindings.favourite),
                            label(bindings.rename),
                            bindings.quit,
                            bindings.favourite,
                            bindings.rename,
+                           bindings.cycle,
                            favouritesPath().str(),
                            platform::accessibilityTrusted(false),
                            settingsError});
@@ -2304,6 +2429,8 @@ struct RudderApp
 
     std::optional<GlobalHotKey> summonKey;
     std::optional<GlobalHotKey> backKey;
+    std::optional<GlobalHotKey> cycleKey;
+    CycleGesture cycleGesture;
     bool capturing = false;
 
     bool panelVisible = false;
@@ -2401,8 +2528,19 @@ int snapshot(const std::string& directory)
 
             panel.setBounds({0.f, 0.f, 640.f, 420.f});
             panel.resized();
-            panel.setSettings(
-                {"⌥Space", "⌥`", "⌃Q", "⌘D", "⌃R", "control+q", "command+d", "control+r", "", true, {}});
+            panel.setSettings({"⌥Space",
+                               "⌥`",
+                               "⌃Tab",
+                               "⌃Q",
+                               "⌘D",
+                               "⌃R",
+                               "control+q",
+                               "command+d",
+                               "control+r",
+                               "control+tab",
+                               "",
+                               true,
+                               {}});
 
             auto selected = items.size() > 1 ? 1 : 0;
             auto windows = selected < (int) apps.size()

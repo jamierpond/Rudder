@@ -11,7 +11,9 @@ on Windows), type, **Enter**. The panel appears instantly over everything,
 filters running apps (and their windows, and installed apps that aren't
 running) as you type, and brings the selection to the front behind it while
 you type. **⌥`** (**Alt+`**) jumps back to where you were before, and keeps
-walking back on each press.
+walking back on each press. **⌃Tab** (**Ctrl+Tab**) works like cmd-tab over
+the panel's resting list: hold Control, tap Tab to walk down the recent apps,
+panes and tabs, and let go to switch.
 
 Drawn with eacp's GPU component tier (one `ComponentHost`), no web view.
 
@@ -74,6 +76,7 @@ snapshots, and its footer says so.
 |---|---|---|
 | ⌥Space | Alt+Space | open / close the panel (rebindable) |
 | ⌥\` | Alt+\` | go back (rebindable) |
+| ⌃Tab, ⌃⇧Tab | Ctrl+Tab, Ctrl+Shift+Tab | cycle: opens the panel on the previous row; each further Tab moves down (Shift: up), wrapping round; letting go of Control switches. In a panel opened with ⌥Space it only moves (rebindable) |
 | ↑ ↓, ⌃N ⌃P | ↑ ↓, Ctrl+N Ctrl+P | move |
 | Enter | Enter | switch (launches a closed app, focuses a window row) |
 | Esc | Esc | close and put the screen back |

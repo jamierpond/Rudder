@@ -479,6 +479,16 @@ CaptureKey unpack(std::uint32_t packed)
     return {(std::uint16_t) (packed >> 8), (std::uint8_t) (packed & 0xff)};
 }
 
+eacp::Graphics::ModifierKeys modifierKeysOf(CGEventFlags flags)
+{
+    auto modifiers = eacp::Graphics::ModifierKeys {};
+    modifiers.shift = (flags & kCGEventFlagMaskShift) != 0;
+    modifiers.control = (flags & kCGEventFlagMaskControl) != 0;
+    modifiers.alt = (flags & kCGEventFlagMaskAlternate) != 0;
+    modifiers.command = (flags & kCGEventFlagMaskCommand) != 0;
+    return modifiers;
+}
+
 eacp::Graphics::KeyEvent toKeyEvent(CGEventType type, CGEventRef event)
 {
     auto key = eacp::Graphics::KeyEvent {};
@@ -489,11 +499,7 @@ eacp::Graphics::KeyEvent toKeyEvent(CGEventType type, CGEventRef event)
     key.isRepeat = CGEventGetIntegerValueField(event, kCGKeyboardEventAutorepeat) != 0;
     key.timestamp = (double) CGEventGetTimestamp(event) / 1e9;
 
-    auto flags = CGEventGetFlags(event);
-    key.modifiers.shift = (flags & kCGEventFlagMaskShift) != 0;
-    key.modifiers.control = (flags & kCGEventFlagMaskControl) != 0;
-    key.modifiers.alt = (flags & kCGEventFlagMaskAlternate) != 0;
-    key.modifiers.command = (flags & kCGEventFlagMaskCommand) != 0;
+    key.modifiers = modifierKeysOf(CGEventGetFlags(event));
 
     UniChar buffer[8];
     UniCharCount length = 0;
@@ -587,6 +593,15 @@ void handleCapturedKey(CGEventType type, CGEventRef event)
 
     handledKeys += 1;
     lastKeyProgress = uptimeNanos();
+}
+
+// Main thread, for each modifier key going down or up while capture is on.
+void handleModifiersChanged(CGEventFlags flags)
+{
+    if (!captureOn || !activeCapture.onModifiersChanged)
+        return;
+
+    activeCapture.onModifiersChanged(modifierKeysOf(flags));
 }
 
 // --- Screenshots under capture
@@ -734,6 +749,8 @@ const char* describePassVerdict(CaptureVerdict verdict)
             return "passed through, capture aborted";
         case CaptureVerdict::passAndScreenshot:
             return "passed through as a screenshot chord";
+        case CaptureVerdict::passAndCopy:
+            return "passed through, copied to the panel";
         case CaptureVerdict::swallow:
             return "swallowed";
     }
@@ -758,6 +775,8 @@ CaptureEvent classify(CGEventType type)
             return CaptureEvent::keyDown;
         case kCGEventKeyUp:
             return CaptureEvent::keyUp;
+        case kCGEventFlagsChanged:
+            return CaptureEvent::modifiersChanged;
         case kCGEventTapDisabledByTimeout:
             return CaptureEvent::tapTimedOut;
         case kCGEventTapDisabledByUserInput:
@@ -765,6 +784,14 @@ CaptureEvent classify(CGEventType type)
         default:
             return CaptureEvent::other;
     }
+}
+
+// The tap thread: the modifiers go on to the system and, copied, to the panel.
+CGEventRef copyModifiersToMainThread(CGEventRef event)
+{
+    auto flags = CGEventGetFlags(event);
+    dispatch_async(dispatch_get_main_queue(), ^{ handleModifiersChanged(flags); });
+    return event;
 }
 
 // The tap thread. O(1): atomics, the event's own fields, a copy and a
@@ -820,6 +847,9 @@ CGEventRef captureCallback(CGEventTapProxy, CGEventType type, CGEventRef event, 
     {
         case CaptureVerdict::pass:
             return event;
+
+        case CaptureVerdict::passAndCopy:
+            return copyModifiersToMainThread(event);
 
         case CaptureVerdict::passAndStop:
             disableTap();
@@ -916,9 +946,10 @@ bool ensureTap()
         CFRelease(tap);
     }
 
-    // Keys only. Clicks go to a passive monitor, so the mouse can never wait
-    // on Rudder.
-    auto mask = CGEventMaskBit(kCGEventKeyDown) | CGEventMaskBit(kCGEventKeyUp);
+    // Keys and modifier changes only. Clicks go to a passive monitor, so the
+    // mouse can never wait on Rudder.
+    auto mask = CGEventMaskBit(kCGEventKeyDown) | CGEventMaskBit(kCGEventKeyUp)
+                | CGEventMaskBit(kCGEventFlagsChanged);
 
     tap = CGEventTapCreate(kCGSessionEventTap,
                            kCGHeadInsertEventTap,

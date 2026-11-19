@@ -32,6 +32,9 @@ constexpr auto panelCornerRadius = 14.f;
 
 // Tall enough above the query text for the grab handle's strip.
 constexpr auto queryHeight = 54.f;
+// Seven binding rows, the path and the error line fit above Done at the
+// panel's default height.
+constexpr auto settingsRowHeight = 36.f;
 constexpr auto footerHeight = 28.f;
 constexpr auto listShare = 0.58f;
 
@@ -441,6 +444,7 @@ SettingsPage::SettingsPage()
 
     for (auto* caption: {&summonCaption,
                          &backCaption,
+                         &cycleCaption,
                          &quitCaption,
                          &favouriteCaption,
                          &renameCaption,
@@ -455,6 +459,8 @@ SettingsPage::SettingsPage()
                  summonChord,
                  backCaption,
                  backChord,
+                 cycleCaption,
+                 cycleChord,
                  quitCaption,
                  quitChord,
                  favouriteCaption,
@@ -477,13 +483,14 @@ void SettingsPage::resized()
 
     auto row = [&](UI::Label& caption, UI::Button& control)
     {
-        auto line = area.removeFromTop(40.f);
+        auto line = area.removeFromTop(settingsRowHeight);
         control.setBounds(line.removeFromRight(160.f).inset(0.f, 6.f));
         caption.setBounds(line);
     };
 
     row(summonCaption, summonChord);
     row(backCaption, backChord);
+    row(cycleCaption, cycleChord);
     row(quitCaption, quitChord);
     row(favouriteCaption, favouriteChord);
     row(renameCaption, renameChord);
@@ -754,6 +761,7 @@ PanelView::PanelView()
     auto& settings = root.settings;
     settings.summonChord.onClick = [this] { startCapture("summon"); };
     settings.backChord.onClick = [this] { startCapture("back"); };
+    settings.cycleChord.onClick = [this] { startCapture("cycle"); };
     settings.quitChord.onClick = [this] { startCapture("quit"); };
     settings.favouriteChord.onClick = [this] { startCapture("favourite"); };
     settings.renameChord.onClick = [this] { startCapture("rename"); };
@@ -826,13 +834,13 @@ void PanelView::setSettings(const SettingsModel& model)
     trusted = model.accessibilityTrusted;
 
     auto& settings = root.settings;
-    settings.summonChord.setText(capturing == "summon" ? "Press keys…"
-                                                       : model.summonLabel);
-    settings.backChord.setText(capturing == "back" ? "Press keys…" : model.backLabel);
-    settings.quitChord.setText(capturing == "quit" ? "Press keys…" : model.quitLabel);
-    settings.favouriteChord.setText(capturing == "favourite" ? "Press keys…"
-                                                             : model.favouriteLabel);
-    settings.renameChord.setText(capturing == "rename" ? "Press keys…" : model.renameLabel);
+    settings.summonChord.setText(getChordButtonText("summon", model.summonLabel));
+    settings.backChord.setText(getChordButtonText("back", model.backLabel));
+    settings.cycleChord.setText(getChordButtonText("cycle", model.cycleLabel));
+    settings.quitChord.setText(getChordButtonText("quit", model.quitLabel));
+    settings.favouriteChord.setText(
+        getChordButtonText("favourite", model.favouriteLabel));
+    settings.renameChord.setText(getChordButtonText("rename", model.renameLabel));
     settings.favouritesPath.setText("Favourites file: " + model.favouritesPath);
     settings.error.setText(model.error);
     settings.accessibility.setText(model.accessibilityTrusted ? "Allowed" : "Allow…");
@@ -842,6 +850,15 @@ void PanelView::setSettings(const SettingsModel& model)
 
     if (!settingsOpen())
         root.switcher.query.grabKeyboardFocus();
+}
+
+std::string PanelView::getChordButtonText(const std::string& action,
+                                          const std::string& label) const
+{
+    if (capturing == action)
+        return "Press keys…";
+
+    return label;
 }
 
 void PanelView::setFooterError(const std::string& error)
@@ -1226,10 +1243,44 @@ void PanelView::keyDown(const Graphics::KeyEvent& event)
         return;
     }
 
+    handleListKey(event);
+}
+
+void PanelView::handleListKey(const Graphics::KeyEvent& event)
+{
     if (renaming)
         editRename(event);
-    else if (!handleSearchKey(event))
+    else if (!handleCycleKey(event) && !handleSearchKey(event))
         handleSwitcherKey(event);
+}
+
+bool PanelView::handleCycleKey(const Graphics::KeyEvent& event)
+{
+    auto cycle = parseChord(settingsModel.cycle);
+
+    if (!cycle)
+        return false;
+
+    auto& mods = event.modifiers;
+    auto key = event.keyCode;
+
+    if (matchesChord(*cycle, key, mods.control, mods.alt, mods.shift, mods.command))
+    {
+        onCycleChord();
+        return true;
+    }
+
+    auto reverse = getReverseCycleChord(*cycle);
+
+    if (reverse
+        && matchesChord(
+            *reverse, key, mods.control, mods.alt, mods.shift, mods.command))
+    {
+        onReverseCycleChord();
+        return true;
+    }
+
+    return false;
 }
 
 void PanelView::handleSwitcherKey(const Graphics::KeyEvent& event)

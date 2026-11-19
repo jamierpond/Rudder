@@ -51,8 +51,25 @@ bool matchesChord(const Chord& chord,
                   bool shift,
                   bool command);
 
-// The stored bindings, one document in the settings collection. summon and
-// back are global hotkeys; quit, favourite and rename only act inside the
+// The modifier keys down at one moment.
+struct HeldModifiers
+{
+    bool control = false;
+    bool option = false;
+    bool shift = false;
+    bool command = false;
+};
+
+// Whether any modifier the chord names is held: the cycle gesture picks once
+// none is.
+bool isAnyChordModifierHeld(const Chord& chord, const HeldModifiers& held);
+
+// The cycle chord's reverse, which walks up: the chord plus Shift. Nullopt for
+// a chord that already holds Shift.
+std::optional<Chord> getReverseCycleChord(const Chord& chord);
+
+// The stored bindings, one document in the settings collection. summon, back
+// and cycle are global hotkeys; quit, favourite and rename only act inside the
 // open panel.
 // Win+D is the shell's show-desktop, which never reaches the panel, so
 // Windows favourites with Ctrl+D.
@@ -63,7 +80,8 @@ struct Keybindings
     std::string quit = "control+q";
     std::string favourite = eacp::Platform::isWindows() ? "control+d" : "command+d";
     std::string rename = "control+r";
+    std::string cycle = "control+tab";
 
-    MIRO_REFLECT(summon, back, quit, favourite, rename)
+    MIRO_REFLECT(summon, back, quit, favourite, rename, cycle)
 };
 } // namespace rudder
