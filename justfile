@@ -23,6 +23,11 @@ test:
 test-windows host="jamie@tamby-windows":
     scripts/test-windows-remote.sh {{host}}
 
+[doc("Ask a Windows box (git-bash over ssh, user logged in) which chords are free global hotkeys in the user's session: just probe-hotkeys-windows jamie@tamby-windows control+command+y")]
+[unix]
+probe-hotkeys-windows host +chords:
+    scripts/probe-hotkeys-windows.sh {{host}} {{chords}}
+
 # Builds in build-test/, as `just test` does, so the app in build/ keeps its
 # Accessibility grant.
 [doc("Build everything, then run clang-tidy (eacp's checks) over Rudder's sources; fails on any finding")]

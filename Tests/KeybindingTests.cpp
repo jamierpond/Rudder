@@ -1,6 +1,7 @@
 #include "TestSupport.h"
 
 #include <Keybinding.h>
+#include <Slots.h>
 
 #include <NanoTest/NanoTest.h>
 
@@ -121,6 +122,10 @@ auto tOldDocumentsGetQuit = test("Keybinding/a document from before quit gets th
     check(stored->summon == "control+space");
     check(stored->quit == "control+q");
     check(stored->cycle == Keybindings {}.cycle);
+
+    addMissingSlotChords(*stored);
+    check(stored->jumpToSlot == Keybindings {}.jumpToSlot);
+    check(stored->putInSlot == Keybindings {}.putInSlot);
 };
 
 auto tCycleDefault = test("Keybinding/the cycle default parses as control+tab") = []
@@ -150,4 +155,45 @@ auto tReverseCycleChord = test(
     check(reverse.has_value() && reverse->control && reverse->shift
           && reverse->key == "tab");
     check(!getReverseCycleChord(*parseChord("control+shift+tab")).has_value());
+};
+
+auto tMissingSlotChords = test(
+    "Keybinding/slots past the end of a stored chord list get their default chord") =
+    []
+{
+    auto bindings = Keybindings {};
+    bindings.jumpToSlot = {"control+option+1", ""};
+    addMissingSlotChords(bindings);
+
+    check(bindings.jumpToSlot.size() == Keybindings {}.jumpToSlot.size());
+    check(bindings.jumpToSlot[0] == "control+option+1");
+    check(bindings.jumpToSlot[1].empty());
+    check(bindings.jumpToSlot[2] == Keybindings {}.jumpToSlot[2]);
+    check(bindings.putInSlot == Keybindings {}.putInSlot);
+};
+
+auto tSlotChordDefaults = test(
+    "Keybinding/each slot's default put chord is its jump chord with Shift") = []
+{
+    auto bindings = Keybindings {};
+
+    check(bindings.jumpToSlot.size() == slotCount
+          && bindings.putInSlot.size() == slotCount);
+
+    for (std::size_t index = 0; index < bindings.jumpToSlot.size(); ++index)
+    {
+        auto jump = parseChord(bindings.jumpToSlot[index]);
+        auto put = parseChord(bindings.putInSlot[index]);
+
+        check(jump && put && jump->control && !jump->shift);
+
+        if (!jump || !put)
+            continue;
+
+        jump->shift = true;
+        check(*jump == *put);
+    }
+
+    check(bindings.jumpToSlot.front()
+          == serialiseChord(*parseChord(bindings.jumpToSlot.front())));
 };

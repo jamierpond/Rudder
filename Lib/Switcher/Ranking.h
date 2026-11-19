@@ -27,6 +27,10 @@ using FrecencyFn = std::function<double(const std::string& key)>;
 // of the same repository share it, so their uses add up.
 std::string contextKey(const std::string& appId, const RudderContext& context);
 
+// The row for one of `app`'s contexts: renamed ones titled by their name, a
+// place that isn't open yet not running.
+RudderItem makeContextRow(const RudderItem& app, const RudderContext& context);
+
 // The contextKeys of the contexts in `before` that `after` has no context
 // with the same id for: what an app's push dropped -- a tab or pane closed
 // (from Rudder or in the app), or expired. A key some context in `after`

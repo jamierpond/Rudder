@@ -11,7 +11,21 @@ namespace rudder
 {
 namespace
 {
-RudderItem contextRow(const RudderItem& app, const RudderContext& context)
+std::string lastComponent(std::string path)
+{
+    while (path.size() > 1 && path.back() == '/')
+        path.pop_back();
+
+    auto slash = path.find_last_of('/');
+
+    if (slash == std::string::npos)
+        return path;
+
+    return path.substr(slash + 1);
+}
+} // namespace
+
+RudderItem makeContextRow(const RudderItem& app, const RudderContext& context)
 {
     auto row = RudderItem {};
     row.kind = context.kind.empty() ? "context" : context.kind;
@@ -40,20 +54,6 @@ RudderItem contextRow(const RudderItem& app, const RudderContext& context)
     row.running = context.open;
     return row;
 }
-
-std::string lastComponent(std::string path)
-{
-    while (path.size() > 1 && path.back() == '/')
-        path.pop_back();
-
-    auto slash = path.find_last_of('/');
-
-    if (slash == std::string::npos)
-        return path;
-
-    return path.substr(slash + 1);
-}
-} // namespace
 
 namespace
 {
@@ -241,9 +241,9 @@ std::vector<RudderItem> browseItems(const std::vector<RudderItem>& all,
                                      [&](const Recent& other) { return other.key == key; });
 
             if (same == recent.end())
-                recent.push_back({at, key, contextRow(app, context)});
+                recent.push_back({at, key, makeContextRow(app, context)});
             else if (!same->row.running && context.open)
-                same->row = contextRow(app, context);
+                same->row = makeContextRow(app, context);
         }
     }
 
@@ -451,7 +451,8 @@ std::vector<CandidateRow> findCandidateRows(const std::vector<RudderItem>& all,
                 continue;
 
             if (auto level = findContextMatchLevel(normalisedQuery, app, context))
-                addCandidateRow(rows, {*level, contextRow(app, context), context.focused});
+                addCandidateRow(
+                    rows, {*level, makeContextRow(app, context), context.focused});
         }
     }
 

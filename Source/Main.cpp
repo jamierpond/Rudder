@@ -2,6 +2,7 @@
 #include "CaptureGate.h"
 #include "Favourites.h"
 #include "Focus.h"
+#include "HotKeys.h"
 #include "Frecency.h"
 #include "ClosingContexts.h"
 #include "CycleGesture.h"
@@ -20,6 +21,7 @@
 #include "Ranking.h"
 #include "RenamedAppIds.h"
 #include "Renames.h"
+#include "Slots.h"
 #include "Web.h"
 
 #include <eacp/Core/App/LoginItem.h>
@@ -196,14 +198,9 @@ bool doesChordHaveModifiers(const Chord& chord)
     return chord.control || chord.option || chord.shift || chord.command;
 }
 
-ModifierKeys modifiersOf(const Chord& chord)
+HeldModifiers heldModifiersOf(const ModifierKeys& modifiers)
 {
-    auto modifiers = ModifierKeys {};
-    modifiers.shift = chord.shift;
-    modifiers.control = chord.control;
-    modifiers.alt = chord.option;
-    modifiers.command = chord.command;
-    return modifiers;
+    return {modifiers.control, modifiers.alt, modifiers.shift, modifiers.command};
 }
 } // namespace
 
@@ -475,6 +472,8 @@ struct RudderApp
     {
         if (auto stored = settingsStore.get(keybindingsDoc))
             bindings = *stored;
+
+        addMissingSlotChords(bindings);
     }
 
     void registerHotKeys()
@@ -482,28 +481,40 @@ struct RudderApp
         summonKey.reset();
         backKey.reset();
         cycleKey.reset();
+        slotHotKeys.unregisterChords();
 
         if (capturing)
             return;
 
         for (auto* text: {&bindings.summon, &bindings.back, &bindings.cycle})
             if (auto chord = parseChord(*text);
-                chord && !GlobalHotKey::isAvailable(modifiersOf(*chord), *keyCodeFor(chord->key)))
+                chord
+                && !GlobalHotKey::isAvailable(getModifierKeysForChord(*chord),
+                                              *keyCodeFor(chord->key)))
                 logEvent("settings.hotkey-clash", {{"chord", *text}});
 
         if (auto chord = parseChord(bindings.summon))
-            summonKey.emplace(modifiersOf(*chord),
+            summonKey.emplace(getModifierKeysForChord(*chord),
                               *keyCodeFor(chord->key),
                               [this] { togglePanel(); });
 
         if (auto chord = parseChord(bindings.back))
-            backKey.emplace(
-                modifiersOf(*chord), *keyCodeFor(chord->key), [this] { goBack(); });
+            backKey.emplace(getModifierKeysForChord(*chord),
+                            *keyCodeFor(chord->key),
+                            [this] { goBack(); });
 
         if (auto chord = parseChord(bindings.cycle))
-            cycleKey.emplace(modifiersOf(*chord),
+            cycleKey.emplace(getModifierKeysForChord(*chord),
                              *keyCodeFor(chord->key),
                              [this] { pressCycleHotKey(); });
+
+        registerSlotHotKeys();
+    }
+
+    void registerSlotHotKeys()
+    {
+        for (auto& problem: slotHotKeys.registerChords(bindings))
+            logEvent(problem.event, {{"chord", problem.chord}});
     }
 
     void setCapturing(bool shouldCapture)
@@ -548,13 +559,10 @@ struct RudderApp
 
         auto canonical = serialiseChord(*chord);
 
-        for (auto& [name, bound]: getNamedBindings())
+        if (auto owner = findChordOwner(action, *chord))
         {
-            if (action != name && *bound == canonical)
-            {
-                settingsError = "That chord is already bound to " + std::string {name} + ".";
-                return;
-            }
+            settingsError = "That chord is already bound to " + *owner + ".";
+            return;
         }
 
         // Quit, favourite and rename only act inside the panel, where Rudder has the
@@ -562,7 +570,8 @@ struct RudderApp
         // Recording unregistered Rudder's own (setCapturing), so the chord
         // bound now reads as free and can be kept.
         if (action != "quit" && action != "favourite" && action != "rename"
-            && !GlobalHotKey::isAvailable(modifiersOf(*chord), *keyCodeFor(chord->key)))
+            && !GlobalHotKey::isAvailable(getModifierKeysForChord(*chord),
+                                          *keyCodeFor(chord->key)))
         {
             if constexpr (eacp::Platform::isWindows())
                 settingsError = "Windows or another app already uses "
@@ -578,6 +587,156 @@ struct RudderApp
 
         if (capturingKeys)
             platform::setKeyCapturePassThrough(passThroughKeys());
+    }
+
+    // The binding other than `action` that `chord` already is, by name.
+    std::optional<std::string> findChordOwner(const std::string& action,
+                                              const Chord& chord)
+    {
+        auto canonical = serialiseChord(chord);
+
+        for (auto& [name, bound]: getNamedBindings())
+            if (action != name && *bound == canonical)
+                return std::string {name};
+
+        return describeSlotChordOwner(bindings, chord);
+    }
+
+    // --- Slots ----------------------------------------------------------------
+
+    void pressSlotChord(const SlotPress& press)
+    {
+        if (press.action == SlotChordAction::jump)
+            jumpToSlot(press.slot);
+        else
+            putInSlot(press.slot);
+    }
+
+    // A slot chord: straight to the slot's place, no panel. An open panel
+    // closes first, as for the back hotkey.
+    void jumpToSlot(std::size_t index)
+    {
+        if (panelVisible)
+            cancel("slot-key");
+
+        auto slotNumber = index + 1;
+
+        if (index >= favourites.slots.size() || isSlotEmpty(favourites.slots[index]))
+        {
+            logEvent("slot.empty", {{"slot", slotNumber}});
+            return;
+        }
+
+        auto& slot = favourites.slots[index];
+        auto target =
+            resolveSlotTarget(slot, collectRunningAppRows(), installedPaths);
+
+        if (!target)
+        {
+            logEvent("slot.unavailable", {{"slot", slotNumber}, {"app", slot.app}});
+            return;
+        }
+
+        logEvent("slot.open",
+                 {{"slot", slotNumber},
+                  {"kind", target->kind},
+                  {"app", target->appId},
+                  {"title", target->title},
+                  {"running", target->running}});
+        recordSlotUse(*target);
+        openItem(*target);
+    }
+
+    // The slot chord with Shift: the selected row while the panel is up,
+    // otherwise where the user is now. The open panel's badge is the
+    // confirmation; with no panel, only the log says.
+    void putInSlot(std::size_t index)
+    {
+        auto slotNumber = index + 1;
+        auto slot =
+            panelVisible ? makeSlotForSelectedRow() : makeSlotForCurrentPlace();
+
+        if (!slot)
+        {
+            logEvent("slot.set-nothing",
+                     {{"slot", slotNumber}, {"panel", panelVisible}});
+            return;
+        }
+
+        // A bad hand edit in rudder.json would be overwritten with the last
+        // good config.
+        if (!favouritesError.empty())
+        {
+            logEvent("slot.set-fail",
+                     {{"slot", slotNumber}, {"reason", "rudder.json has an error"}});
+            return;
+        }
+
+        assignSlot(favourites.slots, index, *slot);
+        favouritesDocument.set(favourites);
+        logEvent("slot.set",
+                 {{"slot", slotNumber},
+                  {"title", slot->title},
+                  {"app", slot->app},
+                  {"branch", slot->branch},
+                  {"directory", slot->directory},
+                  {"url", slot->url},
+                  {"path", slot->path}});
+
+        if (panelVisible)
+            publishResults();
+    }
+
+    std::optional<Slot> makeSlotForSelectedRow() const
+    {
+        if (filtered.empty())
+            return std::nullopt;
+
+        return makeSlotForRow(filtered[(std::size_t) selected]);
+    }
+
+    std::optional<Slot> makeSlotForCurrentPlace()
+    {
+        auto front = platform::frontmostApp();
+
+        if (front.id.empty() || front.id.starts_with("pid:"))
+            return std::nullopt;
+
+        return makeSlotForFrontApp(front.id,
+                                   front.name,
+                                   providers.contextsFor(front.id),
+                                   [this](const std::string& key)
+                                   { return renames.nameFor(key); });
+    }
+
+    // Every running app as a row with its provider's contexts, read now:
+    // allItems is the last summon's.
+    std::vector<RudderItem> collectRunningAppRows()
+    {
+        auto rows = std::vector<RudderItem> {};
+
+        for (auto& app: platform::runningApps())
+        {
+            auto row = RudderItem {};
+            row.id = row.appId = app.id;
+            row.title = app.name;
+            row.contexts = providers.contextsFor(app.id);
+            rows.push_back(std::move(row));
+        }
+
+        return rows;
+    }
+
+    // A slot counts like a pick from the panel, without a query to learn.
+    void recordSlotUse(const RudderItem& item)
+    {
+        auto now = FrecencyStore::nowMs();
+        auto front = platform::frontmostApp();
+
+        if (pickMoves(item, front.id, providers.contextsFor(front.id)))
+            frecency.touch(frecencyKey(item), now);
+
+        recordPickedPlace(item, now);
     }
 
     // --- Back stack -----------------------------------------------------------
@@ -900,11 +1059,8 @@ struct RudderApp
         if (event.type != KeyEventType::Down)
             return;
 
-        if (!capturing && isGlobalHotKey(event))
-        {
-            logCapturedKey(event, "ignored as hotkey");
+        if (!capturing && isTakenAsHotKey(event))
             return;
-        }
 
         auto typed = event;
 
@@ -953,6 +1109,27 @@ struct RudderApp
                   {"shift", mods.shift},
                   {"outcome", outcome},
                   {"ms-after-summon", millis(uptime() - summonUptime)}});
+    }
+
+    // The global hotkeys reach Rudder as hotkeys. The slot chords aren't let
+    // through the tap (it takes four at most), so they are handled here.
+    bool isTakenAsHotKey(const KeyEvent& event)
+    {
+        if (isGlobalHotKey(event))
+        {
+            logCapturedKey(event, "ignored as hotkey");
+            return true;
+        }
+
+        auto press =
+            findSlotPress(bindings, event.keyCode, heldModifiersOf(event.modifiers));
+
+        if (!press)
+            return false;
+
+        logCapturedKey(event, "slot");
+        pressSlotChord(*press);
+        return true;
     }
 
     bool isGlobalHotKey(const KeyEvent& event) const
@@ -1026,9 +1203,7 @@ struct RudderApp
         if (!chord)
             return;
 
-        auto held = HeldModifiers {
-            modifiers.control, modifiers.alt, modifiers.shift, modifiers.command};
-        auto isHeld = isAnyChordModifierHeld(*chord, held);
+        auto isHeld = isAnyChordModifierHeld(*chord, heldModifiersOf(modifiers));
         performCycleStep(cycleGesture.changeHeldModifiers(isHeld), via);
     }
 
@@ -1579,7 +1754,8 @@ struct RudderApp
         // A panel frame alone (our own drag's write, say) leaves the rows be.
         auto rowsChanged = result.list->favourites != favourites.favourites
                            || result.list->browser != favourites.browser
-                           || result.list->searchUrl != favourites.searchUrl;
+                           || result.list->searchUrl != favourites.searchUrl
+                           || result.list->slots != favourites.slots;
 
         favourites = std::move(*result.list);
         favouritesError.clear();
@@ -1725,7 +1901,7 @@ struct RudderApp
     // opens in `openWith`, else the configured browser, else the default.
     void openLink(const std::string& url, const std::string& openWith, const std::string& label)
     {
-        if (auto open = contextForUrl(allItems, url))
+        if (auto open = contextForUrl(collectRunningAppRows(), url))
         {
             openItem(*open);
             return;
@@ -2150,6 +2326,12 @@ struct RudderApp
 
         recordPickUsage(item, now);
 
+        recordPickedPlace(item, now);
+        openItem(item);
+    }
+
+    void recordPickedPlace(const RudderItem& item, std::int64_t now)
+    {
         // The focus tracker was fed nothing while the panel was up. A picked
         // context is where the app's focus goes (already counted); an app or
         // window picked shows whatever its provider last pushed.
@@ -2164,8 +2346,6 @@ struct RudderApp
         // after the panel is gone and its app in front).
         if (item.kind == "favourite" || item.kind == "context")
             mru.touch(frecencyKey(item));
-
-        openItem(item);
     }
 
     // A web row is a fresh query each time, so it counts for nothing.
@@ -2182,9 +2362,6 @@ struct RudderApp
 
     void openItem(const RudderItem& item)
     {
-        if (!panelVisible)
-            return;
-
         if (item.kind == "favourite")
         {
             openFavourite(item);
@@ -2272,7 +2449,12 @@ struct RudderApp
 
     void publishResults()
     {
-        panel.setModel({filtered, selected, previewWindows, previewShown});
+        panel.setModel({filtered,
+                        selected,
+                        previewWindows,
+                        previewShown,
+                        labelRowsWithSlotKeys(
+                            favourites.slots, bindings.jumpToSlot, filtered)});
         dumpPanel(std::exchange(dumpReason, PanelDumpReason::refresh));
     }
 
@@ -2430,6 +2612,8 @@ struct RudderApp
     std::optional<GlobalHotKey> summonKey;
     std::optional<GlobalHotKey> backKey;
     std::optional<GlobalHotKey> cycleKey;
+    SlotHotKeys slotHotKeys {[this](const SlotPress& press)
+                             { pressSlotChord(press); }};
     CycleGesture cycleGesture;
     bool capturing = false;
 

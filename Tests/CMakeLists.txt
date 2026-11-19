@@ -22,6 +22,7 @@ add_executable(RudderTests
         SearchKeysTests.cpp
         SearchOrderTests.cpp
         SessionLogTests.cpp
+        SlotsTests.cpp
         SnapshotFrameTests.cpp
         TextFitTests.cpp
         UrlTests.cpp

@@ -77,6 +77,8 @@ snapshots, and its footer says so.
 | ⌥Space | Alt+Space | open / close the panel (rebindable) |
 | ⌥\` | Alt+\` | go back (rebindable) |
 | ⌃Tab, ⌃⇧Tab | Ctrl+Tab, Ctrl+Shift+Tab | cycle: opens the panel on the previous row; each further Tab moves down (Shift: up), wrapping round; letting go of Control switches. In a panel opened with ⌥Space it only moves (rebindable) |
+| ⌃⌘Y ⌃⌘U ⌃⌘I ⌃⌘O ⌃⌘P | Ctrl+Alt+Y … Ctrl+Alt+P | jump straight to slot 1 to 5, no panel (rebindable in the settings file) |
+| ⌃⇧⌘Y … ⌃⇧⌘P | Ctrl+Alt+Shift+Y … Ctrl+Alt+Shift+P | put where you are in that slot; with the panel up, the selected row (rebindable in the settings file) |
 | ↑ ↓, ⌃N ⌃P | ↑ ↓, Ctrl+N Ctrl+P | move |
 | Enter | Enter | switch (launches a closed app, focuses a window row) |
 | Esc | Esc | close and put the screen back |
@@ -108,6 +110,50 @@ repo and the unopened place for it are one thing. That's also what a rename (⌃
 the row's title, the provider's title moves to the subtitle, and typing
 either finds it. Names live in Rudder's own store, so they work for every
 provider.
+
+## Slots
+
+Five places you jump to with one chord each, no panel, like harpoon in
+Neovim. ⌃⇧⌘Y puts where you are now in slot 1: the front app's focused pane or
+tab if its provider reports one, otherwise the app. With the panel up it puts
+the selected row there instead, and the row shows the slot's key (Y). ⌃⌘Y
+then takes you there from anywhere, closing the panel if it is up. A place is
+in one slot at most: putting it in another slot moves it.
+
+A pane is remembered like a rename, by its repository and git branch (else its
+directory), so the slot outlives the pane. If no pane is open there, the slot
+opens the provider's unopened place for it when it lists one, and otherwise
+just brings its app forward (launching it if it isn't running). A url slot
+switches to a tab already showing it, or opens it; an empty slot does nothing.
+
+On Windows Ctrl+Win+O is the On-Screen Keyboard and Ctrl+Win+P was taken too,
+so the Windows defaults are Ctrl+Alt+Y to Ctrl+Alt+P (Shift added to put).
+Windows treats Ctrl+Alt as AltGr, so on a layout that types a character with
+AltGr+Y…P, that character can't be typed while Rudder runs.
+
+Slots live in `~/.config/rudder.json` beside the favourites, by position, an
+empty object for an empty slot:
+
+```json
+{
+  "slots": [
+    {"title": "Rudder main", "app": "audio.pond.cowterm",
+     "repo": "/Users/me/projects/Rudder", "branch": "main",
+     "directory": "/Users/me/projects/Rudder"},
+    {"title": "tamber-web PRs", "url": "https://github.com/tamber-inc/tamber-web/pulls"},
+    {},
+    {"title": "Notes", "app": "com.apple.Notes"},
+    {"title": "Projects", "path": "~/projects"}
+  ]
+}
+```
+
+Each slot has one of `url`, `path` or `app`; `repo` with `branch`, or
+`directory`, make an `app` slot one of its panes. The chords are the
+`jumpToSlot` and `putInSlot` lists (one chord per slot, in order) in the
+`keybindings` document of Rudder's settings store
+(on macOS `~/Library/Application Support/pond/Rudder/settings.json`); Settings
+doesn't show them. Restart Rudder after editing that file.
 
 ## Favourites
 

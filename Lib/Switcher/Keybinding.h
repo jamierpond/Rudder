@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <vector>
 
 namespace rudder
 {
@@ -68,11 +69,18 @@ bool isAnyChordModifierHeld(const Chord& chord, const HeldModifiers& held);
 // a chord that already holds Shift.
 std::optional<Chord> getReverseCycleChord(const Chord& chord);
 
-// The stored bindings, one document in the settings collection. summon, back
-// and cycle are global hotkeys; quit, favourite and rename only act inside the
-// open panel.
+// The slot chords' defaults, one per slot: ⌃⌘Y ⌃⌘U ⌃⌘I ⌃⌘O ⌃⌘P to jump, the
+// same with Shift to put a place in the slot. Windows keeps Ctrl+Win+O (the
+// On-Screen Keyboard) and something holds Ctrl+Win+P, so there they are
+// Ctrl+Alt+Y to Ctrl+Alt+P.
+std::vector<std::string> makeDefaultSlotChords(bool withShift);
+
+// The stored bindings, one document in the settings collection. summon, back,
+// cycle and the slot chords are global hotkeys; quit, favourite and rename only
+// act inside the open panel.
 // Win+D is the shell's show-desktop, which never reaches the panel, so
 // Windows favourites with Ctrl+D.
+// jumpToSlot and putInSlot hold one chord per slot, in slot order.
 struct Keybindings
 {
     std::string summon = "option+space";
@@ -81,7 +89,14 @@ struct Keybindings
     std::string favourite = eacp::Platform::isWindows() ? "control+d" : "command+d";
     std::string rename = "control+r";
     std::string cycle = "control+tab";
+    std::vector<std::string> jumpToSlot = makeDefaultSlotChords(false);
+    std::vector<std::string> putInSlot = makeDefaultSlotChords(true);
 
-    MIRO_REFLECT(summon, back, quit, favourite, rename, cycle)
+    MIRO_REFLECT(summon, back, quit, favourite, rename, cycle, jumpToSlot, putInSlot)
 };
+
+// A stored document from before the slot chords loads them as empty lists:
+// every slot past the end of a list gets its default chord. An empty string
+// stays, and leaves that slot unbound.
+void addMissingSlotChords(Keybindings& bindings);
 } // namespace rudder

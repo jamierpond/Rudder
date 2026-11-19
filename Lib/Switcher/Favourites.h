@@ -2,6 +2,7 @@
 
 #include "Items.h"
 #include "PanelFrame.h"
+#include "Slots.h"
 
 #include <Miro/Reflect.h>
 
@@ -46,7 +47,11 @@ struct FavouriteList
     // Where the panel was left on each screen; absent is centred.
     PanelFrames panel;
 
-    MIRO_REFLECT(favourites, browser, searchUrl, panel)
+    // The places the slot chords jump to, by position; an empty object is an
+    // empty slot.
+    std::vector<Slot> slots;
+
+    MIRO_REFLECT(favourites, browser, searchUrl, panel, slots)
 };
 
 struct FavouritesResult

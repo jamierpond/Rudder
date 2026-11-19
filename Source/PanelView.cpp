@@ -43,6 +43,35 @@ const UI::Theme& theme()
     return UI::defaultTheme();
 }
 
+// A row's slot key: a small keycap at the right, where the favourite star
+// goes, or just in front of the star on a favourite.
+constexpr auto favouriteStarWidth = 26.f;
+constexpr auto slotKeyWidth = 18.f;
+constexpr auto slotKeyHeight = 18.f;
+constexpr auto slotKeyGap = 6.f;
+constexpr auto slotKeyCornerRadius = 4.f;
+constexpr auto slotKeyFontSize = 11.f;
+const auto slotKeyFill = Color(1.f, 1.f, 1.f, 0.10f);
+
+Rect getSlotKeyBounds(const Rect& row, bool isFavourite)
+{
+    auto x = row.right() - favouriteStarWidth;
+
+    if (isFavourite)
+        x -= slotKeyGap + slotKeyWidth;
+
+    return {x, row.y + (row.h - slotKeyHeight) / 2.f, slotKeyWidth, slotKeyHeight};
+}
+
+void paintSlotKey(UI::Graphics& g, const std::string& label, const Rect& keycap)
+{
+    g.setColour(slotKeyFill);
+    g.fillRoundedRect(keycap, slotKeyCornerRadius);
+    g.setColour(dimText);
+    g.setFontSize(slotKeyFontSize);
+    g.drawText(label, keycap, UI::Justification::Centred);
+}
+
 // The text cut to `width` with an ellipsis, in the font set on `g`.
 std::string fitted(UI::Graphics& g, const std::string& text, float width)
 {
@@ -57,9 +86,12 @@ ResultsList::ResultsList()
     setInterceptsMouseClicks(true);
 }
 
-void ResultsList::setItems(const std::vector<RudderItem>& newItems, int newSelected)
+void ResultsList::setItems(const std::vector<RudderItem>& newItems,
+                           int newSelected,
+                           const std::vector<std::string>& newSlotKeys)
 {
     items = newItems;
+    slotKeys = newSlotKeys;
     selected = newSelected;
     scrollToSelection();
     repaint();
@@ -148,6 +180,7 @@ void ResultsList::paint(UI::Graphics& g)
         }
 
         auto textArea = Rect {row.x + 46.f, y, row.w - 74.f, rowHeight};
+        textArea.w -= paintSlotKeyOfRow(g, index, row);
 
         if (item.kind == "favourite")
         {
@@ -217,6 +250,25 @@ void ResultsList::paint(UI::Graphics& g)
                        {textArea.x, y + rowHeight * 0.5f, textArea.w, rowHeight * 0.45f});
         }
     }
+}
+
+float ResultsList::paintSlotKeyOfRow(UI::Graphics& g,
+                                     int index,
+                                     const Rect& row) const
+{
+    auto position = (std::size_t) index;
+
+    if (position >= slotKeys.size() || slotKeys[position].empty())
+        return 0.f;
+
+    auto isFavourite = items[position].kind == "favourite";
+    paintSlotKey(g, slotKeys[position], getSlotKeyBounds(row, isFavourite));
+
+    // On a favourite the keycap sits in front of the star, over the text's end.
+    if (isFavourite)
+        return slotKeyWidth + slotKeyGap;
+
+    return 0.f;
 }
 
 void ResultsList::mouseDown(const UI::MouseEvent& event)
@@ -818,7 +870,7 @@ void PanelView::showPage(bool showSettings)
 void PanelView::setModel(const PanelModel& model)
 {
     auto& switcher = root.switcher;
-    switcher.list.setItems(model.items, model.selected);
+    switcher.list.setItems(model.items, model.selected, model.slotKeys);
 
     auto* item = model.selected < (int) model.items.size()
                      ? &model.items[(std::size_t) model.selected]

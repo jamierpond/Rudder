@@ -207,6 +207,38 @@ std::optional<std::map<std::string, Frame>> readPanelFrames(const Miro::JSON& js
 
     return frames;
 }
+// `field` read into `out` when the object has it: the error, or empty.
+template <typename Value, typename Reader>
+std::string readOptionalField(const Object& object,
+                              const char* field,
+                              Value& out,
+                              Reader read)
+{
+    auto* json = Miro::Json::find(object, field);
+
+    if (json == nullptr)
+        return {};
+
+    auto error = std::string {};
+    auto value = read(*json, error);
+
+    if (!value)
+        return error;
+
+    out = std::move(*value);
+    return {};
+}
+
+// The optional "panel" and "slots" into `config`: the error, or empty.
+std::string readPanelAndSlots(const Object& object, FavouriteList& config)
+{
+    auto error = readOptionalField(object, "panel", config.panel, readPanelFrames);
+
+    if (!error.empty())
+        return error;
+
+    return readOptionalField(object, "slots", config.slots, readSlots);
+}
 } // namespace
 
 FavouritesResult parseFavourites(std::string_view text)
@@ -244,16 +276,8 @@ FavouritesResult parseFavourites(std::string_view text)
         return {std::nullopt,
                 "rudder.json: \"searchUrl\" needs a %s where the query goes"};
 
-    if (auto* panel = Miro::Json::find(json.asObject(), "panel"))
-    {
-        auto error = std::string {};
-        auto frames = readPanelFrames(*panel, error);
-
-        if (!frames)
-            return {std::nullopt, "rudder.json: " + error};
-
-        config.panel = std::move(*frames);
-    }
+    if (auto error = readPanelAndSlots(json.asObject(), config); !error.empty())
+        return {std::nullopt, "rudder.json: " + error};
 
     auto* favourites = Miro::Json::find(json.asObject(), "favourites");
 

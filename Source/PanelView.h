@@ -27,6 +27,9 @@ struct PanelModel
     // its window shows behind the panel.
     std::vector<std::string> previewWindows;
     bool previewShown = false;
+
+    // Each row's slot key ("Y"), empty for a row in no slot; one per item.
+    std::vector<std::string> slotKeys;
 };
 
 struct SettingsModel
@@ -62,7 +65,9 @@ class ResultsList final : public eacp::UI::Component
 public:
     ResultsList();
 
-    void setItems(const std::vector<RudderItem>& newItems, int newSelected);
+    void setItems(const std::vector<RudderItem>& newItems,
+                  int newSelected,
+                  const std::vector<std::string>& newSlotKeys);
 
     // The selected row's title as an editor (a rename), or back to the title.
     // allSelected: the whole title is highlighted, to be replaced by the
@@ -82,8 +87,14 @@ public:
 
 private:
     void scrollToSelection();
+    // Paints the row's slot key, if it has one; how much of the text area's
+    // width the key took.
+    float paintSlotKeyOfRow(eacp::UI::Graphics& g,
+                            int index,
+                            const eacp::Graphics::Rect& row) const;
 
     std::vector<RudderItem> items;
+    std::vector<std::string> slotKeys;
     int selected = 0;
     float scroll = 0.f;
     std::optional<Line> editing;

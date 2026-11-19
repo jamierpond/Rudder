@@ -213,6 +213,38 @@ std::optional<Chord> getReverseCycleChord(const Chord& chord)
     return reverse;
 }
 
+std::vector<std::string> makeDefaultSlotChords(bool withShift)
+{
+    auto chord = Chord {};
+    chord.control = true;
+    chord.option = eacp::Platform::isWindows();
+    chord.command = !eacp::Platform::isWindows();
+    chord.shift = withShift;
+
+    auto chords = std::vector<std::string> {};
+
+    for (auto* key: {"y", "u", "i", "o", "p"})
+    {
+        chord.key = key;
+        chords.push_back(serialiseChord(chord));
+    }
+
+    return chords;
+}
+
+void addMissingSlotChords(Keybindings& bindings)
+{
+    auto defaults = Keybindings {};
+
+    for (auto [stored, fallback]:
+         {std::pair {&bindings.jumpToSlot, &defaults.jumpToSlot},
+          std::pair {&bindings.putInSlot, &defaults.putInSlot}})
+    {
+        for (auto index = stored->size(); index < fallback->size(); ++index)
+            stored->push_back((*fallback)[index]);
+    }
+}
+
 std::optional<std::string> keyNameFor(std::uint16_t keyCode)
 {
     for (auto& key: keys)

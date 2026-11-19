@@ -138,6 +138,7 @@ add_library(RudderSwitcher STATIC
         Lib/Switcher/Ranking.cpp
         Lib/Switcher/RenamedAppIds.cpp
         Lib/Switcher/Renames.cpp
+        Lib/Switcher/Slots.cpp
         Lib/Switcher/SnapshotFrame.cpp
         Lib/Switcher/TextFit.cpp
         Lib/Switcher/Url.cpp
@@ -183,6 +184,7 @@ target_link_libraries(RudderPlatform PUBLIC eacp-graphics RudderProtocol RudderS
 # The panel is an eacp UI component tree in one GPUView: no web view, so no
 # second process to keep warm.
 add_executable(Rudder
+        Source/HotKeys.cpp
         Source/Icon.cpp
         Source/Main.cpp
         Source/PanelDump.cpp
