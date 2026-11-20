@@ -45,7 +45,8 @@ run:
 
 coverage_build_dir := "build-coverage"
 coverage_cmake_arguments := "-DPOND_LINE_COVERAGE=ON -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++"
-coverage := "python3 " + coverage_build_dir + "/PondLineCoverage/line-coverage.py --app Rudder --program Rudder --installed-in ~/.local/libexec/rudder/Rudder.app/Contents/MacOS --own-code-folder Source --own-code-folder Lib --own-code-folder Platform --own-code-folder Client --not-own-code-folder Tests"
+# Quoted so line-coverage.py expands ~ on each machine it runs on, not the shell here.
+coverage := "python3 " + coverage_build_dir + "/PondLineCoverage/line-coverage.py --app Rudder --program Rudder --installed-in '~/.local/libexec/rudder/Rudder.app/Contents/MacOS' --own-code-folder Source --own-code-folder Lib --own-code-folder Platform --own-code-folder Client --not-own-code-folder Tests"
 
 [doc('Line coverage is the default for now: build Release with line-coverage counters in build-coverage, install it to ~/.local/libexec/rudder/Rudder.app and start it, keeping the old and new programs for coverage-report')]
 [macos]
@@ -74,10 +75,15 @@ coverage-build:
 coverage-report *arguments:
     {{coverage}} report {{arguments}}
 
-[doc('Delete the line-coverage counts and kept programs')]
+[doc("Copy a host's line-coverage counts and its programs here, for coverage-report")]
 [macos]
-coverage-reset *arguments:
-    {{coverage}} reset {{arguments}}
+coverage-collect-from-host host *arguments:
+    {{coverage}} collect {{host}} {{arguments}}
+
+[doc('Delete the line-coverage counts and kept programs here, or on user@host')]
+[macos]
+coverage-reset host="" *arguments:
+    {{coverage}} reset {{host}} {{arguments}}
 
 [doc('List the crash reports nobody has marked fixed here and on other machines (list [HOST ...]), or mark one fixed (mark-fixed HOST ID); reads the script from build-test, which just test configures')]
 crash-reports *arguments:

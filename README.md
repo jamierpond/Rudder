@@ -43,6 +43,8 @@ them. `just coverage-report` prints the files and functions that never ran in
 any kept build, largest first, and writes an HTML per-line view;
 `just coverage-reset` deletes the counts and kept programs. Counts are in
 `~/Library/Application Support/pond/Rudder/coverage/`.
+`just coverage-collect-from-host user@host` copies another Mac's counts here,
+and the report then includes them.
 
 `just install` needs no Apple certificate on macOS: it signs with a
 self-signed "Rudder Local Signing" identity it makes once in its own keychain.
