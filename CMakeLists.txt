@@ -7,47 +7,9 @@ project(Rudder VERSION 0.1.0 LANGUAGES C CXX)
 
 # An app that publishes contexts (Grazer, CowTerm) pulls Rudder in with lockstep_add_package for
 # the client library alone: no app, no tests, no extra dependencies -- it
-# brings eacp (and with it Miro) itself.
+# brings eacp (and with it Miro) itself. The libraries the pond apps share
+# (PondApp, SessionLog, SearchKeys, ...) come from PondDev, not from here.
 option(RUDDER_CLIENT_ONLY "Build only the RudderClient library" OFF)
-
-# pond_add_version_library: each app's "<semver>+<commit>" version string. Before
-# the client-only return, so every app that adds Rudder gets it.
-include(${CMAKE_CURRENT_LIST_DIR}/cmake/PondVersion.cmake)
-
-# Matching and usage ordering for search lists: plain functions on strings
-# and times, no storage, no dependencies, so the client-only build has it.
-add_library(FrecencySearch STATIC
-        Lib/FrecencySearch/LearnedPicks.cpp
-        Lib/FrecencySearch/MatchLevel.cpp
-        Lib/FrecencySearch/RowOrder.cpp)
-target_include_directories(FrecencySearch PUBLIC Lib)
-target_compile_features(FrecencySearch PUBLIC cxx_std_20)
-
-# The vim editor (TextBuffer, VimEditor) the search box is built on.
-# Work against a local checkout with:
-#   cmake -B build -DLOCKSTEP_text-buffer_SOURCE=$HOME/projects/text-buffer
-if (NOT TARGET VimEditor)
-    lockstep_add_package(
-            NAME text-buffer
-            GITHUB_REPOSITORY jamierpond/text-buffer
-            GIT_TAG main
-            SYSTEM YES)
-endif ()
-
-# A one-line vim search box over a list of rows, so Rudder, Grazer and
-# CowTerm share one set of keys.
-add_library(SearchKeys STATIC Lib/SearchKeys/SearchKeys.cpp)
-target_include_directories(SearchKeys PUBLIC Lib)
-target_compile_features(SearchKeys PUBLIC cxx_std_20)
-target_link_libraries(SearchKeys PUBLIC VimEditor)
-
-# Per-launch log files (<logs>/<startEpochMs>.log, oldest pruned) and one
-# `<event> key=value ...` line format, so every app's usage reads the same way.
-add_library(SessionLog STATIC
-        Lib/SessionLog/EventLine.cpp
-        Lib/SessionLog/SessionLog.cpp)
-target_include_directories(SessionLog PUBLIC Lib)
-target_compile_features(SessionLog PUBLIC cxx_std_20)
 
 if (RUDDER_CLIENT_ONLY)
     if (APPLE)
@@ -55,8 +17,6 @@ if (RUDDER_CLIENT_ONLY)
     endif ()
 
     add_subdirectory(Client)
-    add_subdirectory(Lib/PondApp)
-    add_subdirectory(Lib/PermissionsPanel)
     return()
 endif ()
 
@@ -79,6 +39,17 @@ lockstep_add_package(
         NAME eacp
         GITHUB_REPOSITORY eyalamirmusic/eacp
         GIT_TAG jp/develop
+        SYSTEM YES)
+
+# The libraries every pond app shares: PondApp, SessionLog, FrecencySearch,
+# SearchKeys, PermissionsPanel and pond_add_version_library. After eacp, so
+# PondDev uses this eacp instead of fetching its own. Work against a local
+# checkout with:
+#   cmake -B build -DLOCKSTEP_PondDev_SOURCE=$HOME/projects/PondDev
+lockstep_add_package(
+        NAME PondDev
+        GITHUB_REPOSITORY jamierpond/PondDev
+        GIT_TAG main
         SYSTEM YES)
 
 # Crash reports (Crashout): Rudder writes one to
@@ -113,8 +84,6 @@ set(CMAKE_COMPILE_WARNING_AS_ERROR ON)
 list(APPEND CMAKE_MODULE_PATH "${eacp_SOURCE_DIR}/CMake")
 
 add_subdirectory(Client)
-add_subdirectory(Lib/PondApp)
-add_subdirectory(Lib/PermissionsPanel)
 
 # The switcher's pure logic (ranking, MRU, back stack, keybindings, context
 # providers) lives in a plain static library so it stays unit-testable without

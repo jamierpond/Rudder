@@ -1,4 +1,4 @@
-// Reads the session logs every pond app writes through Rudder's SessionLog
+// Reads the session logs every pond app writes through PondDev's SessionLog
 // library: <logs>/<startEpochMs>.log, one `<HH:MM:SS.mmm> <prefix> <event> key=value ...`
 // line per event. Pure functions, so the report and its tests share them.
 

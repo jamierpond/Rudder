@@ -1,10 +1,10 @@
 // Prints the live frecency store: each key's usage decayed to now (what
 // Rudder sorts rows of an equal match by) and how long ago it was last picked
 // or held. The half-life is read out of the C++ header. `just frecency-report [path/to/frecency.json]`.
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { ROOT } from './lib.mjs';
+import { BUILD_DIR, RELEASE_BUILD_DIR, ROOT } from './lib.mjs';
 
 function appData() {
   if (process.platform === 'darwin') return join(homedir(), 'Library', 'Application Support');
@@ -12,10 +12,20 @@ function appData() {
   return process.env.XDG_DATA_HOME ?? join(homedir(), '.local', 'share');
 }
 
+// The header lives in PondDev, whose checkout a configured build's CMake cache names.
+function findPondDevLibraryFolder() {
+  for (const buildDirectory of [BUILD_DIR, RELEASE_BUILD_DIR, join(ROOT, 'build-test')]) {
+    const cache = join(buildDirectory, 'CMakeCache.txt');
+    const match = existsSync(cache) && readFileSync(cache, 'utf8').match(/^PondDev_SOURCE_DIR:\w+=(.*)$/m);
+    if (match) return join(match[1], 'Lib');
+  }
+  throw new Error('PondDev not found: configure Rudder first (just build)');
+}
+
 // `constexpr ... name = <expr>;` from a header, evaluated: plain arithmetic
 // on numeric literals only (suffixes like LL dropped).
 function constant(header, name) {
-  const source = readFileSync(join(ROOT, 'Lib', header), 'utf8');
+  const source = readFileSync(join(findPondDevLibraryFolder(), header), 'utf8');
   const match = source.match(new RegExp(`\\b${name}\\s*=\\s*([^;]+);`));
   if (!match) throw new Error(`${name} not found in ${header}`);
   const expr = match[1].replace(/(\d)(LL|ULL|L|U|f)\b/g, '$1');

@@ -235,14 +235,18 @@ rudder.pushContexts({{"1", "Title", "subtitle", "https://..."}});
 ```
 
 It reconnects when Rudder restarts and is silent when Rudder isn't running.
-Grazer is the first provider.
+Grazer is the first provider. The client-only build gives the app only
+`RudderClient` and `RudderProtocol`; the libraries the pond apps share
+(`PondApp`, `SessionLog`, `SearchKeys`, ...) come from
+[PondDev](https://github.com/jamierpond/PondDev).
 
 ## Version strings for apps
 
 Every pond app reports one version, `<semver>+<commit>` (`0.1.0+f30059f`,
 `0.1.0+f30059f.dirty` when tracked files have uncommitted changes, the semver
-alone when built outside a git checkout). Adding Rudder with lockstep brings
-the function that makes it; see `cmake/PondVersion.cmake`:
+alone when built outside a git checkout). The function that makes it comes
+with [PondDev](https://github.com/jamierpond/PondDev), the libraries every pond
+app shares; see `cmake/PondVersion.cmake` there:
 
 ```cmake
 pond_add_version_library(MyAppVersion)

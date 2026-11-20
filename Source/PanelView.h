@@ -397,7 +397,7 @@ private:
     // fzf's emacs keys on the query field. True when the key was one.
     bool editQuery(const eacp::Graphics::KeyEvent& event);
 
-    // The query field as a one-line vim editor (Lib/SearchKeys). True when
+    // The query field as a one-line vim editor (PondDev's SearchKeys). True when
     // the search box took the key and nothing else should see it.
     bool handleSearchKey(const eacp::Graphics::KeyEvent& event);
     void performSearchAction(searchkeys::Action action);

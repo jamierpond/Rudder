@@ -8,7 +8,6 @@ add_executable(RudderTests
         FocusTests.cpp
         ListedRowsTests.cpp
         FrecencySimulationTests.cpp
-        FrecencySearchTests.cpp
         FrecencyTests.cpp
         KeybindingTests.cpp
         LineEditTests.cpp
@@ -19,16 +18,14 @@ add_executable(RudderTests
         RankingTests.cpp
         RenamedAppIdsTests.cpp
         RenamesTests.cpp
-        SearchKeysTests.cpp
         SearchOrderTests.cpp
-        SessionLogTests.cpp
         SlotsTests.cpp
         SnapshotFrameTests.cpp
         TextFitTests.cpp
         UrlTests.cpp
         WebTests.cpp)
 
-target_link_libraries(RudderTests PRIVATE NanoTest NanoTestMain RudderSwitcher SearchKeys SessionLog)
+target_link_libraries(RudderTests PRIVATE NanoTest NanoTestMain RudderSwitcher)
 
 # The contexts transport end to end, client and server in one process. On
 # macOS over a socket in a temporary folder, never a running Rudder's.
@@ -51,14 +48,3 @@ if (WIN32)
 endif ()
 
 nano_discover_tests(RudderTests)
-
-# Its own binary with its own main: the single-instance tests relaunch it as a
-# running instance and as a second launch.
-add_executable(PondAppTests PondAppTests.cpp)
-target_link_libraries(PondAppTests PRIVATE NanoTest PondApp)
-nano_discover_tests(PondAppTests)
-
-# The privacy-grants model behind every Permissions… panel; pure, so on every platform.
-add_executable(PermissionsTests PermissionsTests.cpp)
-target_link_libraries(PermissionsTests PRIVATE NanoTest NanoTestMain PermissionsPanel)
-nano_discover_tests(PermissionsTests)

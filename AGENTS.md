@@ -21,6 +21,10 @@ being asked and without asking.
   Put this file's rules in every subagent brief.
 - A change to the Rudder client library (what CowTerm and Grazer fetch from
   GitHub main) means rebuilding and reinstalling those two as well.
+- The libraries the pond apps share (PondApp, SessionLog, FrecencySearch,
+  SearchKeys, PermissionsPanel, PondVersion.cmake, line coverage) live in
+  PondDev (`~/projects/PondDev`, `jamierpond/PondDev`), not here. Change them
+  there, push, then move Rudder's pin with `just update-deps`.
 - Never launch the raw bundle executable from a shell (TCC then blames the
   terminal). Use `open`, the `~/.local/bin/rudder` launcher or `just install`.
 
