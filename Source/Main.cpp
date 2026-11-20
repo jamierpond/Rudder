@@ -21,7 +21,6 @@
 #include "Ranking.h"
 #include "RenamedAppIds.h"
 #include "Renames.h"
-#include "ReportedUsage.h"
 #include "Slots.h"
 #include "Web.h"
 
@@ -840,7 +839,7 @@ struct RudderApp
     // just above its app in the empty query's list.
     void recordActivation(const std::string& appId)
     {
-        auto now = grazer::MruStore::nowMs();
+        auto now = MruStore::nowMs();
         mru.touch(appId, now);
 
         if (auto key = focus.activated(appId, now))
@@ -1284,6 +1283,7 @@ struct RudderApp
         quick_window::activateForPanel(summonUptime);
 
         panel.focus();
+        askForRankingMaterials();
         syncAccessibilityGate(true);
         platform::watchWindows(running,
                                [this](const std::string& appId) { onWindowsChanged(appId); });
@@ -1964,7 +1964,6 @@ struct RudderApp
                 converted.branch = context.branch;
                 converted.repo = context.repo;
                 converted.focused = context.focused;
-                converted.reportedUsage = context.usage;
                 contexts.push_back(std::move(converted));
             }
 
@@ -1972,7 +1971,6 @@ struct RudderApp
                 app->second, std::move(contexts), FrecencyStore::nowMs());
 
             logEvent("provider.contexts", {{"app", app->second}, {"count", contexts.size()}});
-            logReportedUsage(app->second, contexts);
             trackFocus(app->second, contexts);
             forgetContexts(
                 goneContextKeys(app->second, providers.contextsFor(app->second), contexts));
@@ -2000,6 +1998,8 @@ struct RudderApp
             providers.disconnect(bundleId);
             focus.forget(bundleId);
         };
+
+        contextServer.onRankingMaterials = std::bind_front(&RudderApp::takeRankingMaterials, this);
 
         providers.onChanged = [this] { refreshContexts(); };
 
@@ -2036,6 +2036,30 @@ struct RudderApp
             [this, connection](const std::string& contextId, bool raise)
             { contextServer.send(connection, protocol::Activate {contextId, raise}); },
             std::move(sendClose));
+        contextServer.send(connection, protocol::RankingMaterialsRequest {});
+    }
+
+    // Each summon asks every provider for the inputs of its own ordering; an app
+    // built before the request never answers, and its rows keep Rudder's order.
+    void askForRankingMaterials()
+    {
+        for (auto& [appId, connection]: providerConnection)
+            contextServer.send(connection, protocol::RankingMaterialsRequest {});
+
+        logEvent("provider.materials-asked", {{"apps", providerConnection.size()}});
+    }
+
+    void takeRankingMaterials(int connection, protocol::RankingMaterials reply)
+    {
+        auto app = connectionApps.find(connection);
+
+        if (app == connectionApps.end() || providerConnection[app->second] != connection)
+            return;
+
+        logEvent("provider.materials", {{"app", app->second}, {"ordering", reply.ordering}});
+
+        if (auto ordering = readAppOrdering(reply))
+            providers.setAppOrdering({app->second, std::move(*ordering)});
     }
 
     // The id of the app row a provider's contexts belong under: the running
@@ -2289,40 +2313,21 @@ struct RudderApp
     SearchUsage searchUsageFor(const std::string& typed)
     {
         auto now = FrecencyStore::nowMs();
-        auto rudderOwnFrecency = [this, now](const std::string& key)
-        { return frecency.frecency(key, now); };
-        auto usage =
-            makeRowFrecencyLookup(rudderOwnFrecency, providers.collectReportedUsage(), now);
-        return {usage, learnedPicks.findPicksForQuery(typed, now)};
-    }
-
-    // What a push's reported usage does to Rudder's frecency, for the log.
-    void logReportedUsage(const std::string& appId, const std::vector<RudderContext>& contexts)
-    {
-        auto reported = ReportedUsageByKey {};
-        collectReportedUsage(reported, appId, contexts);
-        auto now = FrecencyStore::nowMs();
-        auto mostLifted = findMostLiftedRow(
-            reported, [this, now](const std::string& key) { return frecency.frecency(key, now); }, now);
-
-        if (!mostLifted)
-            return;
-
-        logEvent("provider.usage",
-                 {{"app", appId},
-                  {"keys", reported.size()},
-                  {"liftedKey", mostLifted->key},
-                  {"ownFrecency", std::to_string(mostLifted->rudderOwnFrecency)},
-                  {"frecency", std::to_string(mostLifted->frecency)}});
+        auto usage = [this, now](const std::string& key) { return frecency.frecency(key, now); };
+        return {usage,
+                learnedPicks.findPicksForQuery(typed, now),
+                providers.orderContextsByApp({typed, now})};
     }
 
     // The empty query's recency: the app summoned over on top, then by stamp.
     Recency recencyLookup()
     {
+        auto now = MruStore::nowMs();
         return {[this](const std::string& key)
                 { return key == frontAppId ? INT64_MAX : mru.lastUsed(key); },
-                grazer::MruStore::nowMs(),
-                frontAppId};
+                now,
+                frontAppId,
+                providers.orderContextsByApp({{}, now})};
     }
 
     // Enter or a click on a row: what frecency counts. Not a preview, and not
@@ -2616,7 +2621,7 @@ struct RudderApp
     emberstore::Database atomic {durable.directory(), emberstore::Durability::Atomic};
     emberstore::Collection<Keybindings> settingsStore {
         durable.collection<Keybindings>("settings")};
-    grazer::MruStore mru {atomic};
+    MruStore mru {atomic};
     FrecencyStore frecency {atomic};
     LearnedPickStore learnedPicks {atomic};
     ClosingContexts closingContexts;

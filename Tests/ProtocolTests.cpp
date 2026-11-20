@@ -189,109 +189,40 @@ auto tPathAndFocused = test("Protocol/path and focused decode, and older apps' l
     check(line.find(R"("focused":false)") != std::string::npos);
 };
 
-namespace
+auto tMaterialsRequestRoundTrips = test("Protocol/the ranking materials request is one line with only its type") = []
 {
-constexpr std::int64_t reportedAtMs = 1'790'000'000'000LL;
-constexpr std::int64_t threeDaysMs = 3LL * 24 * 60 * 60 * 1000;
-constexpr double decayedUses = 3.25;
-constexpr std::int64_t lifetimeVisits = 41;
+    auto line = encode(RankingMaterialsRequest {});
 
-ContextUsage makeEveryReportedFact()
-{
-    auto usage = ContextUsage {};
-    usage.lastUsedAtMs = reportedAtMs;
-    usage.useCount = DecayingUseCount {decayedUses, reportedAtMs, threeDaysMs};
-    usage.lastVisitAtMs = reportedAtMs - 1;
-    usage.visitCount = lifetimeVisits;
-    usage.lastTypedAtMs = reportedAtMs - 2;
-    usage.lastFileChangeAtMs = reportedAtMs - 3;
-    return usage;
-}
-
-const Context* decodeOneContext(const std::optional<Message>& message)
-{
-    auto* contexts = message ? std::get_if<Contexts>(&*message) : nullptr;
-
-    if (contexts == nullptr || contexts->contexts.size() != 1)
-        return nullptr;
-
-    return &contexts->contexts.front();
-}
-} // namespace
-
-auto tUsageRoundTrips = test("Protocol/usage keeps every reported fact") = []
-{
-    auto context = Context {"3", "GitHub"};
-    context.usage = makeEveryReportedFact();
-    auto line = encode(Contexts {{context}});
-    auto message = decode(line);
-    auto* received = decodeOneContext(message);
-
-    check(received != nullptr && *received == context);
-};
-
-auto tUsagePartly = test("Protocol/an app reports only the usage facts it fills in") = []
-{
-    auto context = Context {"pane:1", "zsh"};
-    auto usage = ContextUsage {};
-    usage.lastTypedAtMs = reportedAtMs;
-    context.usage = usage;
-    auto line = encode(Contexts {{context}});
-
-    check(line.find("lastTypedAtMs") != std::string::npos);
-    check(line.find("useCount") == std::string::npos);
-    check(line.find("visitCount") == std::string::npos);
+    check(line == "{\"type\":\"rankingMaterialsRequest\"}\n");
 
     auto message = decode(line);
-    auto* received = decodeOneContext(message);
-
-    check(received != nullptr && received->usage && received->usage->lastTypedAtMs
-          && !received->usage->useCount && !received->usage->lastUsedAtMs);
+    check(message && std::holds_alternative<RankingMaterialsRequest>(*message));
 };
 
-auto tNoUsageFromOlderApps = test("Protocol/a context from an app that reports no usage has none") = []
+auto tMaterialsRoundTrip = test("Protocol/ranking materials keep their ordering name and JSON") = []
 {
-    auto line = encode(Contexts {{{"1", "Docs"}}});
+    auto materials = Miro::JSON {Miro::Json::Object {}};
+    materials.toObject()["history"] = Miro::JSON {Miro::Json::Array {Miro::JSON {"https://github.com/"}}};
+    auto line = encode(RankingMaterials {"grazer-palette", materials});
+    auto message = decode(line);
+    auto* reply = message ? std::get_if<RankingMaterials>(&*message) : nullptr;
 
-    check(line.find("usage") == std::string::npos);
-
-    auto message = decode(R"({"type":"contexts","contexts":[{"id":"1","title":"Docs","path":"/p"}]})");
-    auto* received = decodeOneContext(message);
-
-    check(received != nullptr && !received->usage);
-
-    message = decode(R"({"type":"contexts","contexts":[{"id":"1","usage":null}]})");
-    received = decodeOneContext(message);
-
-    check(received != nullptr && !received->usage);
-
-    message = decode(R"({"type":"contexts","contexts":[{"id":"1","usage":{"lastUsedAtMs":null}}]})");
-    received = decodeOneContext(message);
-
-    check(received != nullptr && received->usage && !received->usage->lastUsedAtMs);
+    check(reply != nullptr && reply->ordering == "grazer-palette");
+    check(reply != nullptr && Miro::Json::print(reply->materials) == Miro::Json::print(materials));
 };
 
-auto tOlderRudderIgnoresUsage = test("Protocol/keys a Rudder doesn't know are ignored, so an older Rudder reads a newer app") = []
+auto tBadMaterials = test("Protocol/ranking materials without a name or an object are garbage") = []
 {
-    auto context = Context {"3", "GitHub"};
-    context.usage = makeEveryReportedFact();
-    auto line = encode(Contexts {{context}});
-    auto withUnknownKey = line;
-    withUnknownKey.replace(line.find(R"("usage")"), std::string {R"("usage")"}.size(), R"("usageFromTheFuture")");
-    auto message = decode(withUnknownKey);
-    auto* received = decodeOneContext(message);
-
-    check(received != nullptr && received->id == "3" && received->title == "GitHub"
-          && !received->usage);
+    check(!decode(R"({"type":"rankingMaterials","materials":{}})").has_value());
+    check(!decode(R"({"type":"rankingMaterials","ordering":"grazer-palette"})").has_value());
+    check(!decode(R"({"type":"rankingMaterials","ordering":"grazer-palette","materials":[]})").has_value());
 };
 
-auto tBadUsage = test("Protocol/usage of the wrong shape is garbage") = []
+auto tBigMaterialsFit = test("Protocol/a line as big as a whole browser history is still read") = []
 {
-    check(!decode(R"({"type":"contexts","contexts":[{"id":"1","usage":7}]})").has_value());
-    check(!decode(R"({"type":"contexts","contexts":[{"id":"1","usage":{"lastUsedAtMs":"now"}}]})")
-               .has_value());
-    check(!decode(R"({"type":"contexts","contexts":[{"id":"1","usage":{"useCount":{"count":1}}}]})")
-               .has_value());
-    check(!decode(R"({"type":"contexts","contexts":[{"id":"1","usage":{"lastTypedAtMs":1.5}}]})")
-               .has_value());
+    constexpr std::size_t historyBytes = 8 << 20;
+    auto buffer = LineBuffer {};
+    auto lines = buffer.append(std::string(historyBytes, 'x') + "\n");
+
+    check(lines.size() == 1 && lines.front().size() == historyBytes);
 };

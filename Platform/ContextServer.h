@@ -27,16 +27,21 @@ public:
     // if it can't -- on Windows, when another Rudder already is.
     bool start(const std::string& endpoint = protocol::endpoint());
 
-    // activate or close, to one connected app.
+    // activate, close or rankingMaterialsRequest, to one connected app.
     void send(int connection, const protocol::Message& message);
 
     std::function<void(int connection, const protocol::Hello&)> onHello =
         [](int, auto&) {};
     std::function<void(int connection, std::vector<protocol::Context>)> onContexts =
         [](int, const auto&) {};
+    std::function<void(int connection, protocol::RankingMaterials)> onRankingMaterials =
+        [](int, auto) {};
     std::function<void(int connection)> onClosed = [](int) {};
 
 private:
+    // Hands a message from an app to the callbacks above.
+    void deliver(int connection, protocol::Message message);
+
     struct Native;
     std::unique_ptr<Native> native;
 };

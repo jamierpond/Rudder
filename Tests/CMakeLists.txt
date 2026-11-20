@@ -1,4 +1,5 @@
 add_executable(RudderTests
+        AppOrdersTests.cpp
         BackStackTests.cpp
         CaptureGateTests.cpp
         ClosingContextsTests.cpp
@@ -18,7 +19,6 @@ add_executable(RudderTests
         RankingTests.cpp
         RenamedAppIdsTests.cpp
         RenamesTests.cpp
-        ReportedUsageTests.cpp
         SearchOrderTests.cpp
         SlotsTests.cpp
         SnapshotFrameTests.cpp

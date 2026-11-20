@@ -4,6 +4,8 @@
 #include <Miro/Reflection/Serialize.h>
 
 #include <algorithm>
+#include <functional>
+#include <map>
 #include <utility>
 
 namespace rudder::protocol
@@ -51,110 +53,6 @@ bool readBool(const Object& object, std::string_view key, bool& out)
     return true;
 }
 
-// A usage field the app may leave out or send as null. `isWellFormed` is
-// false for a field of the wrong type; `value` is null when it is left out.
-struct ReportedField
-{
-    const Miro::JSON* value = nullptr;
-    bool isWellFormed = true;
-};
-
-ReportedField findReportedField(const Object& object,
-                                std::string_view key,
-                                bool (Miro::JSON::*isRightType)() const)
-{
-    auto* value = Miro::Json::find(object, key);
-
-    if (value == nullptr || value->isNull())
-        return {};
-
-    if (!(value->*isRightType)())
-        return {nullptr, false};
-
-    return {value, true};
-}
-
-bool readReportedInteger(const Object& object,
-                         std::string_view key,
-                         Miro::Omittable<std::int64_t>& out)
-{
-    auto field = findReportedField(object, key, &Miro::JSON::isInteger);
-
-    if (field.value != nullptr)
-        out = field.value->asInteger();
-
-    return field.isWellFormed;
-}
-
-// A field every useCount carries.
-bool readRequiredInteger(const Object& object, std::string_view key, std::int64_t& out)
-{
-    auto* value = Miro::Json::find(object, key);
-
-    if (value == nullptr || !value->isInteger())
-        return false;
-
-    out = value->asInteger();
-    return true;
-}
-
-bool readDecayingUseCount(const Object& object, Miro::Omittable<DecayingUseCount>& out)
-{
-    auto field = findReportedField(object, "useCount", &Miro::JSON::isObject);
-
-    if (field.value == nullptr)
-        return field.isWellFormed;
-
-    auto& fields = field.value->asObject();
-    auto* count = Miro::Json::find(fields, "count");
-    auto useCount = DecayingUseCount {};
-
-    if (count == nullptr || !count->isNumber())
-        return false;
-
-    useCount.count = count->asNumber();
-
-    if (!readRequiredInteger(fields, "asOfMs", useCount.asOfMs))
-        return false;
-
-    if (!readRequiredInteger(fields, "halfLifeMs", useCount.halfLifeMs))
-        return false;
-
-    out = useCount;
-    return true;
-}
-
-using ReportedTime = Miro::Omittable<std::int64_t> ContextUsage::*;
-
-const std::vector<std::pair<std::string_view, ReportedTime>> reportedIntegerFields {
-    {"lastUsedAtMs", &ContextUsage::lastUsedAtMs},
-    {"lastVisitAtMs", &ContextUsage::lastVisitAtMs},
-    {"visitCount", &ContextUsage::visitCount},
-    {"lastTypedAtMs", &ContextUsage::lastTypedAtMs},
-    {"lastFileChangeAtMs", &ContextUsage::lastFileChangeAtMs},
-};
-
-bool readContextUsage(const Object& object, Miro::Omittable<ContextUsage>& out)
-{
-    auto field = findReportedField(object, "usage", &Miro::JSON::isObject);
-
-    if (field.value == nullptr)
-        return field.isWellFormed;
-
-    auto& fields = field.value->asObject();
-    auto usage = ContextUsage {};
-
-    for (auto& [key, member]: reportedIntegerFields)
-        if (!readReportedInteger(fields, key, usage.*member))
-            return false;
-
-    if (!readDecayingUseCount(fields, usage.useCount))
-        return false;
-
-    out = std::move(usage);
-    return true;
-}
-
 const std::vector<std::pair<std::string_view, std::string Context::*>> contextStringFields {
     {"title", &Context::title},
     {"subtitle", &Context::subtitle},
@@ -187,8 +85,7 @@ bool readContext(const Object& fields, Context& context)
         return false;
 
     return readFields(fields, contextStringFields, context, readString)
-           && readFields(fields, contextBoolFields, context, readBool)
-           && readContextUsage(fields, context.usage);
+           && readFields(fields, contextBoolFields, context, readBool);
 }
 
 std::optional<Message> readHello(const Object& object)
@@ -253,6 +150,47 @@ std::optional<Message> readActivate(const Object& object)
     return activate;
 }
 
+constexpr auto rankingMaterialsRequestType = "rankingMaterialsRequest";
+constexpr auto rankingMaterialsType = "rankingMaterials";
+
+Miro::JSON encodePayload(const Hello& hello) { return withType(hello, "hello"); }
+Miro::JSON encodePayload(const Contexts& contexts) { return withType(contexts, "contexts"); }
+Miro::JSON encodePayload(const Activate& activate) { return withType(activate, "activate"); }
+Miro::JSON encodePayload(const Close& close) { return withType(close, "close"); }
+
+Miro::JSON encodePayload(const RankingMaterialsRequest&)
+{
+    auto json = Miro::JSON {Object {}};
+    json.toObject()["type"] = rankingMaterialsRequestType;
+    return json;
+}
+
+Miro::JSON encodePayload(const RankingMaterials& reply)
+{
+    return withType(reply, rankingMaterialsType);
+}
+
+std::optional<Message> readRankingMaterials(const Object& object)
+{
+    auto reply = RankingMaterials {};
+
+    if (!readString(object, "ordering", reply.ordering) || reply.ordering.empty())
+        return std::nullopt;
+
+    auto* materials = Miro::Json::find(object, "materials");
+
+    if (materials == nullptr || !materials->isObject())
+        return std::nullopt;
+
+    reply.materials = *materials;
+    return reply;
+}
+
+std::optional<Message> readRankingMaterialsRequest(const Object&)
+{
+    return RankingMaterialsRequest {};
+}
+
 std::optional<Message> readClose(const Object& object)
 {
     auto close = Close {};
@@ -262,26 +200,22 @@ std::optional<Message> readClose(const Object& object)
 
     return close;
 }
+
+using MessageReader = std::optional<Message> (*)(const Object&);
+
+const std::map<std::string, MessageReader, std::less<>> messageReaders {
+    {"hello", readHello},
+    {"contexts", readContexts},
+    {"activate", readActivate},
+    {"close", readClose},
+    {rankingMaterialsRequestType, readRankingMaterialsRequest},
+    {rankingMaterialsType, readRankingMaterials},
+};
 } // namespace
 
 std::string encode(const Message& message)
 {
-    auto json = std::visit(
-        [](const auto& payload)
-        {
-            using T = std::decay_t<decltype(payload)>;
-
-            if constexpr (std::is_same_v<T, Hello>)
-                return withType(payload, "hello");
-            else if constexpr (std::is_same_v<T, Contexts>)
-                return withType(payload, "contexts");
-            else if constexpr (std::is_same_v<T, Activate>)
-                return withType(payload, "activate");
-            else
-                return withType(payload, "close");
-        },
-        message);
-
+    auto json = std::visit([](const auto& payload) { return encodePayload(payload); }, message);
     return Miro::Json::print(json) + "\n";
 }
 
@@ -301,21 +235,12 @@ std::optional<Message> decode(std::string_view line)
     if (type == nullptr || !type->isString())
         return std::nullopt;
 
-    auto& name = type->asString();
+    auto reader = messageReaders.find(type->asString());
 
-    if (name == "hello")
-        return readHello(object);
+    if (reader == messageReaders.end())
+        return std::nullopt;
 
-    if (name == "contexts")
-        return readContexts(object);
-
-    if (name == "activate")
-        return readActivate(object);
-
-    if (name == "close")
-        return readClose(object);
-
-    return std::nullopt;
+    return reader->second(object);
 }
 
 std::vector<std::string> LineBuffer::append(std::string_view bytes)

@@ -18,7 +18,7 @@
 //                    "canClose":true}
 //   app -> Rudder   {"type":"contexts","contexts":[{"id":"3","title":"…","url":"…"}]}
 //                   (each context may also carry "subtitle", "path", "repo",
-//                   "branch", "open": false, "focused": true and "usage")
+//                   "branch", "open": false and "focused": true)
 //   Rudder -> app   {"type":"activate","contextId":"3","raise":true}
 //   Rudder -> app   {"type":"close","contextId":"3"}
 //
@@ -33,21 +33,17 @@
 // its list without it. There is no separate "closed" reply -- a context
 // missing from a push is gone, however it was closed.
 //
-// "usage" is how the user has used the context in the app, as the app recorded
-// it: times in epoch milliseconds, counts, and a decaying count with the time
-// it is valid as of and the half-life it decays by. Every field in it, and
-// "usage" itself, may be left out, which means the app doesn't report it.
-// Rudder alone turns these facts into its order; an app never sends a rank:
+//   Rudder -> app   {"type":"rankingMaterialsRequest"}
+//   app -> Rudder   {"type":"rankingMaterials","ordering":"grazer-palette",
+//                    "materials":{...}}
 //
-//   "usage": {"lastUsedAtMs": 1763600000000,
-//             "useCount": {"count": 3.2, "asOfMs": 1763600000000,
-//                          "halfLifeMs": 259200000},
-//             "lastVisitAtMs": 1763600000000, "visitCount": 41,
-//             "lastTypedAtMs": 1763600000000, "lastFileChangeAtMs": 1763600000000}
-//
-// A Rudder built before "usage" looks up only the keys it knows and ignores
-// it; an app built before it sends none, and Rudder orders its rows by its
-// own picks and watched focus alone, as it did.
+// rankingMaterialsRequest asks the app for every input its own ordering of its
+// rows reads (its palette's), as the app recorded them. The app answers with
+// rankingMaterials: `ordering` names the ordering function, shared from
+// PondDev, and `materials` is that function's input as JSON. Rudder runs the
+// same function on them, so it lists the app's rows in exactly the app's
+// order; the app never sends a rank. An app that doesn't know the request
+// ignores it and never answers, and Rudder orders its rows as it always did.
 //
 // hello comes first; each contexts push replaces the app's whole list; the
 // connection closing means the app quit. Rudder announces "rudder.started"
@@ -65,46 +61,6 @@ struct Hello
     bool canClose = false;
 
     MIRO_REFLECT(app, bundleId, pid, canClose)
-};
-
-// A use count the app keeps decayed: `count` as of `asOfMs`, halving every
-// `halfLifeMs`.
-struct DecayingUseCount
-{
-    double count = 0;
-    std::int64_t asOfMs = 0;
-    std::int64_t halfLifeMs = 0;
-
-    MIRO_REFLECT(count, asOfMs, halfLifeMs)
-
-    bool operator==(const DecayingUseCount&) const = default;
-};
-
-// How the user has used one context in the app, as the app recorded it. A
-// field left out is one the app doesn't report.
-struct ContextUsage
-{
-    // The last time the user went to it in the app: a tab shown, a session
-    // switched to.
-    Miro::Omittable<std::int64_t> lastUsedAtMs;
-
-    // The app's own decaying count of those uses.
-    Miro::Omittable<DecayingUseCount> useCount;
-
-    // A browser's history: the last visit to the page and how many visits
-    // it has had, not decayed.
-    Miro::Omittable<std::int64_t> lastVisitAtMs;
-    Miro::Omittable<std::int64_t> visitCount;
-
-    // A terminal pane's last keystroke from the user.
-    Miro::Omittable<std::int64_t> lastTypedAtMs;
-
-    // The last time a file changed in the context's project folder.
-    Miro::Omittable<std::int64_t> lastFileChangeAtMs;
-
-    MIRO_REFLECT(lastUsedAtMs, useCount, lastVisitAtMs, visitCount, lastTypedAtMs, lastFileChangeAtMs)
-
-    bool operator==(const ContextUsage&) const = default;
 };
 
 struct Context
@@ -135,10 +91,7 @@ struct Context
     // empty outside a repo. With `branch`, it names the context for Rudder.
     std::string repo;
 
-    // Left out when the app reports no usage for it.
-    Miro::Omittable<ContextUsage> usage;
-
-    MIRO_REFLECT(id, title, subtitle, url, open, path, focused, branch, repo, usage)
+    MIRO_REFLECT(id, title, subtitle, url, open, path, focused, branch, repo)
 
     bool operator==(const Context&) const = default;
 };
@@ -167,7 +120,25 @@ struct Close
     MIRO_REFLECT(contextId)
 };
 
-using Message = std::variant<Hello, Contexts, Activate, Close>;
+// Rudder asks for the app's ranking materials. Nothing to carry.
+struct RankingMaterialsRequest
+{
+};
+
+struct RankingMaterials
+{
+    // Which shared ordering the materials are for ("grazer-palette",
+    // "cowterm-palette").
+    std::string ordering;
+
+    // That ordering's input, as JSON.
+    Miro::JSON materials;
+
+    MIRO_REFLECT(ordering, materials)
+};
+
+using Message =
+    std::variant<Hello, Contexts, Activate, Close, RankingMaterialsRequest, RankingMaterials>;
 
 // One line, newline included.
 std::string encode(const Message& message);
@@ -177,7 +148,9 @@ std::string encode(const Message& message);
 std::optional<Message> decode(std::string_view line);
 
 // A line longer than this is garbage: dropped, along with the rest of it.
-constexpr std::size_t maxLineBytes = 1 << 20;
+// Ranking materials carry an app's whole history (Grazer's is over a
+// megabyte), so the limit is far above any other message.
+constexpr std::size_t maxLineBytes = 1 << 26;
 
 // Splits a byte stream into lines as it arrives in arbitrary chunks.
 class LineBuffer

@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <optional>
+#include <unordered_map>
 #include <unordered_set>
 #include <utility>
 
@@ -23,7 +24,64 @@ std::string lastComponent(std::string path)
 
     return path.substr(slash + 1);
 }
+
+const RudderItem& readItem(const RudderItem& item)
+{
+    return item;
+}
+
+const RudderItem& readItem(const MatchedItem& matched)
+{
+    return matched.item;
+}
+
+template <typename Row>
+void putAppsRowsInItsOrder(std::vector<Row>& rows, const AppOrderedContexts::value_type& appOrder)
+{
+    auto& [appId, ordered] = appOrder;
+    auto positionById = std::unordered_map<std::string, std::size_t> {};
+
+    for (std::size_t position = 0; position < ordered.size(); ++position)
+        positionById.emplace(ordered[position].id, position);
+
+    auto isAppsOrderedRow = [&](const Row& row)
+    {
+        auto& item = readItem(row);
+        return item.appId == appId && item.kind == "context"
+               && positionById.contains(item.contextId);
+    };
+
+    auto places = std::vector<std::size_t> {};
+    auto appRows = std::vector<Row> {};
+
+    for (std::size_t index = 0; index < rows.size(); ++index)
+        if (isAppsOrderedRow(rows[index]))
+        {
+            places.push_back(index);
+            appRows.push_back(rows[index]);
+        }
+
+    std::stable_sort(appRows.begin(),
+                     appRows.end(),
+                     [&](const Row& first, const Row& second)
+                     {
+                         return positionById.at(readItem(first).contextId)
+                                < positionById.at(readItem(second).contextId);
+                     });
+
+    for (std::size_t slot = 0; slot < places.size(); ++slot)
+        rows[places[slot]] = std::move(appRows[slot]);
+}
 } // namespace
+
+std::vector<RudderItem> keepEachAppsOwnOrder(std::vector<RudderItem> rows,
+                                             const AppOrderedContexts& appOrders)
+{
+    for (auto& appOrder: appOrders)
+        putAppsRowsInItsOrder(rows, appOrder);
+
+    return rows;
+}
 
 RudderItem makeContextRow(const RudderItem& app, const RudderContext& context)
 {
@@ -294,7 +352,7 @@ std::vector<RudderItem> browseItems(const std::vector<RudderItem>& all,
         browsing.push_back(std::move(row));
 
     dropAppRowsShadowedByTheirContexts(browsing);
-    return browsing;
+    return keepEachAppsOwnOrder(std::move(browsing), recency.appOrders);
 }
 
 namespace
@@ -427,33 +485,68 @@ void addCandidateRow(std::vector<CandidateRow>& rows, CandidateRow candidate)
     same->level = bestLevel;
 }
 
+// A row the app's own ordering lists but Rudder's matching doesn't find (the
+// app matched it on something Rudder doesn't see) still goes in, below
+// every row Rudder does find.
+constexpr auto levelOfARowOnlyItsAppFound = MatchLevel::nameHasQueryLettersInOrder;
+
+// An app that handed Rudder its ranking materials is listed through its own
+// order; only Rudder's own rows for it (its windows) come from its contexts.
+bool isListedFromContexts(const RudderItem& app,
+                          const RudderContext& context,
+                          const AppOrderedContexts& appOrders)
+{
+    if (appOrders.contains(app.id) && context.kind != "window")
+        return false;
+
+    return isListedContext(app, context);
+}
+
+const std::vector<RudderContext>& findAppOrderedContexts(const RudderItem& app,
+                                                         const AppOrderedContexts& appOrders)
+{
+    static const auto none = std::vector<RudderContext> {};
+    auto ordered = appOrders.find(app.id);
+    return ordered == appOrders.end() ? none : ordered->second;
+}
+
+void addAppRows(std::vector<CandidateRow>& rows,
+                const std::string& normalisedQuery,
+                const RudderItem& app,
+                const AppOrderedContexts& appOrders)
+{
+    if (auto level = frecencysearch::findNameMatchLevel(normalisedQuery, app.title))
+        addCandidateRow(rows, {*level, app});
+
+    for (auto& context: app.contexts)
+        if (isListedFromContexts(app, context, appOrders))
+            if (auto level = findContextMatchLevel(normalisedQuery, app, context))
+                addCandidateRow(rows, {*level, makeContextRow(app, context), context.focused});
+
+    for (auto& context: findAppOrderedContexts(app, appOrders))
+    {
+        auto level = findContextMatchLevel(normalisedQuery, app, context)
+                         .value_or(levelOfARowOnlyItsAppFound);
+        addCandidateRow(rows, {level, makeContextRow(app, context), context.focused});
+    }
+}
+
 std::vector<CandidateRow> findCandidateRows(const std::vector<RudderItem>& all,
-                                            const std::string& normalisedQuery)
+                                            const std::string& normalisedQuery,
+                                            const AppOrderedContexts& appOrders)
 {
     auto rows = std::vector<CandidateRow> {};
 
     for (auto& app: all)
     {
-        if (app.kind == "favourite")
+        if (app.kind != "favourite")
         {
-            if (auto level = frecencysearch::findMatchLevel(normalisedQuery, favouriteTexts(app)))
-                addCandidateRow(rows, {*level, app});
-
+            addAppRows(rows, normalisedQuery, app, appOrders);
             continue;
         }
 
-        if (auto level = frecencysearch::findNameMatchLevel(normalisedQuery, app.title))
+        if (auto level = frecencysearch::findMatchLevel(normalisedQuery, favouriteTexts(app)))
             addCandidateRow(rows, {*level, app});
-
-        for (auto& context: app.contexts)
-        {
-            if (!isListedContext(app, context))
-                continue;
-
-            if (auto level = findContextMatchLevel(normalisedQuery, app, context))
-                addCandidateRow(
-                    rows, {*level, makeContextRow(app, context), context.focused});
-        }
     }
 
     return rows;
@@ -527,7 +620,7 @@ std::vector<MatchedItem> matchItems(const std::vector<RudderItem>& all,
 
     auto rankedRows = std::vector<RankedRow> {};
 
-    for (auto& row: findCandidateRows(all, normalisedQuery))
+    for (auto& row: findCandidateRows(all, normalisedQuery, usage.appOrders))
         rankedRows.push_back({calculateRankingFacts(row, usage), std::move(row)});
 
     std::stable_sort(rankedRows.begin(),
@@ -539,6 +632,9 @@ std::vector<MatchedItem> matchItems(const std::vector<RudderItem>& all,
 
     for (auto& ranked: rankedRows)
         matched.push_back({ranked.row.level, std::move(ranked.row.item)});
+
+    for (auto& appOrder: usage.appOrders)
+        putAppsRowsInItsOrder(matched, appOrder);
 
     return matched;
 }

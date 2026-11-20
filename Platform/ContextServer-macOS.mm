@@ -79,13 +79,7 @@ struct ContextServer::Native
             if (!message)
                 continue;
 
-            if (auto* hello = std::get_if<protocol::Hello>(&*message))
-                owner->onHello(fd, *hello);
-            else if (auto* contexts = std::get_if<protocol::Contexts>(&*message))
-                owner->onContexts(fd, std::move(contexts->contexts));
-
-            // Activate and close only ever go the other way; an app sending
-            // one is ignored like any other line Rudder has no use for.
+            owner->deliver(fd, std::move(*message));
 
             if (!connections.contains(fd))
                 return;

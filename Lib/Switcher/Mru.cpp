@@ -5,7 +5,7 @@
 #include <utility>
 #include <vector>
 
-namespace grazer
+namespace rudder
 {
 MruStore::MruStore(const emberstore::Database& db)
     : stamps(db.collection<Stamp>("mru"))
@@ -66,4 +66,4 @@ std::int64_t MruStore::nowMs()
                system_clock::now().time_since_epoch())
         .count();
 }
-} // namespace grazer
+} // namespace rudder

@@ -83,6 +83,7 @@ add_subdirectory(Client)
 # providers) lives in a plain static library so it stays unit-testable without
 # the app shell.
 add_library(RudderSwitcher STATIC
+        Lib/Switcher/AppOrders.cpp
         Lib/Switcher/BackStack.cpp
         Lib/Switcher/CaptureGate.cpp
         Lib/Switcher/ClosingContexts.cpp
@@ -101,7 +102,6 @@ add_library(RudderSwitcher STATIC
         Lib/Switcher/Ranking.cpp
         Lib/Switcher/RenamedAppIds.cpp
         Lib/Switcher/Renames.cpp
-        Lib/Switcher/ReportedUsage.cpp
         Lib/Switcher/Slots.cpp
         Lib/Switcher/SnapshotFrame.cpp
         Lib/Switcher/TextFit.cpp
@@ -109,12 +109,13 @@ add_library(RudderSwitcher STATIC
         Lib/Switcher/Web.cpp)
 
 target_include_directories(RudderSwitcher PUBLIC Lib/Switcher)
-target_link_libraries(RudderSwitcher PUBLIC emberstore FrecencySearch RudderProtocol)
+target_link_libraries(RudderSwitcher PUBLIC emberstore FrecencySearch CowTermPalette GrazerPalette RudderProtocol)
 
 # The OS seam: running apps, activation, preview and the quick-panel window
 # tricks, one file per feature and platform behind the headers in Platform/.
 if (APPLE)
     add_library(RudderPlatform STATIC
+            Platform/ContextServer.cpp
             Platform/ContextServer-macOS.mm
             Platform/Permissions-macOS.mm
             Platform/Platform-macOS.mm
@@ -130,6 +131,7 @@ if (APPLE)
             PROPERTIES COMPILE_OPTIONS -fobjc-arc)
 elseif (WIN32)
     add_library(RudderPlatform STATIC
+            Platform/ContextServer.cpp
             Platform/ContextServer-Windows.cpp
             Platform/Permissions-Windows.cpp
             Platform/Platform-Windows.cpp

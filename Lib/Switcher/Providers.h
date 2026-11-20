@@ -1,7 +1,7 @@
 #pragma once
 
+#include "AppOrders.h"
 #include "Items.h"
-#include "ReportedUsage.h"
 
 #include <cstdint>
 #include <functional>
@@ -24,6 +24,13 @@ struct ProviderHello
     MIRO_REFLECT(app, bundleId, pid)
 };
 
+// One provider's own ordering of its rows (AppOrdering), by its app id.
+struct ProviderOrdering
+{
+    std::string appId;
+    AppOrdering ordering;
+};
+
 // Every connected provider and the contexts it last pushed, keyed by app id
 // (the bundle id -- the same id the panel's app rows carry). The socket layer
 // to come feeds this: hello -> connect, `contexts [...]` -> setContexts, the
@@ -42,12 +49,17 @@ public:
 
     const std::vector<RudderContext>& contextsFor(const std::string& appId) const;
 
+    // The app's own ordering, from the ranking materials it last answered
+    // with; it stays until the next answer or the app goes away.
+    void setAppOrdering(ProviderOrdering ordering);
+
+    // Each app that answered with ranking materials: its rows for the typed
+    // text in its own order.
+    AppOrderedContexts orderContextsByApp(const OrderingRequest& request) const;
+
     // Each provider's focused context (the one it pushed with focused: true),
     // by app id; providers that marked none are left out.
     std::map<std::string, std::string> focusedContexts() const;
-
-    // The usage every provider reported for its contexts, by contextKey.
-    ReportedUsageByKey collectReportedUsage() const;
 
     // Asks the owning app to switch to the context, and with `raise` to
     // bring itself forward too. False when no provider is connected for it
@@ -72,6 +84,7 @@ private:
         SendActivate send;
         SendClose sendClose;
         std::vector<RudderContext> contexts;
+        AppOrdering ordering;
     };
 
     std::map<std::string, Provider> providers;

@@ -115,25 +115,12 @@ struct ContextServer::Native
                     if (!message)
                         continue;
 
-                    // Activate and close only ever go the other way; an app
-                    // sending one is ignored like any other line Rudder has
-                    // no use for.
-                    if (auto* hello = std::get_if<protocol::Hello>(&*message))
-                        onMain(shared,
-                               [id, hello = *hello](ContextServer& server)
-                               {
-                                   if (server.native->find(id) != nullptr)
-                                       server.onHello(id, hello);
-                               });
-                    else if (auto* contexts =
-                                 std::get_if<protocol::Contexts>(&*message))
-                        onMain(shared,
-                               [id, list = std::move(contexts->contexts)](
-                                   ContextServer& server) mutable
-                               {
-                                   if (server.native->find(id) != nullptr)
-                                       server.onContexts(id, std::move(list));
-                               });
+                    onMain(shared,
+                           [id, message = std::move(*message)](ContextServer& server) mutable
+                           {
+                               if (server.native->find(id) != nullptr)
+                                   server.deliver(id, std::move(message));
+                           });
                 }
             }
         }

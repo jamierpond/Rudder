@@ -31,22 +31,34 @@ void ContextProviders::disconnect(const std::string& appId)
         onChanged();
 }
 
-ReportedUsageByKey ContextProviders::collectReportedUsage() const
-{
-    auto reported = ReportedUsageByKey {};
-
-    for (auto& [appId, provider]: providers)
-        rudder::collectReportedUsage(reported, appId, provider.contexts);
-
-    return reported;
-}
-
 const std::vector<RudderContext>&
     ContextProviders::contextsFor(const std::string& appId) const
 {
     static const auto none = std::vector<RudderContext> {};
     auto found = providers.find(appId);
     return found != providers.end() ? found->second.contexts : none;
+}
+
+void ContextProviders::setAppOrdering(ProviderOrdering ordering)
+{
+    auto found = providers.find(ordering.appId);
+
+    if (found == providers.end())
+        return;
+
+    found->second.ordering = std::move(ordering.ordering);
+    onChanged();
+}
+
+AppOrderedContexts ContextProviders::orderContextsByApp(const OrderingRequest& request) const
+{
+    auto ordered = AppOrderedContexts {};
+
+    for (auto& [appId, provider]: providers)
+        if (provider.ordering)
+            ordered[appId] = provider.ordering(request);
+
+    return ordered;
 }
 
 std::map<std::string, std::string> ContextProviders::focusedContexts() const

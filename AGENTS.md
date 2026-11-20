@@ -34,8 +34,10 @@ being asked and without asking.
 
 ## Debugging
 
-Rudder always logs to `~/Library/Logs/Rudder/rudder.log`. When something
-misbehaves, read it first, before asking Jamie anything.
+Rudder writes one log per launch to
+`~/Library/Application Support/pond/Rudder/logs/<launch epoch ms>.log`; the
+newest file is the running Rudder's. When something misbehaves, read it first,
+before asking Jamie anything.
 
 ## Product rules decided by Jamie
 

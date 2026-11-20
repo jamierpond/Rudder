@@ -4,6 +4,7 @@
 
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -30,6 +31,10 @@ public:
 
     bool isConnected() const;
 
+    // Hands a message from Rudder to the callbacks below; the reply to send
+    // back, if the message asks for one.
+    std::optional<protocol::Message> handleMessageFromRudder(const protocol::Message& message);
+
     // Rudder picked one of this app's contexts (Enter): switch to it and
     // bring the app forward.
     std::function<void(const std::string& contextId)> onActivate = [](auto&) {};
@@ -44,6 +49,13 @@ public:
     // Only sent when the hello said canClose. Close it the way the app's own
     // close would, then push the list without it.
     std::function<void(const std::string& contextId)> onClose = [](auto&) {};
+
+    // Rudder asks for every input this app's own ordering of its rows reads
+    // (protocol rankingMaterialsRequest). Return them, as recorded, and the
+    // client sends them; unset, the app never answers and Rudder orders its
+    // rows by itself.
+    std::function<std::optional<protocol::RankingMaterials>()> onRankingMaterialsRequest = []
+    { return std::optional<protocol::RankingMaterials> {}; };
 
 private:
     struct Native;

@@ -7,7 +7,7 @@
 #include <map>
 #include <string>
 
-namespace grazer
+namespace rudder
 {
 struct Stamp
 {
@@ -47,4 +47,4 @@ private:
 
     std::map<std::string, std::int64_t> stampsInMemory;
 };
-} // namespace grazer
+} // namespace rudder

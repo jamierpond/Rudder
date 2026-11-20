@@ -1,5 +1,6 @@
 #pragma once
 
+#include "AppOrders.h"
 #include "Items.h"
 
 #include <FrecencySearch/LearnedPicks.h>
@@ -86,6 +87,10 @@ struct Recency
     // The app the panel was summoned over: its focused context is where the
     // user already is, so it isn't listed.
     std::string frontAppId;
+
+    // The order each app that handed Rudder its ranking materials gives its
+    // rows with nothing typed.
+    AppOrderedContexts appOrders;
 };
 
 // The empty query lists a context used within this long, and at most
@@ -110,7 +115,19 @@ struct SearchUsage
 {
     FrecencyFn usage;
     std::vector<frecencysearch::LearnedPick> learnedPicks;
+
+    // Each app that handed Rudder its ranking materials: its rows for the
+    // typed text in its own order. They are that app's rows, in place of the
+    // contexts it pushed.
+    AppOrderedContexts appOrders;
 };
+
+// Each app's rows among `rows` that appear in its order in `appOrders` are put
+// in that order, in the places those rows already hold: Rudder decides where
+// an app's rows sit among other apps' rows and its own, the app decides
+// their order among themselves.
+std::vector<RudderItem> keepEachAppsOwnOrder(std::vector<RudderItem> rows,
+                                             const AppOrderedContexts& appOrders);
 
 // The list for the current query. Empty query: browseItems with `recency`,
 // or without it the running apps and the favourites in `all`'s order.
