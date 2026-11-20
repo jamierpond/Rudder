@@ -17,6 +17,10 @@
 //
 // The Release tree is always reconfigured; deps stay at the commits in
 // lockstep.lock. `just update-deps` moves them to their branch heads.
+//
+//   install-macos.mjs [--build-directory <dir> [cmake arguments...]]
+//
+// `just install` passes build-coverage and the line-coverage arguments.
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import { rm, rename, writeFile } from 'node:fs/promises';
@@ -192,19 +196,28 @@ async function writeCommandLauncher(launcherPath, appBundlePath) {
     { mode: COMMAND_LAUNCHER_FILE_MODE });
 }
 
+function readBuildArguments(argumentList) {
+  if (argumentList[0] !== '--build-directory')
+    return { buildDirectory: RELEASE_BUILD_DIR, cmakeArguments: [] };
+
+  return { buildDirectory: join(ROOT, argumentList[1]), cmakeArguments: argumentList.slice(2) };
+}
+
 await main(async () => {
+  const { buildDirectory, cmakeArguments } = readBuildArguments(process.argv.slice(2));
   mkdirSync(INSTALL_DIRECTORY, { recursive: true });
   mkdirSync(COMMAND_DIRECTORY, { recursive: true });
 
   await run('cmake', [
-    '-G', 'Ninja', '-B', RELEASE_BUILD_DIR, '-DCMAKE_BUILD_TYPE=Release',
+    '-G', 'Ninja', '-B', buildDirectory, '-DCMAKE_BUILD_TYPE=Release',
+    ...cmakeArguments,
     ...lockstepSourceArgs(),
   ]);
 
-  await run('cmake', ['--build', RELEASE_BUILD_DIR, '--target', 'Rudder']);
+  await run('cmake', ['--build', buildDirectory, '--target', 'Rudder']);
 
   await rm(STAGING, { recursive: true, force: true });
-  await run('ditto', [join(RELEASE_BUILD_DIR, 'Rudder.app'), STAGING]);
+  await run('ditto', [join(buildDirectory, 'Rudder.app'), STAGING]);
 
   await ensureKeychain();
   if (!identityHash()) await createIdentity();

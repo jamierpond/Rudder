@@ -81,6 +81,10 @@ endif ()
 # Set after the packages, so only this project's own targets build with -Werror.
 set(CMAKE_COMPILE_WARNING_AS_ERROR ON)
 
+# With -DPOND_LINE_COVERAGE=ON (just install, for now), counts which lines of
+# Rudder's own code run; after the packages, so only Rudder is counted.
+pond_add_line_coverage_counters()
+
 list(APPEND CMAKE_MODULE_PATH "${eacp_SOURCE_DIR}/CMake")
 
 add_subdirectory(Client)
@@ -162,6 +166,7 @@ add_executable(Rudder
 target_link_libraries(Rudder PRIVATE eacp-ui PondApp RudderSwitcher RudderPlatform SearchKeys SessionLog)
 pond_add_version_library(RudderVersion)
 target_link_libraries(Rudder PRIVATE RudderVersion)
+pond_write_line_coverage(Rudder APP_NAME Rudder)
 
 eacp_enable_crash_reporting(Rudder SYMBOLS_DIR ${PROJECT_BINARY_DIR}/symbols)
 target_link_libraries(Rudder PRIVATE eacp-crash-faults)

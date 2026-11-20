@@ -29,9 +29,20 @@ just run     # build, quit any running Rudder (macOS: and reset its dev Accessib
 just test    # unit tests
 just install # Release build into ~/.local/libexec/rudder/Rudder.app (macOS) or
              # %LOCALAPPDATA%\Programs\Rudder with a Start Menu shortcut
-             # (Windows), then start it so it starts at login from there
+             # (Windows), then start it so it starts at login from there.
+             # On macOS it is the line-coverage build for now (see below)
+just install-without-coverage  # the same install, without line coverage
 just update-deps  # move eacp and the other branch-pinned deps to their branch heads and rewrite lockstep.lock
 ```
+
+For now `just install` on macOS installs a build with line-coverage counters
+(PondDev's `POND_LINE_COVERAGE`, built with clang in `build-coverage/`), so the
+features nobody uses can be found. It keeps a copy of the old and new programs
+each time, because counts map to lines only through the program that wrote
+them. `just coverage-report` prints the files and functions that never ran in
+any kept build, largest first, and writes an HTML per-line view;
+`just coverage-reset` deletes the counts and kept programs. Counts are in
+`~/Library/Application Support/pond/Rudder/coverage/`.
 
 `just install` needs no Apple certificate on macOS: it signs with a
 self-signed "Rudder Local Signing" identity it makes once in its own keychain.

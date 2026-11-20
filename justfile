@@ -41,9 +41,43 @@ tidy:
 run:
     {{msvc}} node scripts/run.mjs
 
-[doc('Build Release + install (macOS: ~/.local/libexec/rudder/Rudder.app, linked from ~/.local/bin/rudder; Windows: %LOCALAPPDATA%\Programs\Rudder) and start it')]
+# ---- Line coverage: which lines of Rudder's own code a normal day runs ----
+
+coverage_build_dir := "build-coverage"
+coverage_cmake_arguments := "-DPOND_LINE_COVERAGE=ON -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++"
+coverage := "python3 " + coverage_build_dir + "/PondLineCoverage/line-coverage.py --app Rudder --program Rudder --installed-in ~/.local/libexec/rudder/Rudder.app/Contents/MacOS --own-code-folder Source --own-code-folder Lib --own-code-folder Platform --own-code-folder Client --not-own-code-folder Tests"
+
+[doc('Line coverage is the default for now: build Release with line-coverage counters in build-coverage, install it to ~/.local/libexec/rudder/Rudder.app and start it, keeping the old and new programs for coverage-report')]
+[macos]
+install: coverage-build
+    {{coverage}} keep
+    node scripts/install.mjs --build-directory {{coverage_build_dir}} {{coverage_cmake_arguments}}
+    {{coverage}} keep
+
+[doc('Build Release + install (%LOCALAPPDATA%\Programs\Rudder) and start it; no line coverage on Windows, which builds with MSVC')]
+[windows]
 install:
     {{msvc}} node scripts/install.mjs
+
+[doc('Build Release without line coverage + install (macOS: ~/.local/libexec/rudder/Rudder.app, linked from ~/.local/bin/rudder; Windows: %LOCALAPPDATA%\Programs\Rudder) and start it')]
+install-without-coverage:
+    {{msvc}} node scripts/install.mjs
+
+[doc('Build Rudder with line-coverage counters (clang), in build-coverage')]
+[macos]
+coverage-build:
+    cmake -G Ninja -S . -B {{coverage_build_dir}} -DCMAKE_BUILD_TYPE=Release {{coverage_cmake_arguments}}
+    cmake --build {{coverage_build_dir}} --target Rudder
+
+[doc('Print the code of Rudder that never ran in any kept build, largest first, and write an HTML per-line view')]
+[macos]
+coverage-report *arguments:
+    {{coverage}} report {{arguments}}
+
+[doc('Delete the line-coverage counts and kept programs')]
+[macos]
+coverage-reset *arguments:
+    {{coverage}} reset {{arguments}}
 
 [doc('Move branch-pinned deps (eacp, emberstore, ...) to their branch heads and rewrite lockstep.lock')]
 update-deps:

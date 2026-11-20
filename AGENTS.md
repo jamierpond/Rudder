@@ -12,6 +12,10 @@ being asked and without asking.
 - Never ask what to commit or whether to commit. Commit everything in the
   tree. Work in progress goes in too, with "Work in progress:" and the
   failing test names in the message.
+- `just install` installs the line-coverage build on macOS for now (Jamie's
+  call: every pond app runs with line coverage, to find unused features).
+  `just install-without-coverage` installs the normal build; use it only when
+  asked. `just coverage-report` shows what never ran.
 - Never ask whether to install. `just install` quits and relaunches the
   running Rudder; that is wanted. The older rule against relaunching apps on
   Jamie's Mac does not apply to Rudder, CowTerm or Grazer. It still bans
