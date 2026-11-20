@@ -79,6 +79,10 @@ coverage-report *arguments:
 coverage-reset *arguments:
     {{coverage}} reset {{arguments}}
 
+[doc('List the crash reports nobody has marked fixed here and on other machines (list [HOST ...]), or mark one fixed (mark-fixed HOST ID); reads the script from build-test, which just test configures')]
+crash-reports *arguments:
+    python3 build-test/PondCrashReports/crash-reports.py --app Rudder {{arguments}}
+
 [doc('Move branch-pinned deps (eacp, emberstore, ...) to their branch heads and rewrite lockstep.lock')]
 update-deps:
     {{msvc}} node scripts/update-deps.mjs

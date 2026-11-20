@@ -52,16 +52,6 @@ lockstep_add_package(
         GIT_TAG main
         SYSTEM YES)
 
-# Crash reports (Crashout): Rudder writes one to
-# <app support>/Rudder/Crashes/pending/<id>/ when it crashes, which
-# scripts/crash-reports.py lists. Added here, past the client-only return, so
-# Grazer and CowTerm never get a second copy through RudderClient.
-lockstep_add_package(
-        NAME Crashout
-        GITHUB_REPOSITORY jamierpond/Crashout
-        GIT_TAG main
-        SYSTEM YES)
-
 # Local persistence (Firestore-flavoured JSON documents). Must come after
 # eacp -- emberstore fetches its own copy only when no eacp targets exist.
 lockstep_add_package(
@@ -168,8 +158,8 @@ pond_add_version_library(RudderVersion)
 target_link_libraries(Rudder PRIVATE RudderVersion)
 pond_write_line_coverage(Rudder APP_NAME Rudder)
 
-eacp_enable_crash_reporting(Rudder SYMBOLS_DIR ${PROJECT_BINARY_DIR}/symbols)
-target_link_libraries(Rudder PRIVATE eacp-crash-faults)
+# Crash reports in pond/Rudder/Crashes/Rudder, which just crash-reports lists.
+pond_enable_crash_reports(Rudder)
 
 set(BUNDLE_ID "audio.pond.rudder")
 

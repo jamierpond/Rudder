@@ -32,14 +32,10 @@
 #include <emberstore/FileWatcher.h>
 #include <PondApp/DataDirectory.h>
 #include <PondApp/SingleInstance.h>
+#include <PondCrashReports/CrashReports.h>
+#include <PondVersion.h>
 #include <SessionLog/EventLine.h>
 #include <SessionLog/SessionLog.h>
-
-#if EACP_CRASH_REPORTING
-#include <eacp/CrashReporting/CrashReporting.h>
-#include <eacp/CrashReporting/Faults/Faults.h>
-#include <PondVersion.h>
-#endif
 
 #include <algorithm>
 #include <array>
@@ -2660,22 +2656,6 @@ struct RudderApp
 
 namespace
 {
-#if EACP_CRASH_REPORTING
-// `Rudder --crash-for-testing <fault>` crashes on purpose with one of Crashout's
-// faults (nullptr, abort, stackoverflow, ...), to check a crash report end to end.
-constexpr auto crashForTestingFlag = std::string_view {"--crash-for-testing"};
-
-void crashIfAskedToForTesting(int argc, char** argv)
-{
-    for (auto index = 1; index + 1 < argc; ++index)
-    {
-        if (argv[index] == crashForTestingFlag)
-            CrashReporting::Faults::triggerFault(argv[index + 1],
-                                                 CrashReporting::Faults::ThreadChoice::main);
-    }
-}
-#endif
-
 // `Rudder --snapshot <dir>`: render the panel with no window -- the switcher
 // over the apps running now, then the unlock overlay -- to panel.png and
 // unlock.png. Real pixels from the real views, for docs, on a machine where
@@ -2751,10 +2731,8 @@ int snapshot(const std::string& directory)
 
 int main(int argc, char* argv[])
 {
-#if EACP_CRASH_REPORTING
-    if (auto handlerExitCode = CrashReporting::runHandlerIfRequested(argc, argv))
+    if (auto handlerExitCode = pondcrashreports::runCrashHandlerIfRequested(argc, argv))
         return *handlerExitCode;
-#endif
 
     if (argc == 3 && std::string {argv[1]} == "--snapshot")
         return snapshot(argv[2]);
@@ -2765,12 +2743,8 @@ int main(int argc, char* argv[])
         && claim.handOverToRunningInstance(pondapp::getLaunchArguments(argc, argv)))
         return pondapp::exitCodeAnotherInstanceIsRunning;
 
-#if EACP_CRASH_REPORTING
-    auto crashReportingOptions = CrashReporting::Options {};
-    crashReportingOptions.release = pond::getVersionString();
-    CrashReporting::start(crashReportingOptions);
-    crashIfAskedToForTesting(argc, argv);
-#endif
+    pondcrashreports::startCrashReports(
+        {.appName = "Rudder", .release = pond::getVersionString()}, argc, argv);
 
     replaceRenamedAppIdsInStores();
     return Apps::run<RudderApp>(argc, argv);
