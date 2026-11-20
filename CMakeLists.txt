@@ -101,6 +101,7 @@ add_library(RudderSwitcher STATIC
         Lib/Switcher/Ranking.cpp
         Lib/Switcher/RenamedAppIds.cpp
         Lib/Switcher/Renames.cpp
+        Lib/Switcher/ReportedUsage.cpp
         Lib/Switcher/Slots.cpp
         Lib/Switcher/SnapshotFrame.cpp
         Lib/Switcher/TextFit.cpp

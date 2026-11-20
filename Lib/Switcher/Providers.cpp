@@ -31,6 +31,16 @@ void ContextProviders::disconnect(const std::string& appId)
         onChanged();
 }
 
+ReportedUsageByKey ContextProviders::collectReportedUsage() const
+{
+    auto reported = ReportedUsageByKey {};
+
+    for (auto& [appId, provider]: providers)
+        rudder::collectReportedUsage(reported, appId, provider.contexts);
+
+    return reported;
+}
+
 const std::vector<RudderContext>&
     ContextProviders::contextsFor(const std::string& appId) const
 {

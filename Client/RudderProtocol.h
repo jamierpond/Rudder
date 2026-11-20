@@ -18,7 +18,7 @@
 //                    "canClose":true}
 //   app -> Rudder   {"type":"contexts","contexts":[{"id":"3","title":"…","url":"…"}]}
 //                   (each context may also carry "subtitle", "path", "repo",
-//                   "branch", "open": false and "focused": true)
+//                   "branch", "open": false, "focused": true and "usage")
 //   Rudder -> app   {"type":"activate","contextId":"3","raise":true}
 //   Rudder -> app   {"type":"close","contextId":"3"}
 //
@@ -32,6 +32,22 @@
 // one of its open contexts: the app closes it (the tab, the pane) and pushes
 // its list without it. There is no separate "closed" reply -- a context
 // missing from a push is gone, however it was closed.
+//
+// "usage" is how the user has used the context in the app, as the app recorded
+// it: times in epoch milliseconds, counts, and a decaying count with the time
+// it is valid as of and the half-life it decays by. Every field in it, and
+// "usage" itself, may be left out, which means the app doesn't report it.
+// Rudder alone turns these facts into its order; an app never sends a rank:
+//
+//   "usage": {"lastUsedAtMs": 1763600000000,
+//             "useCount": {"count": 3.2, "asOfMs": 1763600000000,
+//                          "halfLifeMs": 259200000},
+//             "lastVisitAtMs": 1763600000000, "visitCount": 41,
+//             "lastTypedAtMs": 1763600000000, "lastFileChangeAtMs": 1763600000000}
+//
+// A Rudder built before "usage" looks up only the keys it knows and ignores
+// it; an app built before it sends none, and Rudder orders its rows by its
+// own picks and watched focus alone, as it did.
 //
 // hello comes first; each contexts push replaces the app's whole list; the
 // connection closing means the app quit. Rudder announces "rudder.started"
@@ -49,6 +65,46 @@ struct Hello
     bool canClose = false;
 
     MIRO_REFLECT(app, bundleId, pid, canClose)
+};
+
+// A use count the app keeps decayed: `count` as of `asOfMs`, halving every
+// `halfLifeMs`.
+struct DecayingUseCount
+{
+    double count = 0;
+    std::int64_t asOfMs = 0;
+    std::int64_t halfLifeMs = 0;
+
+    MIRO_REFLECT(count, asOfMs, halfLifeMs)
+
+    bool operator==(const DecayingUseCount&) const = default;
+};
+
+// How the user has used one context in the app, as the app recorded it. A
+// field left out is one the app doesn't report.
+struct ContextUsage
+{
+    // The last time the user went to it in the app: a tab shown, a session
+    // switched to.
+    Miro::Omittable<std::int64_t> lastUsedAtMs;
+
+    // The app's own decaying count of those uses.
+    Miro::Omittable<DecayingUseCount> useCount;
+
+    // A browser's history: the last visit to the page and how many visits
+    // it has had, not decayed.
+    Miro::Omittable<std::int64_t> lastVisitAtMs;
+    Miro::Omittable<std::int64_t> visitCount;
+
+    // A terminal pane's last keystroke from the user.
+    Miro::Omittable<std::int64_t> lastTypedAtMs;
+
+    // The last time a file changed in the context's project folder.
+    Miro::Omittable<std::int64_t> lastFileChangeAtMs;
+
+    MIRO_REFLECT(lastUsedAtMs, useCount, lastVisitAtMs, visitCount, lastTypedAtMs, lastFileChangeAtMs)
+
+    bool operator==(const ContextUsage&) const = default;
 };
 
 struct Context
@@ -79,7 +135,10 @@ struct Context
     // empty outside a repo. With `branch`, it names the context for Rudder.
     std::string repo;
 
-    MIRO_REFLECT(id, title, subtitle, url, open, path, focused, branch, repo)
+    // Left out when the app reports no usage for it.
+    Miro::Omittable<ContextUsage> usage;
+
+    MIRO_REFLECT(id, title, subtitle, url, open, path, focused, branch, repo, usage)
 
     bool operator==(const Context&) const = default;
 };

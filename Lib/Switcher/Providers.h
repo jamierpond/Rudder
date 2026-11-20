@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Items.h"
+#include "ReportedUsage.h"
 
 #include <cstdint>
 #include <functional>
@@ -44,6 +45,9 @@ public:
     // Each provider's focused context (the one it pushed with focused: true),
     // by app id; providers that marked none are left out.
     std::map<std::string, std::string> focusedContexts() const;
+
+    // The usage every provider reported for its contexts, by contextKey.
+    ReportedUsageByKey collectReportedUsage() const;
 
     // Asks the owning app to switch to the context, and with `raise` to
     // bring itself forward too. False when no provider is connected for it

@@ -247,6 +247,28 @@ rudder.onActivate = [](const std::string& id) { /* bring that place forward */ }
 rudder.pushContexts({{"1", "Title", "subtitle", "https://..."}});
 ```
 
+An app can also tell Rudder how the user has used each context, as the app
+recorded it, by filling in the fields of `usage` it has and leaving out the
+rest. Rudder never takes a rank from an app; it folds these facts into its own
+frecency:
+
+```cpp
+auto context = rudder::protocol::Context {"3", "GitHub", "", "https://github.com"};
+auto usage = rudder::protocol::ContextUsage {};
+usage.lastUsedAtMs = lastShownAtMs;
+usage.useCount = rudder::protocol::DecayingUseCount {decayedUses, decayedAsOfMs, halfLifeMs};
+context.usage = usage;
+```
+
+When you type, a row's frecency is Rudder's own (picks in the panel, plus a
+quarter of a pick for each focus it watched hold) plus a quarter of the
+strongest use its app reports: the app's decaying count, decayed on to now
+with the half-life it came with, or one use at the latest time it reports
+(last used, visited, typed, file change), decaying over three days. Rows whose
+app reports nothing rank exactly as before. The list with nothing typed still
+goes by Rudder's own recency. `Lib/Switcher/ReportedUsage.h` holds the rule
+and its constants.
+
 It reconnects when Rudder restarts and is silent when Rudder isn't running.
 Grazer is the first provider. The client-only build gives the app only
 `RudderClient` and `RudderProtocol`; the libraries the pond apps share

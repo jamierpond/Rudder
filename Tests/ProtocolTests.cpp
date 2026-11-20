@@ -188,3 +188,110 @@ auto tPathAndFocused = test("Protocol/path and focused decode, and older apps' l
     check(line.find(R"("path":"")") != std::string::npos);
     check(line.find(R"("focused":false)") != std::string::npos);
 };
+
+namespace
+{
+constexpr std::int64_t reportedAtMs = 1'790'000'000'000LL;
+constexpr std::int64_t threeDaysMs = 3LL * 24 * 60 * 60 * 1000;
+constexpr double decayedUses = 3.25;
+constexpr std::int64_t lifetimeVisits = 41;
+
+ContextUsage makeEveryReportedFact()
+{
+    auto usage = ContextUsage {};
+    usage.lastUsedAtMs = reportedAtMs;
+    usage.useCount = DecayingUseCount {decayedUses, reportedAtMs, threeDaysMs};
+    usage.lastVisitAtMs = reportedAtMs - 1;
+    usage.visitCount = lifetimeVisits;
+    usage.lastTypedAtMs = reportedAtMs - 2;
+    usage.lastFileChangeAtMs = reportedAtMs - 3;
+    return usage;
+}
+
+const Context* decodeOneContext(const std::optional<Message>& message)
+{
+    auto* contexts = message ? std::get_if<Contexts>(&*message) : nullptr;
+
+    if (contexts == nullptr || contexts->contexts.size() != 1)
+        return nullptr;
+
+    return &contexts->contexts.front();
+}
+} // namespace
+
+auto tUsageRoundTrips = test("Protocol/usage keeps every reported fact") = []
+{
+    auto context = Context {"3", "GitHub"};
+    context.usage = makeEveryReportedFact();
+    auto line = encode(Contexts {{context}});
+    auto message = decode(line);
+    auto* received = decodeOneContext(message);
+
+    check(received != nullptr && *received == context);
+};
+
+auto tUsagePartly = test("Protocol/an app reports only the usage facts it fills in") = []
+{
+    auto context = Context {"pane:1", "zsh"};
+    auto usage = ContextUsage {};
+    usage.lastTypedAtMs = reportedAtMs;
+    context.usage = usage;
+    auto line = encode(Contexts {{context}});
+
+    check(line.find("lastTypedAtMs") != std::string::npos);
+    check(line.find("useCount") == std::string::npos);
+    check(line.find("visitCount") == std::string::npos);
+
+    auto message = decode(line);
+    auto* received = decodeOneContext(message);
+
+    check(received != nullptr && received->usage && received->usage->lastTypedAtMs
+          && !received->usage->useCount && !received->usage->lastUsedAtMs);
+};
+
+auto tNoUsageFromOlderApps = test("Protocol/a context from an app that reports no usage has none") = []
+{
+    auto line = encode(Contexts {{{"1", "Docs"}}});
+
+    check(line.find("usage") == std::string::npos);
+
+    auto message = decode(R"({"type":"contexts","contexts":[{"id":"1","title":"Docs","path":"/p"}]})");
+    auto* received = decodeOneContext(message);
+
+    check(received != nullptr && !received->usage);
+
+    message = decode(R"({"type":"contexts","contexts":[{"id":"1","usage":null}]})");
+    received = decodeOneContext(message);
+
+    check(received != nullptr && !received->usage);
+
+    message = decode(R"({"type":"contexts","contexts":[{"id":"1","usage":{"lastUsedAtMs":null}}]})");
+    received = decodeOneContext(message);
+
+    check(received != nullptr && received->usage && !received->usage->lastUsedAtMs);
+};
+
+auto tOlderRudderIgnoresUsage = test("Protocol/keys a Rudder doesn't know are ignored, so an older Rudder reads a newer app") = []
+{
+    auto context = Context {"3", "GitHub"};
+    context.usage = makeEveryReportedFact();
+    auto line = encode(Contexts {{context}});
+    auto withUnknownKey = line;
+    withUnknownKey.replace(line.find(R"("usage")"), std::string {R"("usage")"}.size(), R"("usageFromTheFuture")");
+    auto message = decode(withUnknownKey);
+    auto* received = decodeOneContext(message);
+
+    check(received != nullptr && received->id == "3" && received->title == "GitHub"
+          && !received->usage);
+};
+
+auto tBadUsage = test("Protocol/usage of the wrong shape is garbage") = []
+{
+    check(!decode(R"({"type":"contexts","contexts":[{"id":"1","usage":7}]})").has_value());
+    check(!decode(R"({"type":"contexts","contexts":[{"id":"1","usage":{"lastUsedAtMs":"now"}}]})")
+               .has_value());
+    check(!decode(R"({"type":"contexts","contexts":[{"id":"1","usage":{"useCount":{"count":1}}}]})")
+               .has_value());
+    check(!decode(R"({"type":"contexts","contexts":[{"id":"1","usage":{"lastTypedAtMs":1.5}}]})")
+               .has_value());
+};

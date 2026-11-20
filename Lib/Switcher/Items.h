@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Miro/Reflect.h>
+#include <RudderProtocol.h>
 
 #include <string>
 #include <vector>
@@ -44,7 +45,11 @@ struct RudderContext
     // provider. Shown as the title, and matched as well as the branch.
     std::string name;
 
-    MIRO_REFLECT(id, title, subtitle, url, kind, open, path, branch, repo, focused, name)
+    // How the user used it in its app, as the provider reported it (protocol
+    // usage); left out when the provider reports none.
+    Miro::Omittable<protocol::ContextUsage> reportedUsage;
+
+    MIRO_REFLECT(id, title, subtitle, url, kind, open, path, branch, repo, focused, name, reportedUsage)
 };
 
 // One row in the panel. kind "app" is a running app (id = appId = its bundle

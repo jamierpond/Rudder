@@ -18,6 +18,7 @@ add_executable(RudderTests
         RankingTests.cpp
         RenamedAppIdsTests.cpp
         RenamesTests.cpp
+        ReportedUsageTests.cpp
         SearchOrderTests.cpp
         SlotsTests.cpp
         SnapshotFrameTests.cpp

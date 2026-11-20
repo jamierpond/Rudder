@@ -270,3 +270,21 @@ auto tEscUndoesPreviews = test("Providers/Esc puts previewed apps back on their 
     undo.reset({});
     check(undo.undo().empty(), "a new summon forgets");
 };
+
+auto tReportedUsageCollected = test("Providers/the usage each provider reports is collected by context key") = []
+{
+    constexpr std::int64_t lastShownAtMs = 1'790'000'000'000LL;
+    auto providers = ContextProviders {};
+    providers.connect({"Grazer", "audio.pond.grazer", 1}, [](auto&, bool) {});
+
+    auto shown = RudderContext {"3", "GitHub", "", "https://github.com"};
+    auto usage = protocol::ContextUsage {};
+    usage.lastUsedAtMs = lastShownAtMs;
+    shown.reportedUsage = usage;
+    providers.setContexts("audio.pond.grazer", {shown, {"4", "News", "", ""}});
+
+    auto reported = providers.collectReportedUsage();
+
+    check(reported.size() == 1);
+    check(reported["audio.pond.grazer/3"].size() == 1);
+};

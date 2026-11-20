@@ -21,6 +21,7 @@
 #include "Ranking.h"
 #include "RenamedAppIds.h"
 #include "Renames.h"
+#include "ReportedUsage.h"
 #include "Slots.h"
 #include "Web.h"
 
@@ -1963,6 +1964,7 @@ struct RudderApp
                 converted.branch = context.branch;
                 converted.repo = context.repo;
                 converted.focused = context.focused;
+                converted.reportedUsage = context.usage;
                 contexts.push_back(std::move(converted));
             }
 
@@ -1970,6 +1972,7 @@ struct RudderApp
                 app->second, std::move(contexts), FrecencyStore::nowMs());
 
             logEvent("provider.contexts", {{"app", app->second}, {"count", contexts.size()}});
+            logReportedUsage(app->second, contexts);
             trackFocus(app->second, contexts);
             forgetContexts(
                 goneContextKeys(app->second, providers.contextsFor(app->second), contexts));
@@ -2286,8 +2289,31 @@ struct RudderApp
     SearchUsage searchUsageFor(const std::string& typed)
     {
         auto now = FrecencyStore::nowMs();
-        auto usage = [this, now](const std::string& key) { return frecency.frecency(key, now); };
+        auto rudderOwnFrecency = [this, now](const std::string& key)
+        { return frecency.frecency(key, now); };
+        auto usage =
+            makeRowFrecencyLookup(rudderOwnFrecency, providers.collectReportedUsage(), now);
         return {usage, learnedPicks.findPicksForQuery(typed, now)};
+    }
+
+    // What a push's reported usage does to Rudder's frecency, for the log.
+    void logReportedUsage(const std::string& appId, const std::vector<RudderContext>& contexts)
+    {
+        auto reported = ReportedUsageByKey {};
+        collectReportedUsage(reported, appId, contexts);
+        auto now = FrecencyStore::nowMs();
+        auto mostLifted = findMostLiftedRow(
+            reported, [this, now](const std::string& key) { return frecency.frecency(key, now); }, now);
+
+        if (!mostLifted)
+            return;
+
+        logEvent("provider.usage",
+                 {{"app", appId},
+                  {"keys", reported.size()},
+                  {"liftedKey", mostLifted->key},
+                  {"ownFrecency", std::to_string(mostLifted->rudderOwnFrecency)},
+                  {"frecency", std::to_string(mostLifted->frecency)}});
     }
 
     // The empty query's recency: the app summoned over on top, then by stamp.

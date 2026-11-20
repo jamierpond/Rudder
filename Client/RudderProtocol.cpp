@@ -3,6 +3,7 @@
 #include <Miro/JSON/Json.h>
 #include <Miro/Reflection/Serialize.h>
 
+#include <algorithm>
 #include <utility>
 
 namespace rudder::protocol
@@ -50,6 +51,146 @@ bool readBool(const Object& object, std::string_view key, bool& out)
     return true;
 }
 
+// A usage field the app may leave out or send as null. `isWellFormed` is
+// false for a field of the wrong type; `value` is null when it is left out.
+struct ReportedField
+{
+    const Miro::JSON* value = nullptr;
+    bool isWellFormed = true;
+};
+
+ReportedField findReportedField(const Object& object,
+                                std::string_view key,
+                                bool (Miro::JSON::*isRightType)() const)
+{
+    auto* value = Miro::Json::find(object, key);
+
+    if (value == nullptr || value->isNull())
+        return {};
+
+    if (!(value->*isRightType)())
+        return {nullptr, false};
+
+    return {value, true};
+}
+
+bool readReportedInteger(const Object& object,
+                         std::string_view key,
+                         Miro::Omittable<std::int64_t>& out)
+{
+    auto field = findReportedField(object, key, &Miro::JSON::isInteger);
+
+    if (field.value != nullptr)
+        out = field.value->asInteger();
+
+    return field.isWellFormed;
+}
+
+// A field every useCount carries.
+bool readRequiredInteger(const Object& object, std::string_view key, std::int64_t& out)
+{
+    auto* value = Miro::Json::find(object, key);
+
+    if (value == nullptr || !value->isInteger())
+        return false;
+
+    out = value->asInteger();
+    return true;
+}
+
+bool readDecayingUseCount(const Object& object, Miro::Omittable<DecayingUseCount>& out)
+{
+    auto field = findReportedField(object, "useCount", &Miro::JSON::isObject);
+
+    if (field.value == nullptr)
+        return field.isWellFormed;
+
+    auto& fields = field.value->asObject();
+    auto* count = Miro::Json::find(fields, "count");
+    auto useCount = DecayingUseCount {};
+
+    if (count == nullptr || !count->isNumber())
+        return false;
+
+    useCount.count = count->asNumber();
+
+    if (!readRequiredInteger(fields, "asOfMs", useCount.asOfMs))
+        return false;
+
+    if (!readRequiredInteger(fields, "halfLifeMs", useCount.halfLifeMs))
+        return false;
+
+    out = useCount;
+    return true;
+}
+
+using ReportedTime = Miro::Omittable<std::int64_t> ContextUsage::*;
+
+const std::vector<std::pair<std::string_view, ReportedTime>> reportedIntegerFields {
+    {"lastUsedAtMs", &ContextUsage::lastUsedAtMs},
+    {"lastVisitAtMs", &ContextUsage::lastVisitAtMs},
+    {"visitCount", &ContextUsage::visitCount},
+    {"lastTypedAtMs", &ContextUsage::lastTypedAtMs},
+    {"lastFileChangeAtMs", &ContextUsage::lastFileChangeAtMs},
+};
+
+bool readContextUsage(const Object& object, Miro::Omittable<ContextUsage>& out)
+{
+    auto field = findReportedField(object, "usage", &Miro::JSON::isObject);
+
+    if (field.value == nullptr)
+        return field.isWellFormed;
+
+    auto& fields = field.value->asObject();
+    auto usage = ContextUsage {};
+
+    for (auto& [key, member]: reportedIntegerFields)
+        if (!readReportedInteger(fields, key, usage.*member))
+            return false;
+
+    if (!readDecayingUseCount(fields, usage.useCount))
+        return false;
+
+    out = std::move(usage);
+    return true;
+}
+
+const std::vector<std::pair<std::string_view, std::string Context::*>> contextStringFields {
+    {"title", &Context::title},
+    {"subtitle", &Context::subtitle},
+    {"url", &Context::url},
+    {"path", &Context::path},
+    {"branch", &Context::branch},
+    {"repo", &Context::repo},
+};
+
+const std::vector<std::pair<std::string_view, bool Context::*>> contextBoolFields {
+    {"open", &Context::open},
+    {"focused", &Context::focused},
+};
+
+template <typename FieldType, typename ReadField>
+bool readFields(const Object& fields,
+                const std::vector<std::pair<std::string_view, FieldType Context::*>>& table,
+                Context& context,
+                ReadField readField)
+{
+    return std::all_of(table.begin(),
+                       table.end(),
+                       [&](const auto& entry)
+                       { return readField(fields, entry.first, context.*entry.second); });
+}
+
+bool readContext(const Object& fields, Context& context)
+{
+    if (!readString(fields, "id", context.id) || context.id.empty())
+        return false;
+
+    return readFields(fields, contextStringFields, context, readString)
+           && readFields(fields, contextBoolFields, context, readBool)
+           && readContextUsage(fields, context.usage);
+}
+
 std::optional<Message> readHello(const Object& object)
 {
     auto hello = Hello {};
@@ -83,18 +224,9 @@ std::optional<Message> readContexts(const Object& object)
         if (!entry.isObject())
             return std::nullopt;
 
-        auto& fields = entry.asObject();
         auto context = Context {};
 
-        if (!readString(fields, "id", context.id) || context.id.empty()
-            || !readString(fields, "title", context.title)
-            || !readString(fields, "subtitle", context.subtitle)
-            || !readString(fields, "url", context.url)
-            || !readString(fields, "path", context.path)
-            || !readString(fields, "branch", context.branch)
-            || !readString(fields, "repo", context.repo)
-            || !readBool(fields, "open", context.open)
-            || !readBool(fields, "focused", context.focused))
+        if (!readContext(entry.asObject(), context))
             return std::nullopt;
 
         contexts.contexts.push_back(std::move(context));
